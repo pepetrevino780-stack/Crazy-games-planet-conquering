@@ -236,7 +236,7 @@ test('buildings, research, dropships and abilities work and cost resources', () 
   const cap = site(s, 'player-capital');
   // Find own flat tiles to build on.
   const spots = [];
-  for (let i = 0; i < s.owner.length && spots.length < 30; i++) if (s.owner[i] === PLAYER && world(s).terrain[i] === T.PLAINS) spots.push(i);
+  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === PLAYER && [T.PLAINS, T.WILD, T.HIGHLAND, T.RUINS].includes(world(s).terrain[i])) spots.push(i);
   const habitat = spots.find(i => playerBuild(s, 'habitat', i).ok);
   assert.ok(habitat !== undefined, 'built a habitat');
   assert.ok(me.minerals < 5000);
