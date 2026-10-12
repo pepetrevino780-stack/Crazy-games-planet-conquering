@@ -44,12 +44,15 @@ export function think(state, fid, rand) {
       if (!other || !other.alive) continue;
       const ratio = f.troops / Math.max(1, other.troops);
       const grudge = p.retaliate && other.id in f.attackedBy && state.time - f.attackedBy[other.id] < 30;
-      if (ratio < 0.9 && !grudge) continue;
+      // Opportunists pounce on neighbours already fighting someone else.
+      const busy = p.prey ? state.attacks.some(a => a.target === o && a.attacker !== fid) : false;
+      if (ratio < (busy ? 0.6 : 0.9) && !grudge) continue;
       const bias = other.kind === 'player' ? p.playerBias : p.nationBias;
       score = bias * Math.min(3, ratio) * 0.6;
       score += p.objectiveSense * targetValue(state, fid, o) * 0.35;
       if (f.kind === 'player' && other.kind === 'enemy') score += p.objectiveSense * 1.2;
       if (grudge) score += 1.2;
+      if (p.prey) score += p.prey * ((busy ? 0.9 : 0) + Math.min(1.5, Math.max(0, ratio - 1)) * 0.5);
       score *= Math.min(1, 0.4 + len / (25 * mapScale(state)));
     }
     score *= 1 + p.noise * (rand() - 0.5);

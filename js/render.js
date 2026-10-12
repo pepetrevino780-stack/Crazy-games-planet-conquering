@@ -4,7 +4,7 @@
 import { paintWorld } from './world/paint.js';
 import { isLand } from './world/themes.js';
 import { SITE_TYPES } from './campaign.js';
-import { spriteCanvas, spriteCanvasHi, CAPITAL_SPRITE, mixHex } from './art/sprites.js';
+import { spriteCanvas, spriteCanvasHi, miniCanvas, spriteAccent, CAPITAL_SPRITE, mixHex } from './art/sprites.js';
 import { backdropCanvas } from './art/backdrop.js';
 import { rt, world, siteOwner, isShielded, isPowered, empActive, eventPhase, mapScale, PLAYER } from './sim/core.js';
 
@@ -30,7 +30,10 @@ export class MapRenderer {
     this.fx = [];       // timed effects: crash landings
     this.pops = [];     // floating numbers
     this.shakeT = 0; this.shakeAmp = 0;
-    this.holdOwner = 0; // territory hidden until a landing ship touches down
+    this.holdOwner = 0; // territory hidden until a landing ship touches down...
+    this.landing = 0;   // ...and its capital and label until the impact
+    this.reveal = null; // after impact, territory spreads out from the crater
+    this.rising = new Map(); // building id -> time its build animation started
     this.labels = new Map();
     this.labelTime = -10;
     this.dpr = 1;
@@ -53,7 +56,7 @@ export class MapRenderer {
     rt(state).allDirty = true;
     this.labels.clear();
     this.labelTime = -10;
-    this.particles = []; this.fx = []; this.pops = []; this.shakeT = 0; this.holdOwner = 0;
+    this.particles = []; this.fx = []; this.pops = []; this.shakeT = 0; this.holdOwner = 0; this.landing = 0; this.reveal = null;
     this.fit();
   }
 
@@ -179,7 +182,7 @@ export class MapRenderer {
     const paint = i => {
       const o = owner[i];
       const p = i * 4;
-      if (!o || !isLand(terrain[i]) || o === this.holdOwner) { img[p + 3] = 0; return; }
+      if (!o || !isLand(terrain[i]) || (o === this.holdOwner && !this.revealed(i))) { img[p + 3] = 0; return; }
       const x = i % W, y = (i - x) / W;
       const col = this.colorOf(o);
       const edge = (x > 0 && owner[i - 1] !== o && isLand(terrain[i - 1])) || (x < W - 1 && owner[i + 1] !== o && isLand(terrain[i + 1]))
@@ -265,7 +268,36 @@ export class MapRenderer {
   // small: the dropship version (no crater, no hidden territory).
   crashLanding(x, y, { small = false, owner = 0, color = '#3fd0ff' } = {}) {
     this.fx.push({ x, y, t: 0, dur: small ? 0.7 : 1.2, small, owner, color });
-    if (owner) { this.holdOwner = owner; rt(this.state).allDirty = true; }
+    if (owner) { this.holdOwner = owner; this.landing = owner; this.reveal = null; rt(this.state).allDirty = true; }
+  }
+
+  revealed(i) {
+    const r = this.reveal;
+    if (!r) return false;
+    const x = i % this.W, y = (i - x) / this.W;
+    return (x - r.x) ** 2 + (y - r.y) ** 2 <= r.r * r.r;
+  }
+
+  // Grow the revealed circle and repaint the ring of tiles it just uncovered.
+  advanceReveal(dt) {
+    const r = this.reveal;
+    if (!r) return;
+    const st = this.state, c = rt(st), lin = mapScale(st);
+    const prev = r.r;
+    r.r += dt * 32 * lin;
+    const R = Math.ceil(r.r);
+    for (let y = Math.max(0, r.y - R); y <= Math.min(this.H - 1, r.y + R); y++) {
+      for (let x = Math.max(0, r.x - R); x <= Math.min(this.W - 1, r.x + R); x++) {
+        const d2 = (x - r.x) ** 2 + (y - r.y) ** 2;
+        if (d2 > prev * prev - 2 * prev && d2 <= r.r * r.r + 2 * r.r) c.dirty.push(y * this.W + x);
+      }
+    }
+    if (r.r > 30 * lin) { this.reveal = null; this.holdOwner = 0; c.allDirty = true; }
+  }
+
+  // Start a building's rise-from-the-ground animation.
+  raise(id, now) {
+    this.rising.set(id, now);
   }
 
   shake(seconds, amp) {
@@ -287,7 +319,7 @@ export class MapRenderer {
     if (!small) { this.ring(x, y, f.color, 22); this.stampCrater(x, y); }
     this.shake(small ? 0.2 : 0.45, small ? 2 : 5);
     this.onImpact?.(small);
-    if (f.owner && this.holdOwner === f.owner) { this.holdOwner = 0; rt(this.state).allDirty = true; }
+    if (f.owner && this.holdOwner === f.owner) { this.landing = 0; this.reveal = { x: f.x, y: f.y, r: 0 }; }
   }
 
   // Scorch a small crater into the painted terrain (cosmetic only).
@@ -436,6 +468,7 @@ export class MapRenderer {
     ctx.fillStyle = '#05040a';
     ctx.fillRect(o.x - z, o.y - z, (this.W + 2) * z, (this.H + 2) * z);
     ctx.drawImage(this.simple && this.baseSimple ? this.baseSimple : this.base, o.x, o.y, this.W * z, this.H * z);
+    this.advanceReveal(ui.reducedMotion ? 99 : ui.dt || 0.016);
     this.updateOverlay();
     ctx.drawImage(this.over, o.x, o.y, this.W * z, this.H * z);
     const hiOwner = ui.hoverOwner > 0 ? ui.hoverOwner : ui.inspectOwner;
@@ -487,20 +520,38 @@ export class MapRenderer {
     // Close up, structures use the double-detail sprites (only at even
     // scales, so every sprite pixel stays a whole number of screen pixels).
     const hi = sc >= 2 && sc % 2 === 0;
-    const drawSprite = (name, x, y, color) => {
-      const spr = hi ? spriteCanvasHi(name, color) : spriteCanvas(name, color);
-      const ps = hi ? sc / 2 : sc;
+    // Zoomed far out, structures become simple 5x5 map icons.
+    const mini = z <= 2;
+    // Lights blink out of step with each other.
+    const frameAt = (x, y) => (motion ? Math.floor(now * 2 + ((x * 7 + y * 13) % 10) / 10) % 2 : 0);
+    const drawSprite = (name, x, y, color, opts = {}) => {
       const p = T(x + 0.5, y + 0.5);
+      let spr, ps;
+      if (mini && opts.mini) { spr = miniCanvas(opts.mini, color, spriteAccent(name)); ps = z >= 2 ? 2 : 1; }
+      else if (hi) { spr = spriteCanvasHi(name, color, frameAt(x, y)); ps = sc / 2; }
+      else { spr = spriteCanvas(name, color, frameAt(x, y)); ps = sc; }
       const w = spr.width * ps, h = spr.height * ps;
-      ctx.drawImage(spr, Math.round(p.x - w / 2), Math.round(p.y - h + sc), w, h);
+      const k = opts.rise ?? 1;
+      if (k >= 1) ctx.drawImage(spr, Math.round(p.x - w / 2), Math.round(p.y - h + sc), w, h);
+      else if (k > 0) {
+        // Rising out of the ground: the top of the sprite appears first.
+        const rows = Math.max(1, Math.round(spr.height * k));
+        ctx.drawImage(spr, 0, 0, spr.width, rows, Math.round(p.x - w / 2), Math.round(p.y + sc - rows * ps), w, rows * ps);
+      }
       return { p, w, h };
     };
     for (const b of st.buildings) {
       const bo = st.owner[b.y * st.w + b.x];
-      const r = drawSprite(b.type, b.x, b.y, bo ? st.factions[bo].color : NEUTRAL);
-      // Upgraded buildings carry gold level pips above the roof.
       const lvl = b.level || 1;
-      if (lvl > 1 && z >= 2) {
+      const t0 = this.rising.get(b.id);
+      let rise = 1;
+      if (t0 !== undefined) {
+        rise = motion ? (ui.now - t0) / 700 : 1;
+        if (rise >= 1) this.rising.delete(b.id);
+      }
+      const r = drawSprite(lvl > 1 ? `${b.type}_${lvl}` : b.type, b.x, b.y, bo ? st.factions[bo].color : NEUTRAL, { mini: b.type, rise });
+      // Zoomed out, upgraded buildings carry gold level pips above the icon.
+      if (lvl > 1 && mini) {
         const u = Math.max(2, sc);
         for (let k = 0; k < lvl - 1; k++) {
           const px = Math.round(r.p.x - ((lvl - 1) * (u * 2 + u)) / 2 + k * (u * 3)), py = Math.round(r.p.y - r.h - u * 3);
@@ -512,10 +563,10 @@ export class MapRenderer {
     for (const s of st.sites) {
       const so = siteOwner(st, s);
       const color = so ? st.factions[so].color : NEUTRAL;
-      if (this.holdOwner && so === this.holdOwner) continue;
+      if (this.landing && so === this.landing) continue;
       let name = s.type;
       if (s.type === 'capital') name = s.id === 'enemy-capital' ? CAPITAL_SPRITE[st.theme] : s.id === 'player-capital' ? 'fortress' : 'normal';
-      const r = drawSprite(name, s.x, s.y, color);
+      const r = drawSprite(name, s.x, s.y, color, { mini: s.type === 'capital' || s.type === 'citadel' ? 'capital' : 'site' });
       if (empActive(st, s)) {
         ctx.strokeStyle = '#7fd8ff'; ctx.lineWidth = Math.max(1, d);
         if (!motion || Math.floor(now * 6) % 2) ctx.strokeRect(r.p.x - r.w / 2 - 2, r.p.y - r.h - 2, r.w + 4, r.h + 4);
@@ -630,7 +681,7 @@ export class MapRenderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     // Biggest empires first; skip labels that would overlap one already drawn.
-    const order = [...this.labels.keys()].filter(id => st.factions[id]?.alive && id !== this.holdOwner)
+    const order = [...this.labels.keys()].filter(id => st.factions[id]?.alive && id !== this.landing)
       .sort((a, b) => (a === PLAYER ? -1 : b === PLAYER ? 1 : st.factions[b].tiles - st.factions[a].tiles));
     const placed = [];
     for (const id of order) {

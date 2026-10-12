@@ -248,7 +248,7 @@ function openBriefing(ref) {
   bc.getContext('2d').clearRect(0, 0, 64, 64);
   bc.getContext('2d').drawImage(orb, 0, 0);
   $('#brief-victory').innerHTML = p.victory.conds.map(c => `<li>${esc(c.label)}</li>`).join('') + '<li>Defeat: lose your capital or all your land.</li>';
-  $('#brief-enemy').innerHTML = `<b style="color:${p.enemy.color}">${esc(p.enemy.name)}</b> — ${esc(PROFILE_TEXT[p.enemy.profile] || '')} Plus ${p.nations.count} independent nations.`;
+  $('#brief-enemy').innerHTML = `<b style="color:${p.enemy.color}">${esc(p.enemy.name)}</b> — ${esc(PROFILE_TEXT[p.enemy.profile] || '')} Plus ${p.nations.count} independent nations: ${[...new Set((p.nations.profiles || [p.nations.profile]).map(id => PERSONAS[id].name.toLowerCase()))].join(', ')}.`;
   $('#brief-notes').innerHTML = p.briefing.map(b => `<li>${esc(b)}</li>`).join('');
   const assist = idx >= 0 ? assistLevel(campaign, p.id) : 0;
   $('#brief-assist').classList.toggle('hidden', !assist);
@@ -491,7 +491,7 @@ function buildToolbar() {
     b.dataset.kind = t.kind; b.dataset.id = t.id;
     b.dataset.tipFn = 'tool';
     b.setAttribute('aria-label', t.kind === 'build' ? `${BUILDINGS[t.id].name}: ${BUILDINGS[t.id].desc}` : t.label);
-    b.innerHTML = `<span class="key">${t.key}</span><img src="${t.icon}" alt=""><span class="label">${esc(t.label)}</span><span class="cost"></span>${t.kind === 'ability' ? '<span class="cd"></span>' : ''}`;
+    b.innerHTML = `<span class="key">${t.key}</span><img src="${t.icon}" alt=""><span class="label">${esc(t.label)}</span><span class="cost"></span>${t.kind === 'ability' ? '<span class="cd"></span>' : ''}<img class="lockmark" src="${iconURL('lock', 2)}" alt="">`;
     b.onclick = () => activateTool(t.kind, t.id);
     bar.appendChild(b);
   }
@@ -523,17 +523,15 @@ function activateTool(kind, id) {
 function updateToolbar() {
   const f = battle.factions[PLAYER];
   const open = tutorialUnlocked(battle);
-  // During training, tools and resources appear only once a step introduces them.
-  const seps = document.querySelectorAll('#toolbar .tool-sep');
-  if (seps[0]) seps[0].classList.toggle('hidden', !!open && !open.has('dropship'));
-  if (seps[1]) seps[1].classList.toggle('hidden', !!open && !open.has('abilities'));
+  // During training, tools stay greyed out with a lock until a step introduces
+  // them, and Energy and Exotic stay hidden until they matter.
   $('#st-energy').closest('.stat').classList.toggle('hidden', !!open && !open.has('energy'));
   $('#st-exotic').closest('.stat').classList.toggle('hidden', !!open && !open.has('exotic'));
-  let shown = 0;
-  document.querySelectorAll('.tool').forEach(b => { const v = toolUnlocked(b.dataset.kind, b.dataset.id); b.classList.toggle('hidden', !v); shown += v; });
-  $('#toolbar').classList.toggle('hidden', !shown);
   document.querySelectorAll('.tool').forEach(b => {
     const { kind, id } = b.dataset;
+    const trainingLock = !!open && !toolUnlocked(kind, id) && !(kind === 'ability' && !f.abilities.includes(id));
+    b.classList.toggle('tut-locked', trainingLock);
+    if (trainingLock) { b.querySelector('.cost').textContent = ''; return; }
     const cost = b.querySelector('.cost');
     b.classList.toggle('armed', !!armed && armed.kind === kind && armed.id === id);
     if (kind === 'build') { const c = buildCost(battle, PLAYER, id); cost.textContent = fmt(c); b.disabled = f.minerals < c; }
@@ -617,6 +615,10 @@ const TIP_FNS = {
   tool(el) {
     const { kind, id } = el.dataset;
     const f = battle.factions[PLAYER];
+    if (!toolUnlocked(kind, id) && !(kind === 'ability' && !f.abilities.includes(id))) {
+      const name = kind === 'build' ? BUILDINGS[id].name : kind === 'ability' ? ABILITIES[id].name : kind === 'dropship' ? 'Dropship' : 'Research';
+      return `<b>${esc(name)}</b><br><span class="no">Locked: your training unlocks it in a later step.</span>`;
+    }
     if (kind === 'build') {
       const b = BUILDINGS[id], c = buildCost(battle, PLAYER, id);
       return `<b>${esc(b.name)}</b> <kbd>${b.key}</kbd><br>${esc(b.desc)}<br><span class="${f.minerals >= c ? 'ok' : 'no'}">Cost ${fmt(c)} minerals</span> (you have ${fmt(f.minerals)}). Each one you own costs more.<br><span class="dim">Use it on one of your own ${esc(b.name)}s to upgrade it (up to level 3).</span>`;
@@ -1013,15 +1015,16 @@ function processNotices() {
         break;
       case 'upgraded':
         if (n.owner !== PLAYER) break;
-        sfx.build(); renderer.ring(n.x, n.y, '#ffd25e', 7); renderer.burst(n.x, n.y, '#ffd25e', 10);
+        sfx.build(); renderer.raise(n.id, performance.now()); renderer.ring(n.x, n.y, '#ffd25e', 7); renderer.burst(n.x, n.y, '#ffd25e', 10);
         renderer.pop(n.x, n.y, `-${fmt(n.cost)} minerals`, '#c9b8ff');
         toast(`${esc(BUILDINGS[n.building].name)} upgraded to level ${n.level}.`, 'good', 2500);
         break;
       case 'built':
-        sfx.build(); renderer.ring(n.x, n.y, '#3fd0ff', 5);
+        sfx.build(); renderer.raise(n.id, performance.now()); renderer.ring(n.x, n.y, '#3fd0ff', 5); renderer.burst(n.x, n.y, '#8a7a6a', 10);
         if (n.owner === PLAYER && n.cost) renderer.pop(n.x, n.y, `-${fmt(n.cost)} minerals`, '#c9b8ff');
         break;
       case 'tutorial': sfx.objective(); break;
+      case 'gain': renderer.pop(n.x, n.y - 2, n.text, { minerals: '#c9b8ff', troops: '#7fe8ff', energy: '#ffe066' }[n.res] || '#ffffff'); break;
       case 'research': toast(`Research complete: ${esc(RESEARCH[n.id].name)}.`, 'good'); break;
       case 'landed':
         if (n.owner === PLAYER) { toast('Dropship landed. Beachhead established.', 'good'); renderer.crashLanding(n.x, n.y, { small: true, color: battle.factions[PLAYER].color }); }

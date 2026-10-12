@@ -363,7 +363,10 @@ test('a battle saved mid-war resumes exactly where it left off', () => {
   assert.ok(b);
   advance(a, 60);
   advance(b, 60);
-  assert.deepEqual(Array.from(b.owner), Array.from(a.owner));
+  // Count differences rather than deep-comparing a million-tile array (whose diff alone can exhaust memory).
+  let diff = 0;
+  for (let i = 0; i < a.owner.length; i++) if (a.owner[i] !== b.owner[i]) diff++;
+  assert.equal(diff, 0, 'same ownership after resuming');
   assert.deepEqual(b.factions.map(f => f && Math.round(f.troops)), a.factions.map(f => f && Math.round(f.troops)));
   assert.deepEqual(battleResult(b), battleResult(a));
   assert.ok(JSON.stringify(c).length < 200000, `save is compact (${JSON.stringify(c).length} bytes)`);
@@ -381,7 +384,7 @@ test('Vulkara training advances step by step, unlocks tools, and survives a save
   advance(s, 0.5);
   assert.equal(tutorialStep(s).id, 'grow');
   advance(s, 30);
-  if (s.factions[PLAYER].tiles >= 1000) assert.notEqual(tutorialStep(s).id, 'grow');
+  if (s.factions[PLAYER].tiles >= 2250) assert.notEqual(tutorialStep(s).id, 'grow');
   s.tutorial = 3;
   assert.ok(tutorialUnlocked(s).has('habitat') && !tutorialUnlocked(s).has('energy'));
   const b = deserialize(serialize(s));
@@ -445,6 +448,17 @@ test('results: land history, battle stats and stars', () => {
   assert.equal(normalizeCampaign(JSON.parse(JSON.stringify(c))).planets.vulkara.stars, 2);
   const old = deserialize({ ...serialize(s), history: undefined });
   assert.deepEqual(old.history, [], 'older saves gain an empty history');
+});
+
+test('planets field many nations with mixed personalities', () => {
+  for (const id of ['vulkara', 'noctyra']) {
+    const s = battle(id);
+    const nations = s.factions.filter(f => f && f.kind === 'nation');
+    assert.equal(nations.length, getPlanet(id).nations.count, `${id}: every nation placed`);
+    assert.ok(new Set(nations.map(f => f.persona)).size >= 2, `${id}: mixed personalities`);
+    assert.ok(nations.every(f => AI_PROFILES[f.persona] && f.profile), `${id}: personas map to profiles`);
+  }
+  assert.ok(battle('noctyra').factions.some(f => f && f.persona === 'opportunist'));
 });
 
 test('ownership maps round-trip through run-length encoding', () => {

@@ -4,6 +4,7 @@
 //   .  transparent     o  outline        a  owner colour
 //   b  owner shadow    h  owner light    x/y  fixed accent colours
 //   w  white           k  near-black
+//   l  blinking light  m/n  dark / light metal   g  glass
 // Icons use the same grammar with a fixed per-icon colour set.
 
 const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -301,15 +302,19 @@ export const ICONS = {
   enemy: { c: ['#ff4b3e', '#ffc4be'], rows: ['..ooooo..', '.oaaaaao.', 'oaaaaaaao', 'oaoaaaoao', 'oaoaaaoao', 'oaaahaaao', '.oaaaaao.', '..oaoao..', '..ooooo..'] },
 };
 
-function colorFor(ch, base, accent) {
+function colorFor(ch, base, accent, frame = 0) {
   switch (ch) {
+    case 'l': return frame ? '#3a2a14' : (accent[0] || '#ffe066');
+    case 'm': return '#454b5e';
+    case 'n': return '#8f9ab0';
+    case 'g': return mixHex(base, '#e8fbff', 0.55);
     case 'o': return '#0a0a14';
     case 'k': return '#06050a';
     case 'w': return '#ffffff';
     case 'a': return base;
     case 'b': return shadeHex(base, 0.6);
     case 'h': return mixHex(base, '#ffffff', 0.5);
-    case 'x': return accent[0];
+    case 'x': return frame ? mixHex(accent[0], '#ffffff', 0.35) : accent[0];
     case 'y': return accent[1];
     default: return null;
   }
@@ -318,16 +323,17 @@ function colorFor(ch, base, accent) {
 const spriteCache = new Map();
 
 // Canvas of a building sprite tinted for an owner colour (cached).
-export function spriteCanvas(name, ownerColor) {
-  const key = name + ownerColor;
+// frame 1 is the "lights" frame: blinking lights go dark, accents brighten.
+export function spriteCanvas(name, ownerColor, frame = 0) {
+  const key = name + ownerColor + frame;
   if (spriteCache.has(key)) return spriteCache.get(key);
-  const def = SPRITES[name];
-  const h = def.rows.length, w = def.rows[0].length;
+  const def = SPRITES[name] || levelSprite(name);
+  const h = def.rows.length, w = Math.max(...def.rows.map(r => r.length));
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const ctx = c.getContext('2d');
   def.rows.forEach((row, y) => [...row].forEach((ch, x) => {
-    const col = colorFor(ch, ownerColor, def.accent);
+    const col = colorFor(ch, ownerColor, def.accent, frame);
     if (!col) return;
     ctx.fillStyle = col;
     ctx.fillRect(x, y, 1, 1);
@@ -340,10 +346,16 @@ export function spriteCanvas(name, ownerColor) {
 // 2x2, edges facing the top-left light are brightened, edges facing away are
 // shaded, and flat areas get a fine dither so structures read as built objects.
 const hiCache = new Map();
-export function spriteCanvasHi(name, ownerColor) {
-  const key = name + ownerColor;
+export function spriteCanvasHi(name, ownerColor, frame = 0) {
+  const key = name + ownerColor + frame;
   if (hiCache.has(key)) return hiCache.get(key);
-  const base = spriteCanvas(name, ownerColor);
+  // Buildings have hand-drawn detailed art; everything else is upscaled.
+  if (DETAIL[name.replace(/_\d$/, '')]) {
+    const c = spriteCanvas('hd_' + name, ownerColor, frame);
+    hiCache.set(key, c);
+    return c;
+  }
+  const base = spriteCanvas(name, ownerColor, frame);
   const w = base.width, h = base.height;
   const src = base.getContext('2d').getImageData(0, 0, w, h).data;
   const c = document.createElement('canvas');
@@ -401,3 +413,164 @@ export function spriteFor(planetId, type) {
   if (type === 'capital') return CAPITAL_SPRITE[planetId];
   return SPRITES[type] ? type : 'normal';
 }
+
+// ---------- Detailed buildings and levels ----------
+// Hand-drawn art at twice the resolution, used close up. Upgraded buildings
+// (level 2 and 3) grow a side module, then a second module and a beacon, at
+// both resolutions: name_2 / name_3 and hd_name_2 / hd_name_3.
+
+const DETAIL = {
+  habitat: { accent: ['#ffe066', '#3fd0ff'], rows: [
+    '......ooooo......',
+    '....oogggggoo....',
+    '...ogwwgggggbo...',
+    '..oggwggggggbbo..',
+    '..ogggggggggbbo..',
+    '.ooooooooooooooo.',
+    '.ohhhhhhhhhhhhbo.',
+    '.ohalaaaaaaalabo.',
+    '.oaaaaaannnaaabo.',
+    '.oaaaaaankkaaabo.',
+    '.obbbbbbnkkbbbbo.',
+    'ooooooooooooooooo',
+  ] },
+  extractor: { accent: ['#ffd25e', '#c9a2ff'], rows: [
+    '......ooo......',
+    '......olo......',
+    '.....onnno.....',
+    '.....omnmo.....',
+    '....onmnmno....',
+    '....omnmnmo....',
+    '...onmnmnmno...',
+    '..ooooooooooo..',
+    '..ohhhhhhhhbo..',
+    '..oaaxxxxxabo..',
+    '..oaaxyyyxabo..',
+    '.ooooooooooooo.',
+    '.oxxkxxkxxkxxo.',
+    'ooooooooooooooo',
+  ] },
+  starport: { accent: ['#3ad8ff', '#ffd25e'], rows: [
+    '..........o....',
+    '.........olo...',
+    '.........ono...',
+    '....o....ono...',
+    '...oho...ono...',
+    '..ohaho..ono...',
+    '..oaaao..ono...',
+    '.oaagaao.ono...',
+    '.oxoaoxo.ono...',
+    'ooooooooooooooo',
+    'ohhhhhhhhhhhhbo',
+    'oyaaayaaayaaayo',
+    'ooooooooooooooo',
+  ] },
+  bastion: { accent: ['#e9f1ff', '#9aa8c0'], rows: [
+    'oao.oao.oao.oao',
+    'ooooooooooooooo',
+    'onnnnnnnnnnnnmo',
+    'onmnnmnnnmnnmmo',
+    'onnnnoooooonnmo',
+    'onnmnokkkkonmmo',
+    'onnnnokkkkonnmo',
+    'ommmmokkkkommmo',
+    'ooooooooooooooo',
+  ] },
+  spire: { accent: ['#ff6ad2', '#ffd6f4'], rows: [
+    '....ooo....',
+    '...oxyxo...',
+    '...oylyo...',
+    '...oxyxo...',
+    '....ooo....',
+    '....ono....',
+    '...ohao....',
+    '...oaabo...',
+    '...ohabo...',
+    '..oaalabo..',
+    '..ohaaabo..',
+    '.oaaaaaabo.',
+    '.obbbbbbbo.',
+    'ooooooooooo',
+  ] },
+};
+// Keep every detailed grid rectangular.
+for (const d of Object.values(DETAIL)) {
+  const w = Math.max(...d.rows.map(r => r.length));
+  d.rows = d.rows.map(r => r.padEnd(w, '.'));
+}
+
+const PARTS = {
+  small: {
+    annex: ['ooo', 'oho', 'oao', 'ooo'],
+    beacon: ['.l.', '.o.'],
+  },
+  hd: {
+    annex: ['oooooo', 'ohhhbo', 'oalabo', 'oaaabo', 'onnnmo', 'oaaabo', 'oooooo'],
+    beacon: ['.l.', 'olo', '.o.', '.n.', '.n.'],
+  },
+};
+
+// Grow a building grid for its level: a side module at level 2, a module on
+// each side plus a beacon on the roof at level 3.
+function composeLevel(rows, level, parts) {
+  if (level <= 1) return rows;
+  const H = rows.length, W = rows[0].length;
+  const a = parts.annex, aw = a[0].length, ah = a.length;
+  const b = parts.beacon, bh = b.length;
+  const left = level >= 3 ? aw - 1 : 0, top = level >= 3 ? bh : 0;
+  const outW = W + (aw - 1) + left, outH = H + top;
+  const out = Array.from({ length: outH }, () => Array(outW).fill('.'));
+  const put = (grid, ox, oy, mirror = false) => grid.forEach((row, y) => [...row].forEach((ch, x) => {
+    if (ch !== '.') out[oy + y][ox + (mirror ? row.length - 1 - x : x)] = ch;
+  }));
+  put(a, left + W - 1, top + H - ah);
+  if (level >= 3) put(a, 0, top + H - ah, true);
+  put(rows, left, top);
+  if (level >= 3) {
+    const cx = left + Math.floor(W / 2);
+    let roof = 0;
+    while (roof < H && rows[roof][Math.floor(W / 2)] === '.') roof++;
+    put(b, cx - 1, top + roof - bh);
+  }
+  return out.map(r => r.join(''));
+}
+
+// Resolves generated names: habitat_2, hd_habitat, hd_habitat_3 ...
+function levelSprite(name) {
+  const m = /^(hd_)?([a-z]+)(?:_(\d))?$/.exec(name);
+  if (!m) throw new Error(`Unknown sprite ${name}`);
+  const [, hd, type, lvl] = m;
+  const base = hd ? DETAIL[type] : SPRITES[type];
+  return { accent: base.accent, rows: composeLevel(base.rows, Number(lvl || 1), hd ? PARTS.hd : PARTS.small) };
+}
+
+// Simple 5x5 map icons for zoomed-out views, so the map stays readable.
+export const MINI = {
+  habitat: ['.ooo.', 'ohgao', 'ooooo', 'oaaao', 'ooooo'],
+  extractor: ['..o..', '.oxo.', '.oxo.', 'oaaao', 'ooooo'],
+  starport: ['...o.', 'o.oxo', 'oaoao', 'ooooo', 'oaaao'],
+  bastion: ['oaoao', 'ooooo', 'onnno', 'onkno', 'ooooo'],
+  spire: ['..x..', '.oxo.', '.oao.', 'oaaao', 'ooooo'],
+  capital: ['oaoao', 'oaaao', 'oaxao', 'oaaao', 'ooooo'],
+  site: ['.ooo.', 'oxxxo', 'oxyxo', 'oxxxo', '.ooo.'],
+};
+
+const miniCache = new Map();
+export function miniCanvas(kind, ownerColor, accent = ['#ffd25e', '#ffffff']) {
+  const key = kind + ownerColor + accent.join();
+  if (miniCache.has(key)) return miniCache.get(key);
+  const rows = MINI[kind] || MINI.site;
+  const c = document.createElement('canvas');
+  c.width = 5; c.height = 5;
+  const ctx = c.getContext('2d');
+  rows.forEach((row, y) => [...row].forEach((ch, x) => {
+    const col = colorFor(ch, ownerColor, accent);
+    if (!col) return;
+    ctx.fillStyle = col;
+    ctx.fillRect(x, y, 1, 1);
+  }));
+  miniCache.set(key, c);
+  return c;
+}
+
+export const spriteAccent = name => (SPRITES[name] || DETAIL[name] || { accent: ['#ffd25e', '#ffffff'] }).accent;

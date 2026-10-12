@@ -53,7 +53,8 @@ npm start            # http://localhost:8080
 
 On the first visit to Vulkara, a step-by-step training card teaches by doing: attack, expand, use the attack
 ratio, build, seize a vent. An arrow on the map or a glowing button shows where to act, and tools and resources
-unlock as each step introduces them (Skip unlocks everything). Each world also has independent nations, short
+unlock as each step introduces them (locked tools show a padlock; Skip unlocks everything). Each world also has
+10–18 independent nations with mixed personalities, short
 objectives with bonus rewards, contextual tips (can be turned off), and a field manual (`?`) that pauses the game.
 
 **Fair difficulty:**
@@ -61,8 +62,9 @@ objectives with bonus rewards, contextual tips (can be turned off), and a field 
 - Difficulty comes from behaviour: decision speed, when and whom to strike, reserves, retaliation, and multi-front coordination (`AI_PROFILES` in `js/campaign.js`).
 - You can read the enemy: red arrows show where attacks on you are heading (independent nations' attacks need
   Scouting 1, which also adds attack sizes), a warning fires when a neighbour masses troops near its cap on
-  your border, and each rival's personality (Relaxed, Defensive, Aggressive, Calculating, Mastermind…) is shown
-  on the leaderboard and its hover card.
+  your border, and each rival's personality (Relaxed, Isolationist, Defensive, Opportunist, Aggressive,
+  Calculating, Mastermind) is shown on the leaderboard and its hover card. Opportunists wait for a neighbour
+  to get into a war, then strike whoever is weakest.
 - Every defeat ends with a debrief explaining what went wrong.
 - Repeated defeats on a planet enable an *adaptive assist* that slows its enemy commanders.
 
@@ -81,7 +83,8 @@ objectives with bonus rewards, contextual tips (can be turned off), and a field 
 ## Art direction
 
 Everything is original pixel art, generated or hand-authored in code:
-- **Maps:** each world is generated as a coherent, Earth-like planet, at 2× the original size.
+- **Maps:** each world is generated as a coherent, Earth-like planet, at 3× the original width and height
+  (Vulkara 900×570 up to Noctyra 1230×750 tiles).
   - About a third land: one big main continent where you and the main enemy start, 3–5 smaller named
     continents separated by straits and open ocean, and island chains. Crossing an ocean needs a dropship.
   - Two layers of domain warp shape the coastlines; a 2–3 tile shelf and a dark coast outline frame the land,
@@ -90,9 +93,12 @@ Everything is original pixel art, generated or hand-authored in code:
   - Volcano clusters, inland lakes, biomes and ruins.
   - Painted from the theme's limited palette with ordered dithering.
 - **Sprites:** buildings, capitals (one per civilization), sites, dropships and icons are character grids, tinted with the owner's colour.
+  - Three levels of detail: simple 5×5 map icons when zoomed far out, the standard sprites, and hand-drawn
+    double-resolution buildings close up.
+  - Each building level has its own silhouette (a side module at level 2; two modules and a roof beacon at
+    level 3). New buildings rise out of the ground, and lights blink.
 - **Backdrops:** skies, planets, the eclipsed sun and the title landscape are procedural.
-- **Scaling:** pixels stay crisp, because the camera only uses integer zoom. Close up, structures switch to
-  double-detail sprites with edge lighting.
+- **Scaling:** pixels stay crisp, because the camera only uses integer zoom.
 - **Balance on bigger maps:** each planet has a `scale` (tiles per original tile). Troop amounts, regrowth,
   income per tile and attack speed scale with its area, radii and distances with its length, so a battle
   plays at the same pace as on the original map.
@@ -102,9 +108,10 @@ Readability comes first:
 - Ownership is shown by colour, borders and patterns (the player's land is striped, the main enemy's is dotted).
 - Labels are sized by empire and never overlap.
 - A strategic view flattens the terrain.
-- Big moments get feedback: the colony ship crash-lands (debris, shockwave, crater, screen shake), dropships
-  touch down the same way in miniature, your advancing front pulses and ticks, eruptions shake the ground,
-  captured capitals get a banner and fanfare, and troops, costs and rewards float up as numbers.
+- Big moments get feedback: the colony ship crash-lands (debris, shockwave, crater, screen shake) and your
+  territory spreads out from the crater, dropships touch down the same way in miniature, your advancing front
+  pulses and ticks, eruptions shake the ground, captured capitals get a banner and fanfare, and troops, costs
+  and gains (eruption minerals, spore-bloom troops, Rapid Muster) float up as numbers.
 - Reduced motion turns off particles, pulsing and screen shake.
 
 ## Adding content

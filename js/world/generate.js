@@ -374,7 +374,7 @@ export function placePoints(world, count, opts = {}) {
   const avoid = opts.avoid || [];
   for (let k = 0; k < count; k++) {
     let best = null, bestScore = -Infinity;
-    for (let tries = 0; tries < 220; tries++) {
+    for (let tries = 0; tries < (opts.tries || 220); tries++) {
       const x = 4 + Math.floor(rand() * (W - 8)), y = 4 + Math.floor(rand() * (H - 8));
       const i = y * W + x;
       if (!good(i) || (opts.accept && !opts.accept(x, y, i))) continue;

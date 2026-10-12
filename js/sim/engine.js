@@ -168,10 +168,12 @@ export function createBattle(configId, loadout, opts = {}) {
   const natPts = placePoints(w, cfg.nations.count, { rand: R, minDist: 22 * lin, avoid });
   natPts.forEach((p, k) => {
     const id = state.factions.length;
+    // Nations get a mix of personalities, cycling through the planet's list.
+    const persona = cfg.nations.profiles ? cfg.nations.profiles[k % cfg.nations.profiles.length] : cfg.nations.profile;
     state.factions.push(makeFaction(id, {
       name: nationName(state.theme, R), color: NATION_COLORS[k % NATION_COLORS.length], kind: 'nation',
-      troops: cfg.nations.troops * k, minerals: 100, persona: cfg.nations.profile,
-      profile: { ...AI_PROFILES[cfg.nations.profile], interval: AI_PROFILES[cfg.nations.profile].interval * (0.85 + R() * 0.3) },
+      troops: cfg.nations.troops * k, minerals: 100, persona,
+      profile: { ...AI_PROFILES[persona], interval: AI_PROFILES[persona].interval * (0.85 + R() * 0.3) },
     }));
     state.sites.push({ id: `nation${id}`, type: 'capital', x: p.x, y: p.y, name: state.factions[id].name, faction: id });
     claimBlob(state, p.x, p.y, cfg.nations.radius * lin, id);
@@ -180,7 +182,7 @@ export function createBattle(configId, loadout, opts = {}) {
   // Contested resource and objective sites.
   for (const spec of cfg.sites || []) {
     const pts = placePoints(w, spec.count, {
-      rand: R, minDist: 14 * lin,
+      rand: R, minDist: 14 * lin, tries: 1500,
       avoid: state.sites.map(s => ({ x: s.x, y: s.y, r: 10 * lin })),
       accept: (x, y, i) => state.owner[i] === 0 && (spec.where !== 'middle' || (x > state.w * 0.3 && x < state.w * 0.68 && w.comp[i] === main)),
     });
@@ -308,7 +310,7 @@ function upgradeBuilding(state, owner, b) {
   f.minerals -= cost;
   b.level = (b.level || 1) + 1;
   if (owner === PLAYER) state.flags['upgraded_' + b.type] = true;
-  notice(state, 'upgraded', { building: b.type, x: b.x, y: b.y, owner, level: b.level, cost });
+  notice(state, 'upgraded', { building: b.type, id: b.id, x: b.x, y: b.y, owner, level: b.level, cost });
   return { ok: true, upgraded: true, level: b.level };
 }
 
@@ -329,9 +331,10 @@ export function playerBuild(state, type, i) {
   if (f.minerals < cost) return { ok: false, reason: 'minerals' };
   f.minerals -= cost;
   const x = i % state.w, y = (i - x) / state.w;
-  state.buildings.push({ id: state.nextId++, type, x, y, level: 1 });
+  const id = state.nextId++;
+  state.buildings.push({ id, type, x, y, level: 1 });
   state.flags['built_' + type] = true;
-  notice(state, 'built', { building: type, x, y, owner: PLAYER, cost });
+  notice(state, 'built', { building: type, id, x, y, owner: PLAYER, cost });
   return { ok: true };
 }
 
@@ -387,7 +390,9 @@ export function useAbility(state, id, i) {
     tf.troops = Math.max(0, tf.troops - density * n * 1.5);
     notice(state, 'strike', { x, y });
   } else if (id === 'rally') {
+    const before = f.troops;
     f.troops = Math.min(maxTroops(state, f) * 1.1, f.troops + maxTroops(state, f) * 0.15);
+    notice(state, 'gain', { x, y, text: `+${Math.round(f.troops - before)} troops`, res: 'troops' });
   } else if (id === 'emp') {
     for (const s of [...state.sites, ...state.buildings]) {
       if (Math.hypot(s.x - x, s.y - y) <= 10 * mapScale(state) && s.type !== 'capital' && s.type !== 'citadel') s.emp = state.time + 20;
@@ -601,6 +606,13 @@ export function step(state, dt = TICK) {
       if (ev.type === 'bloom') f.troops += maxTroops(state, f) * 0.03 * countSites(state, 'hub', f.id);
       if (ev.type === 'eruption') f.minerals += 120 * countSites(state, 'vent', f.id);
     }
+    // Where the player gains something, say so on the map.
+    const p = state.factions[PLAYER];
+    for (const s of state.sites) {
+      if (siteOwner(state, s) !== PLAYER) continue;
+      if (ev.type === 'eruption' && s.type === 'vent') notice(state, 'gain', { x: s.x, y: s.y, text: '+120 minerals', res: 'minerals' });
+      if (ev.type === 'bloom' && s.type === 'hub') notice(state, 'gain', { x: s.x, y: s.y, text: `+${Math.round(maxTroops(state, p) * 0.03)} troops`, res: 'troops' });
+    }
   } else if (!ev.active && state.eventWasActive) notice(state, 'eventEnd', { type: ev.type });
   state.eventWasActive = ev.active;
 
@@ -752,7 +764,10 @@ export function rleDecode(bytes, length) {
 
 export function serialize(state) {
   const { owner, notices: _notices, ...rest } = state;
-  const copy = JSON.parse(JSON.stringify({ ...rest, attacks: state.attacks.map(a => ({ ...a, frontier: null })) }));
+  // Attack frontiers are saved as-is (keys and tiles in heap order) so a
+  // resumed battle advances exactly like the original.
+  const attacks = state.attacks.map(a => ({ ...a, frontier: a.frontier ? { k: a.frontier.k, v: a.frontier.v } : null }));
+  const copy = JSON.parse(JSON.stringify({ ...rest, attacks }));
   copy.owner = toB64(rleEncode(owner));
   copy.ownerEnc = 'rle';
   return copy;
@@ -765,6 +780,12 @@ export function deserialize(data) {
     const state = { ...data, owner: data.ownerEnc === 'rle' ? rleDecode(raw, data.w * data.h) : raw, notices: [] };
     delete state.ownerEnc;
     if (!Array.isArray(state.history)) { state.history = []; state.historyAt = state.time; }
+    state.attacks = (state.attacks || []).map(a => {
+      if (!a.frontier || !Array.isArray(a.frontier.k)) return { ...a, frontier: null };
+      const h = new TileHeap();
+      h.k = a.frontier.k; h.v = a.frontier.v;
+      return { ...a, frontier: h };
+    });
     if (state.owner.length !== state.w * state.h) return null;
     config(state);
     world(state);
