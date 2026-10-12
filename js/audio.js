@@ -36,7 +36,47 @@ function tone(notes, type = 'square', vol = 0.05) {
   }
 }
 
+// A falling pitch sweep with a burst of noise: impacts and explosions.
+function boom(f0 = 180, f1 = 40, dur = 0.5, vol = 0.07) {
+  if (!enabled || suspended) return;
+  const a = ac();
+  if (!a) return;
+  const t = a.currentTime;
+  const o = a.createOscillator();
+  const g = a.createGain();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(a.destination);
+  o.start(t); o.stop(t + dur);
+  const len = Math.floor(a.sampleRate * dur);
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 2;
+  const n = a.createBufferSource();
+  const ng = a.createGain();
+  n.buffer = buf;
+  ng.gain.setValueAtTime(vol * 1.2, t);
+  n.connect(ng).connect(a.destination);
+  n.start(t);
+}
+
+let lastTick = 0;
+
 export const sfx = {
+  crash: () => boom(180, 40, 0.6, 0.08),
+  thud: () => boom(140, 50, 0.3, 0.05),
+  rumble: () => boom(90, 30, 0.9, 0.06),
+  // A quiet tick while your border advances; rate-limited and slightly varied.
+  tick: () => {
+    const now = globalThis.performance ? performance.now() : Date.now();
+    if (now - lastTick < 110) return;
+    lastTick = now;
+    tone([[1400 + Math.random() * 500, 0.02]], 'square', 0.012);
+  },
+  fanfare: () => tone([[392, 0.1], [523, 0.1], [659, 0.1], [784, 0.16], [659, 0.08], [784, 0.3]], 'triangle', 0.09),
   click: () => tone([[660, 0.04]], 'square', 0.03),
   attack: () => tone([[220, 0.06], [330, 0.08]], 'sawtooth', 0.04),
   capture: () => tone([[523, 0.08], [659, 0.08], [784, 0.12]]),

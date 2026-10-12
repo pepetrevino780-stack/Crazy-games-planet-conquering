@@ -27,6 +27,10 @@ export class MapRenderer {
     this.cam = { zoom: 2, cx: 0, cy: 0 };
     this.insets = { top: 0, right: 0, bottom: 0, left: 0 };
     this.particles = [];
+    this.fx = [];       // timed effects: crash landings
+    this.pops = [];     // floating numbers
+    this.shakeT = 0; this.shakeAmp = 0;
+    this.holdOwner = 0; // territory hidden until a landing ship touches down
     this.labels = new Map();
     this.labelTime = -10;
     this.dpr = 1;
@@ -49,6 +53,7 @@ export class MapRenderer {
     rt(state).allDirty = true;
     this.labels.clear();
     this.labelTime = -10;
+    this.particles = []; this.fx = []; this.pops = []; this.shakeT = 0; this.holdOwner = 0;
     this.fit();
   }
 
@@ -174,7 +179,7 @@ export class MapRenderer {
     const paint = i => {
       const o = owner[i];
       const p = i * 4;
-      if (!o || !isLand(terrain[i])) { img[p + 3] = 0; return; }
+      if (!o || !isLand(terrain[i]) || o === this.holdOwner) { img[p + 3] = 0; return; }
       const x = i % W, y = (i - x) / W;
       const col = this.colorOf(o);
       const edge = (x > 0 && owner[i - 1] !== o && isLand(terrain[i - 1])) || (x < W - 1 && owner[i + 1] !== o && isLand(terrain[i + 1]))
@@ -255,6 +260,102 @@ export class MapRenderer {
     }
   }
 
+  // A ship streaks down onto (x, y), then impacts with a flash, debris, a
+  // shockwave, a shake and a crater. The owner's territory appears on impact.
+  // small: the dropship version (no crater, no hidden territory).
+  crashLanding(x, y, { small = false, owner = 0, color = '#3fd0ff' } = {}) {
+    this.fx.push({ x, y, t: 0, dur: small ? 0.7 : 1.2, small, owner, color });
+    if (owner) { this.holdOwner = owner; rt(this.state).allDirty = true; }
+  }
+
+  shake(seconds, amp) {
+    this.shakeT = Math.max(this.shakeT, seconds);
+    this.shakeAmp = Math.max(this.shakeT > seconds ? this.shakeAmp : 0, amp);
+  }
+
+  pop(x, y, text, color = '#ffffff') {
+    this.pops.push({ x, y, text, color, life: 1.3, max: 1.3 });
+    if (this.pops.length > 24) this.pops.shift();
+  }
+
+  impact(f) {
+    const { x, y, small } = f;
+    this.burst(x, y, '#fff6c8', small ? 8 : 18);
+    this.burst(x, y, '#ff9a3c', small ? 10 : 30);
+    this.burst(x, y, '#6a6070', small ? 6 : 20);
+    this.ring(x, y, '#ffe9a8', small ? 6 : 14);
+    if (!small) { this.ring(x, y, f.color, 22); this.stampCrater(x, y); }
+    this.shake(small ? 0.2 : 0.45, small ? 2 : 5);
+    this.onImpact?.(small);
+    if (f.owner && this.holdOwner === f.owner) { this.holdOwner = 0; rt(this.state).allDirty = true; }
+  }
+
+  // Scorch a small crater into the painted terrain (cosmetic only).
+  stampCrater(cx, cy) {
+    const ctx = this.base.getContext('2d');
+    const terrain = world(this.state).terrain;
+    for (let dy = -4; dy <= 4; dy++) {
+      for (let dx = -4; dx <= 4; dx++) {
+        const x = cx + dx, y = cy + dy, r = Math.hypot(dx, dy);
+        if (x < 0 || y < 0 || x >= this.W || y >= this.H || r > 4.2 || !isLand(terrain[y * this.W + x])) continue;
+        if (r < 2.2) ctx.fillStyle = (dx + dy) & 1 ? '#1b1418' : '#251c20';
+        else if (r < 3.2) ctx.fillStyle = (dx * 3 + dy) % 4 ? '#3a2c2a' : '#5a4436';
+        else if ((dx + dy * 2) % 3 === 0) ctx.fillStyle = '#7a6250';
+        else continue;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+
+  drawFx(T, z, dt, motion) {
+    const ctx = this.ctx, d = this.dpr;
+    for (const f of this.fx) {
+      f.t += dt;
+      const k = Math.min(1, f.t / f.dur);
+      if (k >= 1) { f.done = true; this.impact(f); continue; }
+      // Falls in from the upper left, accelerating.
+      const e = k * k;
+      const dist = f.small ? 30 : 70;
+      const sx = f.x - dist * (1 - e), sy = f.y - dist * 1.2 * (1 - e);
+      const u = Math.max(2, Math.round(z / 2));
+      // Fire trail.
+      for (let j = 1; j <= 10; j++) {
+        const tk = Math.max(0, k - j * 0.025), te = tk * tk;
+        const tx = f.x - dist * (1 - te), ty = f.y - dist * 1.2 * (1 - te);
+        ctx.fillStyle = j < 3 ? '#fff2a8' : j < 6 ? '#ff9a3c' : '#a03a2a';
+        const q = T(tx + 0.5, ty + 0.5), size = Math.max(u, (f.small ? 2 : 4) * u - j * u * 0.3);
+        if (!motion && j % 2) continue;
+        ctx.fillRect(Math.round(q.x - size / 2), Math.round(q.y - size / 2), size, size);
+      }
+      const spr = spriteCanvas('fleet', f.color);
+      const sc = Math.max(1, Math.round((z / 2) * (f.small ? 1 : 2)));
+      const p = T(sx + 0.5, sy + 0.5);
+      ctx.drawImage(spr, Math.round(p.x - (spr.width * sc) / 2), Math.round(p.y - (spr.height * sc) / 2), spr.width * sc, spr.height * sc);
+      // Target marker on the ground.
+      this.dotCircle(T(f.x + 0.5, f.y + 0.5), (f.small ? 3 : 6) * z * (1 - k * 0.6), '#ffe066', Math.max(1, d));
+    }
+    this.fx = this.fx.filter(f => !f.done);
+  }
+
+  drawPops(T, dt) {
+    const ctx = this.ctx, d = this.dpr;
+    this.pops = this.pops.filter(p => (p.life -= dt) > 0);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `700 ${Math.round(13 * d)}px "Pixelify Sans", monospace`;
+    ctx.lineWidth = Math.max(2, 3 * d);
+    ctx.strokeStyle = 'rgba(5,4,12,0.9)';
+    for (const p of this.pops) {
+      const k = 1 - p.life / p.max;
+      const q = T(p.x + 0.5, p.y + 0.5);
+      const y = Math.round(q.y - 10 * d - k * 26 * d);
+      ctx.globalAlpha = Math.min(1, p.life / 0.4);
+      ctx.strokeText(p.text, Math.round(q.x), y);
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.text, Math.round(q.x), y);
+    }
+    ctx.globalAlpha = 1;
+  }
+
   drawPointer(p, now, motion) {
     const ctx = this.ctx, d = this.dpr;
     const u = Math.max(3, Math.round(3 * d));
@@ -281,6 +382,13 @@ export class MapRenderer {
     const o = this.origin();
     const now = ui.now / 1000;
     const motion = !ui.reducedMotion;
+    if (this.shakeT > 0) {
+      this.shakeT -= ui.dt || 0.016;
+      if (motion) {
+        const a = Math.round(this.shakeAmp * d * Math.min(1, this.shakeT / 0.15));
+        o.x += Math.round((Math.random() * 2 - 1) * a); o.y += Math.round((Math.random() * 2 - 1) * a);
+      }
+    }
     ctx.imageSmoothingEnabled = false;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
@@ -320,7 +428,9 @@ export class MapRenderer {
     // Attack fronts: the next tiles each attack will take.
     for (const a of st.attacks) {
       if (!a.frontier) continue;
-      const col = a.target === PLAYER ? '#ff2a2a' : a.attacker === PLAYER ? '#fff2a8' : mixHex(st.factions[a.attacker].color, '#ffffff', 0.3);
+      // The player's own fronts pulse so the advancing edge reads as alive.
+      const mine = motion && Math.floor(now * 5) % 2 ? '#ffd25e' : '#fff2a8';
+      const col = a.target === PLAYER ? '#ff2a2a' : a.attacker === PLAYER ? mine : mixHex(st.factions[a.attacker].color, '#ffffff', 0.3);
       ctx.fillStyle = col;
       const front = a.frontier.v;
       const end = Math.min(front.length, 200);
@@ -348,6 +458,7 @@ export class MapRenderer {
     for (const s of st.sites) {
       const so = siteOwner(st, s);
       const color = so ? st.factions[so].color : NEUTRAL;
+      if (this.holdOwner && so === this.holdOwner) continue;
       let name = s.type;
       if (s.type === 'capital') name = s.id === 'enemy-capital' ? CAPITAL_SPRITE[st.theme] : s.id === 'player-capital' ? 'fortress' : 'normal';
       const r = drawSprite(name, s.x, s.y, color);
@@ -383,6 +494,9 @@ export class MapRenderer {
       const q = T(p.x, p.y);
       ctx.fillRect(Math.round(q.x), Math.round(q.y), Math.max(1, z), Math.max(1, z));
     }
+
+    this.drawFx(T, z, dt, motion);
+    this.drawPops(T, dt);
 
     // Planetary events over the map.
     this.drawEvent(ev, o, z, now, motion);
@@ -444,7 +558,7 @@ export class MapRenderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     // Biggest empires first; skip labels that would overlap one already drawn.
-    const order = [...this.labels.keys()].filter(id => st.factions[id]?.alive)
+    const order = [...this.labels.keys()].filter(id => st.factions[id]?.alive && id !== this.holdOwner)
       .sort((a, b) => (a === PLAYER ? -1 : b === PLAYER ? 1 : st.factions[b].tiles - st.factions[a].tiles));
     const placed = [];
     for (const id of order) {

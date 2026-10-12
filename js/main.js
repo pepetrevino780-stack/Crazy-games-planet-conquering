@@ -33,6 +33,7 @@ let campaign = null;
 let battle = null;
 let renderer = null;
 let ratio = 0.2;
+let lastConquered = 0;
 let paused = false;
 let speed = 1;
 let adPlaying = false;
@@ -272,7 +273,8 @@ function enterBattle() {
   seenTips = new Set(battle.objectivesDone);
   seenAttacks = new Set(battle.attacks.map(a => a.id));
   armed = null; hoverTile = -1; inspectTile = -1; paused = false; speed = 1; endTimer = 0;
-  ['#overlay-pause', '#overlay-help', '#overlay-research', '#board', '#objectives'].forEach(s => $(s).classList.add('hidden'));
+  ['#overlay-pause', '#overlay-help', '#overlay-research', '#board', '#objectives', '#banner'].forEach(s => $(s).classList.add('hidden'));
+  lastConquered = battle.stats.conquered;
   $('#toasts').innerHTML = '';
   const cfg = config(battle);
   const idx = PLANETS.indexOf(cfg);
@@ -371,6 +373,17 @@ function toast(html, kind = '', ms = 4200) {
   const max = window.innerWidth < 760 || window.innerHeight < 520 ? 1 : 4;
   while (box.children.length > max) box.firstChild.remove();
   setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, ms);
+}
+
+// Big centre-screen announcement for milestones such as a captured capital.
+let bannerTimer = 0;
+function banner(title, sub = '', major = false) {
+  const el = $('#banner');
+  el.innerHTML = `${esc(title.toUpperCase())}${sub ? `<small>${esc(sub)}</small>` : ''}`;
+  el.classList.toggle('major', major);
+  el.classList.remove('hidden', 'show'); void el.offsetWidth; el.classList.add('show');
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => el.classList.add('hidden'), 2600);
 }
 
 function tip(key, text) {
@@ -669,6 +682,7 @@ function processNotices() {
           toast(`${esc(s.name)} captured.`, 'good');
           sfx.capture();
           renderer.burst(s.x, s.y, '#7ff0c8');
+          renderer.pop(s.x, s.y - 2, s.name, '#7ff0c8');
           if (s.type === 'hub') tip('hub', 'Hub captured: the Swarm land around it is no longer nourished.');
           if (s.type === 'relay') tip('relay', 'Relay captured: the defenses it powered have gone dark.');
           if (s.type === 'command') tip('command', 'Command node taken: the Dominion loses an attack front.');
@@ -678,27 +692,53 @@ function processNotices() {
       case 'collapse': {
         const f = battle.factions[n.faction];
         if (n.faction === PLAYER) break;
-        toast(`${esc(f.name)} has collapsed${n.by === PLAYER ? ' — their capital is yours' : ''}.`, n.by === PLAYER ? 'good' : '');
-        if (n.by === PLAYER) sfx.capture();
         const cap = battle.sites.find(s => s.faction === n.faction && (s.type === 'capital' || s.type === 'citadel'));
-        if (cap) { renderer.ring(cap.x, cap.y, '#ffd25e', 16); renderer.burst(cap.x, cap.y, '#ffd25e', 24); }
+        if (n.by === PLAYER) {
+          banner(`${cap ? cap.name : f.name} captured`, `${f.name} has collapsed`, f.kind === 'enemy');
+          if (f.kind === 'enemy') sfx.fanfare(); else sfx.capture();
+        } else toast(`${esc(f.name)} has collapsed.`);
+        if (cap) {
+          renderer.ring(cap.x, cap.y, '#ffd25e', 16); renderer.burst(cap.x, cap.y, '#ffd25e', 24);
+          if (n.by === PLAYER) { renderer.ring(cap.x, cap.y, '#ffffff', 28); renderer.shake(0.3, 3); }
+        }
         break;
       }
       case 'repelled': toast(`Attack by ${esc(battle.factions[n.attacker].name)} repelled.`, 'good', 2600); break;
-      case 'objective': { const o = cfg.objectives.find(x => x.id === n.id); toast(`Objective complete: ${esc(o.label)} <b>+${o.reward}</b>`, 'good'); sfx.objective(); break; }
-      case 'eventStart': toast(EVENT_TEXT[n.type].start, 'tip', 4500); sfx.alarm(); break;
-      case 'built': sfx.build(); renderer.ring(n.x, n.y, '#3fd0ff', 5); break;
+      case 'objective': {
+        const o = cfg.objectives.find(x => x.id === n.id);
+        toast(`Objective complete: ${esc(o.label)} <b>+${o.reward}</b>`, 'good'); sfx.objective();
+        const cap = battle.sites.find(s => s.id === 'player-capital');
+        if (cap) renderer.pop(cap.x, cap.y - 3, `+${o.reward} cores`, '#ffd25e');
+        break;
+      }
+      case 'eventStart':
+        toast(EVENT_TEXT[n.type].start, 'tip', 4500); sfx.alarm();
+        if (n.type === 'eruption') {
+          // The ground shakes and every vent and volcano throws up magma.
+          sfx.rumble();
+          renderer.shake(0.6, 4);
+          for (const s of battle.sites.filter(x => x.type === 'vent')) { renderer.burst(s.x, s.y, '#ff7a1f', 18); renderer.burst(s.x, s.y, '#ffd25e', 8); }
+        }
+        break;
+      case 'built':
+        sfx.build(); renderer.ring(n.x, n.y, '#3fd0ff', 5);
+        if (n.owner === PLAYER && n.cost) renderer.pop(n.x, n.y, `-${fmt(n.cost)} minerals`, '#c9b8ff');
+        break;
       case 'tutorial': sfx.objective(); break;
       case 'research': toast(`Research complete: ${esc(RESEARCH[n.id].name)}.`, 'good'); break;
-      case 'landed': if (n.owner === PLAYER) { toast('Dropship landed. Beachhead established.', 'good'); renderer.burst(n.x, n.y, '#3fd0ff'); } break;
+      case 'landed':
+        if (n.owner === PLAYER) { toast('Dropship landed. Beachhead established.', 'good'); renderer.crashLanding(n.x, n.y, { small: true, color: battle.factions[PLAYER].color }); }
+        break;
       case 'dropFailed': if (n.owner === PLAYER) toast('The dropship was shot down on landing. Send more troops.', 'bad'); break;
       case 'strike': renderer.burst(n.x, n.y, '#ff7a1f', 40); renderer.ring(n.x, n.y, '#ffd25e', 8); sfx.ability(); break;
       case 'emp': renderer.ring(n.x, n.y, '#7fd8ff', 10); sfx.ability(); break;
       case 'start': {
-        toast('Landing complete. Expand into the wilderness!', 'good');
-        // Bring the camera in over the landing zone, like a real landing.
+        // Bring the camera in over the landing zone and crash-land the colony ship.
         if (renderer.cam.zoom < 4) renderer.zoomBy(1);
         centerOnCapital();
+        const cap = battle.sites.find(s => s.id === 'player-capital');
+        if (cap) renderer.crashLanding(cap.x, cap.y, { owner: PLAYER, color: battle.factions[PLAYER].color });
+        setTimeout(() => toast('Landing complete. Expand into the wilderness!', 'good'), 1200);
         break;
       }
       default:
@@ -796,7 +836,7 @@ function clickTile(i) {
   else if (battle.owner[i] === PLAYER) { inspectTile = inspectTile === i ? -1 : i; sfx.click(); return; }
   else {
     res = playerAttack(battle, i, ratio);
-    if (res.ok) { sfx.attack(); if (!lastPointerTouch) inspectTile = i; tip('ratio', 'Troops regrow fastest when your army is well below its cap. Big attacks are not wasted.'); }
+    if (res.ok) { sfx.attack(); renderer.pop(x, y, `-${fmt(res.sent)}`, '#ffe9a8'); if (!lastPointerTouch) inspectTile = i; tip('ratio', 'Troops regrow fastest when your army is well below its cap. Big attacks are not wasted.'); }
   }
   if (res && !res.ok) { sfx.error(); toast(REASONS[res.reason] || 'You cannot do that.', 'bad', 2600); }
   else if (res && res.ok && armed && armed.kind !== 'dropship') armed = null;
@@ -908,6 +948,9 @@ function frame(ts) {
     while (accumulator >= TICK) { step(battle, TICK); accumulator -= TICK; }
   }
   processNotices();
+  // Soft ticks while your border advances.
+  if (battle.stats.conquered > lastConquered && battle.attacks.some(a => a.attacker === PLAYER)) sfx.tick();
+  lastConquered = battle.stats.conquered;
   if (battle.status === 'won' || battle.status === 'lost') {
     if (!endTimer) { endTimer = ts; sfx[battle.status === 'won' ? 'victory' : 'defeat'](); toast(battle.status === 'won' ? '<b>PLANET CONQUERED</b>' : '<b>YOUR CIVILIZATION HAS FALLEN</b>', battle.status === 'won' ? 'good' : 'bad', 2000); }
     if (battle.status === 'won' && Math.random() < 0.3) { const cap = battle.sites.find(s => s.id === 'enemy-capital'); if (cap) renderer.burst(cap.x + (Math.random() - 0.5) * 30, cap.y + (Math.random() - 0.5) * 20, ['#ffd25e', '#7ff0c8', '#ff6ad2'][Math.floor(Math.random() * 3)], 6); }
@@ -922,7 +965,7 @@ function frame(ts) {
     hoverOwner: hoverTile >= 0 ? battle.owner[hoverTile] : 0,
     inspectOwner: inspectTile >= 0 ? battle.owner[inspectTile] : 0,
     highlights: new Set(cur?.highlight ? [cur.highlight] : []),
-    pointer: battle.status === 'playing' && tutorialStep(battle) ? tutPointer : null,
+    pointer: battle.status === 'playing' && !renderer.holdOwner && tutorialStep(battle) ? tutPointer : null,
   });
   updateHud();
   if (ts - lastSave > 5000) saveBattle();
@@ -943,6 +986,7 @@ async function init() {
     resume: () => { adPlaying = false; setAdMute(false); lastFrame = 0; },
   });
   renderer = new MapRenderer($('#canvas'));
+  renderer.onImpact = small => (small ? sfx.thud() : sfx.crash());
   applyIcons();
   // Menus sit on a dimmed pixel starfield.
   $('#app').style.backgroundImage = `linear-gradient(rgba(6,5,12,0.55), rgba(6,5,12,0.75)), url(${backdropCanvas('noctyra', 320, 180).toDataURL()})`;

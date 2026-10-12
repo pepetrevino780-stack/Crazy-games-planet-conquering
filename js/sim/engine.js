@@ -288,7 +288,7 @@ export function playerBuild(state, type, i) {
   const x = i % state.w, y = (i - x) / state.w;
   state.buildings.push({ id: state.nextId++, type, x, y });
   state.flags['built_' + type] = true;
-  notice(state, 'built', { building: type, x, y, owner: PLAYER });
+  notice(state, 'built', { building: type, x, y, owner: PLAYER, cost });
   return { ok: true };
 }
 

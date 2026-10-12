@@ -85,7 +85,10 @@ Readability comes first:
 - Ownership is shown by colour, borders and patterns (the player's land is striped, the main enemy's is dotted).
 - Labels are sized by empire and never overlap.
 - A strategic view flattens the terrain.
-- Reduced motion turns off particles and pulsing.
+- Big moments get feedback: the colony ship crash-lands (debris, shockwave, crater, screen shake), dropships
+  touch down the same way in miniature, your advancing front pulses and ticks, eruptions shake the ground,
+  captured capitals get a banner and fanfare, and troops, costs and rewards float up as numbers.
+- Reduced motion turns off particles, pulsing and screen shake.
 
 ## Adding content
 
