@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Art preview</title>
+<style>body{background:#05050c;color:#ccc;font:12px monospace;margin:8px}canvas,img{image-rendering:pixelated;margin:4px;vertical-align:top}</style>
+<div id="out"></div>
+<script type="module">
+// Dev-only sheet of every generated sprite, icon, sky and orb.
+import { SPRITES, ICONS, spriteCanvas, iconURL } from '../js/art/sprites.js';
+import { backdropCanvas, planetOrb, titleScene } from '../js/art/backdrop.js';
+const out = document.getElementById('out');
+const big = (cv, s) => { const c = document.createElement('canvas'); c.width = cv.width * s; c.height = cv.height * s; const x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.drawImage(cv, 0, 0, c.width, c.height); return c; };
+out.append(big(titleScene(), 3), document.createElement('br'));
+for (const p of ['vulkara', 'cryonis', 'mycelion', 'xythera', 'noctyra']) out.append(big(backdropCanvas(p, 240, 135), 2));
+out.append(document.createElement('br'));
+for (const p of ['vulkara', 'cryonis', 'mycelion', 'xythera', 'noctyra']) out.append(big(planetOrb(p, 48), 3));
+out.append(document.createElement('br'));
+for (const col of ['#3fd0ff', '#ff4b3e', '#8a8478']) { for (const n of Object.keys(SPRITES)) out.append(big(spriteCanvas(n, col), 4)); out.append(document.createElement('br')); }
+for (const n of Object.keys(ICONS)) { const i = document.createElement('img'); i.src = iconURL(n, 4); i.title = n; out.append(i); }
+</script>
