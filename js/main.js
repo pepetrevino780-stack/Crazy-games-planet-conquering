@@ -2,7 +2,7 @@
 import { PLANETS, getPlanet, skirmishConfig, BUILDINGS, RESEARCH, SITE_TYPES, PERSONAS } from './campaign.js';
 import {
   newCampaign, loadCampaign, saveCampaign, isUnlocked, UPGRADES, CIVS, ABILITIES, upgradeCost,
-  buyUpgrade, unlockCiv, playerLoadout, computeRewards, applyVictory, applyDefeat, assistLevel,
+  buyUpgrade, unlockCiv, playerLoadout, computeRewards, applyVictory, applyDefeat, assistLevel, starsFor,
 } from './progression.js';
 import {
   createBattle, step, spawnPlayer, canSpawnAt, playerAttack, playerDropship, playerBuild,
@@ -167,7 +167,7 @@ function renderCampaign() {
     const status = !unlocked ? `Conquer ${PLANETS[i - 1].name} to unlock`
       : rec.completed ? `Conquered · best ${fmtTime(rec.bestTime)}<br>${objs}`
       : rec.attempts ? `${rec.defeats} defeat${rec.defeats === 1 ? '' : 's'} · ${objs}` : esc(p.title);
-    li.innerHTML = `<span class="step">${i + 1}/5</span><h3>${esc(p.name)}</h3><div class="lesson">${esc(p.lesson)}</div><div class="status">${status}</div>
+    li.innerHTML = `<span class="step">${i + 1}/5</span>${rec.completed ? starRow(rec.stars || 1) : ''}<h3>${esc(p.name)}</h3><div class="lesson">${esc(p.lesson)}</div><div class="status">${status}</div>
       <button class="btn ${unlocked && !rec.completed ? 'primary' : ''}" ${unlocked ? '' : 'disabled'}>${rec.completed ? 'Replay' : 'Invade'}</button>`;
     li.insertBefore(orbCanvas(p.theme), li.querySelector('h3'));
     li.querySelector('button').onclick = () => openBriefing({ configId: p.id });
@@ -309,14 +309,78 @@ function resumeBattle() {
   toast('Battle resumed.', 'good');
 }
 
+const starRow = (n, max = 3) => `<span class="stars" aria-label="${n} of ${max} stars">${'★'.repeat(n)}<span class="off">${'★'.repeat(max - n)}</span></span>`;
+
+// Land share over time for every civilization, as a small pixel chart.
+function landChart(state) {
+  const hist = state.history || [];
+  const cvs = document.createElement('canvas');
+  const d = Math.max(1, Math.round(window.devicePixelRatio || 1));
+  const W = 480, H = 150;
+  cvs.width = W * d; cvs.height = H * d;
+  cvs.className = 'land-chart';
+  const ctx = cvs.getContext('2d');
+  ctx.scale(d, d);
+  ctx.fillStyle = '#0d0b18'; ctx.fillRect(0, 0, W, H);
+  const land = world(state).landCount;
+  const pad = { l: 34, r: 8, t: 8, b: 18 };
+  const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
+  let top = 0;
+  for (const row of hist) for (const v of row) top = Math.max(top, v / land);
+  top = Math.max(0.1, Math.ceil(top * 10) / 10);
+  ctx.font = '10px "Silkscreen", monospace'; ctx.fillStyle = '#8f88b0'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let k = 0; k <= 2; k++) {
+    const y = pad.t + ch - (ch * k) / 2;
+    ctx.fillStyle = '#231f3a'; ctx.fillRect(pad.l, Math.round(y), cw, 1);
+    ctx.fillStyle = '#8f88b0'; ctx.fillText(`${Math.round((top * 100 * k) / 2)}%`, pad.l - 4, y);
+  }
+  ctx.textAlign = 'left'; ctx.fillText('0:00', pad.l, H - 8);
+  ctx.textAlign = 'right'; ctx.fillText(fmtTime(Math.max(0, (hist.length - 1) * 5)), W - pad.r, H - 8);
+  if (hist.length < 2) return cvs;
+  const n = hist[0].length;
+  // Draw nations first, then the main enemy, then you on top.
+  const order = [...Array(n).keys()].filter(i => state.factions[i]).sort((a, b) => {
+    const rank = f => (f.id === PLAYER ? 2 : f.kind === 'enemy' ? 1 : 0);
+    return rank(state.factions[a]) - rank(state.factions[b]);
+  });
+  for (const i of order) {
+    const f = state.factions[i];
+    const lw = f.id === PLAYER ? 3 : f.kind === 'enemy' ? 2 : 1;
+    ctx.fillStyle = f.kind === 'nation' ? mixHex(f.color, '#0d0b18', 0.45) : f.color;
+    for (let k = 0; k < hist.length; k++) {
+      const x = pad.l + Math.round((k / (hist.length - 1)) * (cw - lw));
+      const y = pad.t + ch - Math.round(((hist[k][i] || 0) / land / top) * ch);
+      const y2 = k + 1 < hist.length ? pad.t + ch - Math.round(((hist[k + 1][i] || 0) / land / top) * ch) : y;
+      const x2 = k + 1 < hist.length ? pad.l + Math.round(((k + 1) / (hist.length - 1)) * (cw - lw)) : x + lw;
+      ctx.fillRect(x, Math.min(y, y2), Math.max(lw, x2 - x), Math.abs(y2 - y) + lw);
+    }
+  }
+  return cvs;
+}
+
+function battleStats(state, result) {
+  const items = [
+    ['Time', fmtTime(result.time)],
+    ['Peak land', `${((result.peakTiles / world(state).landCount) * 100).toFixed(1)}%`],
+    ['Battles won', result.battlesWon],
+    ['Enemies defeated', result.defeated],
+    ['Attacks repelled', result.repelled],
+  ];
+  return `<div class="stat-grid">${items.map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('')}</div>`;
+}
+
 function endBattle() {
   gameplayStop();
   const cfg = config(battle);
   const won = battle.status === 'won';
   const body = $('#debrief-body');
+  const result = battleResult(battle);
+  const chart = landChart(battle);
+  const replayRef = cfg.skirmish ? { configId: 'skirmish', theme: battle.theme, worldSeed: battle.seed } : { configId: cfg.id };
+  $('#btn-debrief-replay').onclick = () => openBriefing(replayRef);
   $('#debrief-icon').src = iconURL(won ? 'victory' : 'defeat', 4);
   if (won) {
-    const result = battleResult(battle);
+    const stars = starsFor(cfg, result);
     const rewards = computeRewards(campaign, cfg, result);
     applyVictory(campaign, cfg, result, rewards);
     persist();
@@ -326,21 +390,24 @@ function endBattle() {
     $('#debrief-title').textContent = `${cfg.skirmish ? 'World' : cfg.name} conquered`;
     $('#debrief-sub').textContent = `${cfg.lesson} · ${fmtTime(result.time)}`;
     const bonus = Math.ceil(rewards.total / 2);
-    body.innerHTML = `<table class="reward-table">${rewards.lines.map(l => `<tr><td>${esc(l.label)}</td><td>+${l.value}</td></tr>`).join('')}
+    body.innerHTML = `<div class="star-box">${starRow(stars.count)}<div class="star-marks">${stars.marks.map(m => `<span class="${m.got ? 'got' : ''}">${m.got ? '★' : '☆'} ${esc(m.label)}</span>`).join('')}</div></div>
+      ${battleStats(battle, result)}<div class="chart-slot"></div>
+      <table class="reward-table">${rewards.lines.map(l => `<tr><td>${esc(l.label)}</td><td>+${l.value}</td></tr>`).join('')}
       <tr class="total"><td>Stellar Cores earned</td><td>+${rewards.total}</td></tr></table>
       ${platformActive() ? `<p class="reward-ad"><button id="btn-reward-ad" class="btn">Watch an ad: +${bonus} bonus cores</button></p>` : ''}
       <h3>Skills proven</h3><ul class="bullets">${cfg.lessons.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
-      ${next ? `<p class="note">Next: <b>${esc(next.name)}</b> — ${esc(next.lesson)}. Spend your cores on upgrades first.</p>` : ''}`;
+      ${next ? `<div class="next-world panel"><div class="next-orb"></div><div><small>NEXT WORLD</small><b>${esc(next.name)}: ${esc(next.title)}</b><p>${esc(next.lesson)}. ${esc(next.tagline)}</p></div></div>` : ''}`;
+    if (next) body.querySelector('.next-orb').appendChild(orbCanvas(next.theme, 56));
     const adBtn = $('#btn-reward-ad');
     if (adBtn) adBtn.onclick = async () => {
       adBtn.disabled = true;
       if (await rewardedAd()) { campaign.cores += bonus; campaign.totalEarned += bonus; persist(); adBtn.textContent = `+${bonus} bonus cores added`; }
       else adBtn.textContent = 'No ad available right now';
     };
-    $('#btn-debrief-primary').textContent = 'Command upgrades';
-    $('#btn-debrief-primary').onclick = () => show('upgrades');
-    $('#btn-debrief-secondary').textContent = next ? `Brief ${next.name}` : cfg.skirmish ? 'New skirmish' : 'Campaign';
-    $('#btn-debrief-secondary').onclick = () => (next ? openBriefing({ configId: next.id }) : show(cfg.skirmish ? 'skirmish' : 'campaign'));
+    $('#btn-debrief-primary').textContent = next ? `Next: ${next.name}` : cfg.skirmish ? 'New skirmish' : 'Campaign';
+    $('#btn-debrief-primary').onclick = () => (next ? openBriefing({ configId: next.id }) : show(cfg.skirmish ? 'skirmish' : 'campaign'));
+    $('#btn-debrief-secondary').textContent = 'Command upgrades';
+    $('#btn-debrief-secondary').onclick = () => show('upgrades');
   } else {
     const tips = analyzeDefeat(battle);
     applyDefeat(campaign, cfg);
@@ -348,7 +415,7 @@ function endBattle() {
     const assist = cfg.skirmish ? 0 : assistLevel(campaign, cfg.id);
     $('#debrief-title').textContent = 'Your civilization has fallen';
     $('#debrief-sub').textContent = `${cfg.skirmish ? 'Skirmish' : cfg.name} · ${fmtTime(battle.time)} · ${cfg.lesson}`;
-    body.innerHTML = `<h3>What went wrong</h3><ul class="bullets">${tips.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+    body.innerHTML = `${battleStats(battle, result)}<div class="chart-slot"></div><h3>What went wrong</h3><ul class="bullets">${tips.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
       <h3>This world tests</h3><ul class="bullets">${cfg.lessons.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
       ${assist ? `<p class="assist">Adaptive assist ${assist}/3 active for your next attempt.</p>` : ''}`;
     const ref = { configId: battle.configId, theme: battle.theme, worldSeed: battle.seed };
@@ -357,6 +424,8 @@ function endBattle() {
     $('#btn-debrief-secondary').textContent = cfg.skirmish ? 'Skirmish menu' : 'Campaign';
     $('#btn-debrief-secondary').onclick = () => show(cfg.skirmish ? 'skirmish' : 'campaign');
   }
+  body.querySelector('.chart-slot')?.appendChild(chart);
+  $('#btn-debrief-replay').classList.toggle('hidden', won === false);
   battle = null;
   battlesEnded++;
   show('debrief');

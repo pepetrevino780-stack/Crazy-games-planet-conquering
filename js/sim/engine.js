@@ -101,7 +101,10 @@ export function createBattle(configId, loadout, opts = {}) {
     stats: {
       attacks: 0, conquered: 0, spent: 0, failedAttacks: 0, repelled: 0, lost: 0, peakTiles: 0,
       stormLoss: 0, guardedTiles: 0, shieldBlocked: 0, cappedSeconds: 0, enemyFrontsPeak: 0, lostTo: null,
+      battlesWon: 0, defeated: 0,
     },
+    // Land per faction, sampled every 5 seconds, for the results chart.
+    history: [], historyAt: 0,
   });
   const w = world(state);
   const main = w.compSize.indexOf(Math.max(...w.compSize));
@@ -366,6 +369,7 @@ function endAttack(state, a, i) {
     notice(state, 'repelled', { attacker: a.attacker });
   }
   if (a.attacker === PLAYER && a.target && a.conquered < 5) state.stats.failedAttacks++;
+  if (a.attacker === PLAYER && a.target && a.conquered >= 5) state.stats.battlesWon = (state.stats.battlesWon || 0) + 1;
 }
 
 // Where an attack radiates from: the clicked tile, else the attacker's capital.
@@ -478,6 +482,7 @@ function collapse(state, fid, by) {
   }
   state.dropships = state.dropships.filter(d => d.owner !== fid);
   if (fid === PLAYER) state.stats.lostTo = by;
+  else if (by === PLAYER) state.stats.defeated = (state.stats.defeated || 0) + 1;
   notice(state, 'collapse', { faction: fid, by });
 }
 
@@ -581,6 +586,10 @@ export function step(state, dt = TICK) {
   if (p.troops >= maxTroops(state, p) * 0.97) state.stats.cappedSeconds += dt;
   const enemy = state.factions.find(f => f && f.kind === 'enemy');
   if (enemy && alive(enemy)) state.stats.enemyFrontsPeak = Math.max(state.stats.enemyFrontsPeak, (enemy.profile?.fronts || 1) + countSites(state, 'command', enemy.id));
+  if (state.history && state.time >= state.historyAt) {
+    state.history.push(state.factions.map(f => (f ? f.tiles : 0)));
+    state.historyAt += 5;
+  }
   if (state.tickCount % 3 === 0) {
     checkCapitals(state);
     for (const obj of cfg.objectives) {
@@ -642,6 +651,10 @@ export function battleResult(state) {
     time: Math.round(state.time),
     objectivesDone: [...state.objectivesDone],
     capitalThreatened: state.stats.lost > state.stats.peakTiles * 0.33,
+    peakTiles: state.stats.peakTiles,
+    battlesWon: state.stats.battlesWon || 0,
+    defeated: state.stats.defeated || 0,
+    repelled: state.stats.repelled,
   };
 }
 
@@ -672,6 +685,7 @@ export function deserialize(data) {
   if (!data || data.v !== STATE_VERSION || typeof data.owner !== 'string') return null;
   try {
     const state = { ...data, owner: fromB64(data.owner), notices: [] };
+    if (!Array.isArray(state.history)) { state.history = []; state.historyAt = state.time; }
     if (state.owner.length !== state.w * state.h) return null;
     config(state);
     world(state);

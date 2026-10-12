@@ -67,6 +67,9 @@ objectives with bonus rewards, contextual tips (can be turned off), and a field 
 **Permanent progression:**
 - Victories pay Stellar Cores, which buy upgrades, abilities and new player civilizations.
 - First clears pay in full; replays and skirmishes pay less.
+- The results screen charts every empire's land over the battle, lists time, peak land, battles won,
+  enemies defeated and attacks repelled, previews the next world and offers a replay.
+- Each victory earns up to 3 stars (win, all objectives, under par time). Your best is shown on the campaign map.
 
 **Saving:**
 - The campaign and the battle in progress autosave every 5 seconds, on pause, and when the tab closes.

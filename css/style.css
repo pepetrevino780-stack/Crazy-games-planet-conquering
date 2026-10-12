@@ -126,6 +126,23 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .debrief-head { display: flex; align-items: center; gap: 12px; }
 .debrief-head img { width: 36px; height: 36px; image-rendering: pixelated; }
 .debrief h2 { font-size: 26px; margin: 12px 0 4px; }
+/* Results screen */
+.stars { color: var(--gold); letter-spacing: 2px; font-size: 18px; }
+.stars .off { color: #3a3456; }
+.planet .stars { position: absolute; top: 6px; right: 10px; font-size: 15px; }
+.star-box { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 10px 0; }
+.star-box .stars { font-size: 34px; }
+.star-marks { display: flex; flex-direction: column; font-size: 13px; color: var(--muted); }
+.star-marks .got { color: var(--gold); }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; margin: 10px 0; }
+.stat-grid div { background: rgba(21, 18, 42, 0.8); border: 1px solid var(--line); padding: 6px 8px; }
+.stat-grid small { display: block; color: var(--muted); font-size: 11px; }
+.stat-grid b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.land-chart { width: 100%; max-width: 480px; height: auto; aspect-ratio: 480 / 150; image-rendering: pixelated; border: 1px solid var(--line); display: block; }
+.next-world { display: flex; gap: 12px; align-items: center; padding: 10px; margin: 10px 0; }
+.next-world small { color: var(--muted); font-family: var(--font-head); font-size: 11px; display: block; }
+.next-world p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.next-orb canvas { width: 56px; height: 56px; image-rendering: pixelated; display: block; }
 .reward-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-variant-numeric: tabular-nums; }
 .reward-table td { padding: 7px 4px; border-bottom: 1px solid var(--line); }
 .reward-table td:last-child { text-align: right; color: var(--gold); white-space: nowrap; }

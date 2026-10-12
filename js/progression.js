@@ -43,7 +43,7 @@ export function newCampaign() {
     upgrades: Object.fromEntries(UPGRADES.map(u => [u.id, 0])),
     civ: 'terran',
     civsUnlocked: ['terran'],
-    planets: Object.fromEntries(PLANETS.map(p => [p.id, { completed: false, attempts: 0, defeats: 0, bestTime: null, objectives: [] }])),
+    planets: Object.fromEntries(PLANETS.map(p => [p.id, { completed: false, attempts: 0, defeats: 0, bestTime: null, objectives: [], stars: 0 }])),
     settings: { difficulty: 'commander', tips: true, sound: true, labels: true, simple: false, motion: false, playerColor: 'civ' },
     battle: null, // in-progress battle snapshot
   };
@@ -74,6 +74,7 @@ export function normalizeCampaign(raw) {
     t.defeats = Number.isInteger(rp.defeats) ? rp.defeats : 0;
     t.bestTime = Number.isFinite(rp.bestTime) ? rp.bestTime : null;
     t.objectives = Array.isArray(rp.objectives) ? rp.objectives.filter(o => typeof o === 'string') : [];
+    t.stars = Number.isInteger(rp.stars) ? Math.max(0, Math.min(3, rp.stars)) : t.completed ? 1 : 0;
   }
   if (raw.settings && DIFFICULTIES[raw.settings.difficulty]) c.settings.difficulty = raw.settings.difficulty;
   for (const k of ['tips', 'sound', 'labels', 'simple', 'motion']) {
@@ -149,6 +150,21 @@ export function playerLoadout(campaign) {
   };
 }
 
+// Par time for the swift-victory bonus and the third star.
+export function parTime(planet) {
+  return 420 + 90 * Math.max(0, PLANETS.indexOf(planet));
+}
+
+// Stars for a victory: one for winning, one for every objective, one for beating par.
+export function starsFor(planet, result) {
+  const marks = [
+    { label: 'Victory', got: true },
+    { label: 'All objectives', got: planet.objectives.every(o => result.objectivesDone.includes(o.id)) },
+    { label: `Under ${Math.floor(parTime(planet) / 60)}:${String(parTime(planet) % 60).padStart(2, '0')}`, got: result.time <= parTime(planet) },
+  ];
+  return { count: marks.filter(m => m.got).length, marks };
+}
+
 // Rewards for a finished battle. First clears pay in full; replays pay a
 // smaller amount so earlier planets can be revisited without grinding them.
 export function computeRewards(campaign, planet, result) {
@@ -166,7 +182,7 @@ export function computeRewards(campaign, planet, result) {
     lines.push({ label: obj.label, value: obj.reward });
     total += obj.reward;
   }
-  const par = 420 + 90 * Math.max(0, PLANETS.indexOf(planet));
+  const par = parTime(planet);
   if (result.time <= par) {
     const speed = Math.round(planet.rewards.base * 0.2);
     lines.push({ label: `Swift victory (under ${Math.floor(par / 60)}:${String(par % 60).padStart(2, '0')})`, value: speed });
@@ -185,6 +201,7 @@ export function applyVictory(campaign, planet, result, rewards) {
     record.completed = true;
     record.bestTime = record.bestTime === null ? result.time : Math.min(record.bestTime, result.time);
     for (const o of result.objectivesDone) if (!record.objectives.includes(o)) record.objectives.push(o);
+    record.stars = Math.max(record.stars || 0, starsFor(planet, result).count);
   }
   campaign.cores += rewards.total;
   campaign.totalEarned += rewards.total;

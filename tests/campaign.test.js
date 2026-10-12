@@ -14,7 +14,7 @@ import { generateWorld, components } from '../js/world/generate.js';
 import { THEMES, THEME_IDS, isLand, T } from '../js/world/themes.js';
 import {
   newCampaign, normalizeCampaign, loadCampaign, saveCampaign, playerLoadout, computeRewards,
-  applyVictory, applyDefeat, assistLevel, buyUpgrade, unlockCiv, isUnlocked, SAVE_KEY,
+  applyVictory, applyDefeat, assistLevel, buyUpgrade, unlockCiv, isUnlocked, SAVE_KEY, starsFor, parTime,
 } from '../js/progression.js';
 
 const loadout = (mut = c => c) => playerLoadout(mut(newCampaign()));
@@ -389,6 +389,27 @@ test('Vulkara training advances step by step, unlocks tools, and survives a save
   // Replays and other worlds have no training.
   assert.equal(tutorialStep(battle('vulkara', { tutorial: false })), null);
   assert.equal(tutorialStep(battle('cryonis')), null);
+});
+
+test('results: land history, battle stats and stars', () => {
+  const s = battle('vulkara', { playerProfile: 'mastermind' });
+  advance(s, 60);
+  assert.ok(s.history.length >= 12, `sampled every 5s (${s.history.length})`);
+  assert.equal(s.history[0].length, s.factions.length);
+  const r = battleResult(s);
+  for (const k of ['peakTiles', 'battlesWon', 'defeated', 'repelled']) assert.ok(Number.isFinite(r[k]), k);
+  const v = getPlanet('vulkara');
+  const all = v.objectives.map(o => o.id);
+  assert.equal(starsFor(v, { time: parTime(v) - 1, objectivesDone: all }).count, 3);
+  assert.equal(starsFor(v, { time: parTime(v) + 1, objectivesDone: all }).count, 2);
+  assert.equal(starsFor(v, { time: parTime(v) + 1, objectivesDone: [] }).count, 1);
+  const c = newCampaign();
+  applyVictory(c, v, { time: parTime(v) + 1, objectivesDone: all }, { total: 0 });
+  applyVictory(c, v, { time: parTime(v) + 1, objectivesDone: [] }, { total: 0 });
+  assert.equal(c.planets.vulkara.stars, 2, 'best stars are kept');
+  assert.equal(normalizeCampaign(JSON.parse(JSON.stringify(c))).planets.vulkara.stars, 2);
+  const old = deserialize({ ...serialize(s), history: undefined });
+  assert.deepEqual(old.history, [], 'older saves gain an empty history');
 });
 
 test('config lookups resolve for campaign and skirmish states', () => {
