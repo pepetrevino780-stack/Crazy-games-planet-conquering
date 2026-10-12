@@ -135,17 +135,24 @@ function orbCanvas(theme, size = 48) {
 // ---------- Menus ----------
 
 let titleArt = null;
+function hasProgress() {
+  return !!campaign && (!!campaign.battle || campaign.totalEarned > 0 || Object.values(campaign.planets).some(p => p.attempts > 0));
+}
+
 function renderTitle() {
   if (!titleArt) {
     titleArt = titleScene(320, 180).toDataURL();
     $('#screen-title').style.backgroundImage = `url(${titleArt})`;
   }
-  const has = !!campaign;
-  $('#btn-continue').textContent = has ? 'Continue campaign' : 'Start campaign';
-  $('#btn-new').classList.toggle('hidden', !has);
+  // One clear primary action: resume the saved battle, else continue, else start.
   const b = campaign?.battle;
+  const started = hasProgress();
   $('#btn-resume').classList.toggle('hidden', !b);
-  if (b) $('#btn-resume').textContent = `Resume battle (${battleName(b)}, ${fmtTime(b.time)})`;
+  if (b) $('#btn-resume').textContent = `Resume: ${battleName(b)} ${fmtTime(b.time)}`;
+  const cont = $('#btn-continue');
+  cont.textContent = b ? 'Campaign map' : started ? 'Continue campaign' : 'Start campaign';
+  cont.classList.toggle('primary', !b);
+  $('#btn-new').classList.toggle('hidden', !started);
 }
 
 const battleName = b => (b.configId === 'skirmish' ? `Skirmish: ${THEMES[b.theme].name}` : getPlanet(b.configId).name);
@@ -1117,10 +1124,22 @@ async function init() {
   document.querySelectorAll('[data-nav]').forEach(b => { b.onclick = () => { sfx.click(); show(b.dataset.nav); }; });
   document.querySelectorAll('[data-open="settings"]').forEach(b => { b.onclick = openSettings; });
   $('#btn-settings-close').onclick = closeSettings;
-  $('#btn-continue').onclick = () => { if (!campaign) { campaign = newCampaign(); persist(); } show('campaign'); };
+  $('#btn-continue').onclick = () => {
+    const fresh = !hasProgress();
+    if (!campaign) { campaign = newCampaign(); persist(); }
+    // A brand-new player goes straight to the first briefing.
+    if (fresh) openBriefing({ configId: PLANETS[0].id }); else show('campaign');
+  };
   $('#btn-skirmish').onclick = () => { if (!campaign) { campaign = newCampaign(); persist(); } show('skirmish'); };
   $('#btn-skirmish-reroll').onclick = () => { skirmishSeed = 1 + Math.floor(Math.random() * 99999); $('#skirmish-seed').value = skirmishSeed; };
-  $('#btn-new').onclick = async () => { if (await confirmBox('Start a new campaign? All progress, upgrades and cores will be lost.')) { campaign = newCampaign(); persist(); show('campaign'); } };
+  $('#btn-new').onclick = async () => {
+    if (!(await confirmBox('Start a new game? Your campaign progress, upgrades, cores and any saved battle will be lost.'))) return;
+    const settings = campaign?.settings;
+    campaign = newCampaign();
+    if (settings) campaign.settings = settings; // keep sound, colour and accessibility choices
+    persist();
+    openBriefing({ configId: PLANETS[0].id });
+  };
   $('#btn-resume').onclick = resumeBattle;
   $('#btn-resume-campaign').onclick = resumeBattle;
   $('#btn-upgrades').onclick = () => show('upgrades');
