@@ -77,49 +77,44 @@ export class MapRenderer {
     if (this.state) this.clamp();
   }
 
-  // Largest integer zoom that shows the whole map in the free area.
-  fitZoom() {
-    const i = this.insets, d = this.dpr;
-    const aw = (this.cssW - i.left - i.right) * d, ah = (this.cssH - i.top - i.bottom) * d;
-    return Math.max(1, Math.floor(Math.min(aw / this.W, ah / this.H)));
+  // Smallest zoom that covers the whole window with map (rounded up to a
+  // whole number so pixels stay crisp; the slight overflow can be panned).
+  minZoom() {
+    const d = this.dpr;
+    return Math.max(1, Math.ceil(Math.max((this.cssW * d) / this.W, (this.cssH * d) / this.H) - 0.02));
   }
 
   fit() {
     if (!this.cssW) return;
-    // Small screens fill the view (and pan) rather than shrinking the map.
-    const i = this.insets, d = this.dpr;
-    const aw = (this.cssW - i.left - i.right) * d, ah = (this.cssH - i.top - i.bottom) * d;
-    const exact = Math.min(aw / this.W, ah / this.H);
-    this.cam.zoom = exact < 1.6 ? Math.max(1, Math.ceil(Math.max(aw / this.W, ah / this.H) * 0.75)) : this.fitZoom();
+    this.cam.zoom = this.minZoom();
     this.cam.cx = this.W / 2; this.cam.cy = this.H / 2;
     this.clamp();
   }
 
-  // Screen centre of the free area, in device pixels.
-  centre() {
-    const i = this.insets, d = this.dpr;
-    return { x: (i.left + (this.cssW - i.left - i.right) / 2) * d, y: (i.top + (this.cssH - i.top - i.bottom) / 2) * d };
-  }
-
+  // The map is laid out against the full window; HUD insets only decide
+  // where "centre" is (the free area between panels) and how far the map
+  // may be panned so land can be pulled out from under a panel.
   origin() {
-    const c = this.centre();
-    return { x: Math.round(c.x - this.cam.cx * this.cam.zoom), y: Math.round(c.y - this.cam.cy * this.cam.zoom) };
+    const d = this.dpr;
+    return { x: Math.round((this.cssW * d) / 2 - this.cam.cx * this.cam.zoom), y: Math.round((this.cssH * d) / 2 - this.cam.cy * this.cam.zoom) };
   }
 
-  // Keep the map filling the view when it is larger than the screen;
-  // centre it when it is smaller.
-  clamp() {
-    const { W, H } = this, i = this.insets, d = this.dpr, z = this.cam.zoom;
-    const vw = ((this.cssW - i.left - i.right) * d) / z, vh = ((this.cssH - i.top - i.bottom) * d) / z;
-    // Allow panning past the edges far enough to clear the HUD panels.
-    const margin = Math.max(6, Math.min(vw, vh) * 0.45);
-    this.cam.cx = vw >= W ? W / 2 : Math.max(vw / 2 - margin, Math.min(W - vw / 2 + margin, this.cam.cx));
-    this.cam.cy = vh >= H ? H / 2 : Math.max(vh / 2 - margin, Math.min(H - vh / 2 + margin, this.cam.cy));
+  // strict: keep the map covering the whole window (automatic camera moves).
+  // Otherwise the player may drag the edge out from under a HUD panel.
+  clamp(strict = false) {
+    const { W, H } = this, d = this.dpr;
+    const i = strict ? { top: 0, right: 0, bottom: 0, left: 0 } : this.insets;
+    this.cam.zoom = Math.max(this.minZoom(), this.cam.zoom);
+    const z = this.cam.zoom;
+    const vw = (this.cssW * d) / z, vh = (this.cssH * d) / z;
+    const lo = x => x * d / z;
+    this.cam.cx = Math.max(vw / 2 - lo(i.left), Math.min(W - vw / 2 + lo(i.right), this.cam.cx));
+    this.cam.cy = Math.max(vh / 2 - lo(i.top), Math.min(H - vh / 2 + lo(i.bottom), this.cam.cy));
   }
 
   zoomBy(dir, sx, sy) {
     const z0 = this.cam.zoom;
-    const z1 = Math.max(1, Math.min(14, z0 + dir));
+    const z1 = Math.max(this.minZoom(), Math.min(16, z0 + dir));
     if (z1 === z0) return;
     // Keep the point under the cursor fixed.
     if (sx !== undefined) {
@@ -137,7 +132,13 @@ export class MapRenderer {
     this.clamp();
   }
 
-  centerOn(x, y) { this.cam.cx = x; this.cam.cy = y; this.clamp(); }
+  // Put a tile in the middle of the free area between the HUD panels.
+  centerOn(x, y) {
+    const i = this.insets, d = this.dpr, z = this.cam.zoom;
+    const dx = ((i.left - i.right) / 2) * d / z, dy = ((i.top - i.bottom) / 2) * d / z;
+    this.cam.cx = x - dx; this.cam.cy = y - dy;
+    this.clamp();
+  }
 
   screenToTileF(sxCss, syCss) {
     const o = this.origin();

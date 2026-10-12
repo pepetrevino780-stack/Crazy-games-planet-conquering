@@ -44,6 +44,7 @@ let seenAttacks = new Set();
 let lastFrame = 0, accumulator = 0, lastSave = 0, lastHud = 0;
 let endTimer = 0;
 let lastPointerTouch = false;
+let inspectorClosed = false;
 let briefingRef = null; // { configId, theme?, worldSeed? }
 let skirmishSeed = 1 + Math.floor(Math.random() * 99999);
 
@@ -486,7 +487,7 @@ function updateBoard() {
 function updateInspector() {
   const el = $('#inspector');
   const i = hoverTile >= 0 ? hoverTile : inspectTile;
-  if (!battle || i < 0 || battle.status === 'spawn') { el.classList.add('hidden'); return; }
+  if (!battle || i < 0 || battle.status === 'spawn' || (inspectorClosed && hoverTile < 0)) { el.classList.add('hidden'); return; }
   const w = world(battle);
   const t = w.terrain[i];
   const x = i % battle.w, y = (i - x) / battle.w;
@@ -521,7 +522,8 @@ function updateInspector() {
   }
   if (o !== PLAYER && isLand(t) && battle.status === 'playing') html += `<div class="tags">Click to attack with ${fmt(me.troops * ratio)} troops.</div>`;
   if (o === PLAYER) html += '<div class="tags">Your land. Press 1–5 to build here.</div>';
-  el.innerHTML = html;
+  el.innerHTML = '<button class="close" title="Close" aria-label="Close">x</button>' + html;
+  el.querySelector('.close').onclick = () => { inspectTile = -1; inspectorClosed = true; el.classList.add('hidden'); };
   el.classList.remove('hidden');
 }
 
@@ -529,6 +531,7 @@ function updateHud(force = false) {
   const now = performance.now();
   if (!force && now - lastHud < 120) return;
   lastHud = now;
+  renderer.insets = layoutHud();
   const f = battle.factions[PLAYER];
   const max = maxTroops(battle, f);
   const inc = income(battle, f);
@@ -611,7 +614,7 @@ function processNotices() {
       case 'start': {
         toast('Landing complete. Expand into the wilderness!', 'good');
         // Bring the camera in over the landing zone, like a real landing.
-        renderer.zoomBy(1);
+        if (renderer.cam.zoom < 4) renderer.zoomBy(1);
         centerOnCapital();
         break;
       }
@@ -695,6 +698,7 @@ function onUp(e) {
 }
 
 function clickTile(i) {
+  inspectorClosed = false;
   const x = i % battle.w, y = (i - x) / battle.w;
   if (battle.status === 'spawn') {
     if (spawnPlayer(battle, x, y)) { sfx.capture(); renderer.ring(x, y, '#7ff0c8', 12); toast('Landing site chosen. Click again to move it, or wait for touchdown.', 'good', 2500); }
@@ -779,19 +783,30 @@ function closeSettings() {
 
 // ---------- Main loop ----------
 
-function hudInsets() {
-  const W = window.innerWidth;
-  const top = $('.hud-top').getBoundingClientRect().bottom + 4;
+// Dock panels around the measured top bar and toolbar so nothing overlaps,
+// and tell the camera which strips of the window the HUD covers.
+function layoutHud() {
+  const scr = $('#screen-battle');
+  const H = window.innerHeight;
+  const top = Math.round($('.hud-top').getBoundingClientRect().bottom + 6);
   const tb = $('#toolbar').getBoundingClientRect();
+  const bottom = Math.round(H - tb.top + 6);
+  scr.style.setProperty('--hud-top', `${top}px`);
+  scr.style.setProperty('--hud-bottom', `${bottom}px`);
   const emp = $('#empire');
-  const left = W > 1000 && !emp.classList.contains('collapsed') ? emp.getBoundingClientRect().right + 4 : 0;
-  return { top, bottom: Math.max(0, window.innerHeight - tb.top + 4), left, right: 0 };
+  const empRect = emp.getBoundingClientRect();
+  const empOpen = !emp.classList.contains('collapsed');
+  scr.style.setProperty('--board-max', `${Math.max(120, (empOpen ? empRect.top : H - bottom) - top - 8)}px`);
+  const insp = $('#inspector');
+  const inspBottom = insp.classList.contains('hidden') ? top : insp.getBoundingClientRect().bottom + 6;
+  scr.style.setProperty('--toast-max', `${Math.max(60, H - bottom - inspBottom)}px`);
+  return { top, bottom, left: empOpen ? Math.round(empRect.right + 4) : 0, right: 0 };
 }
 
 function resize() {
   if (!battle) return;
   const c = $('#canvas');
-  renderer.resize(c.clientWidth, c.clientHeight, Math.min(window.devicePixelRatio || 1, 2), hudInsets());
+  renderer.resize(c.clientWidth, c.clientHeight, Math.min(window.devicePixelRatio || 1, 2), layoutHud());
 }
 
 function syncGameplay() {

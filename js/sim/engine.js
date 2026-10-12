@@ -207,7 +207,7 @@ export function spawnPlayer(state, x, y) {
 export function autoSpawn(state) {
   if (!state.sites.some(s => s.id === 'player-capital')) {
     const w = world(state);
-    const pts = placePoints(w, 1, { rand: rng(state.seed + 7), accept: (x, y) => x < state.w * 0.4 && canSpawnAt(state, x, y), score: x => -x * 0.3 });
+    const pts = placePoints(w, 1, { rand: rng(state.seed + 7), accept: (x, y) => x < state.w * 0.4 && canSpawnAt(state, x, y), score: x => -Math.abs(x - state.w * 0.2) * 0.4 });
     const p = pts[0] || placePoints(w, 1, { rand: rng(state.seed + 8), accept: (x, y) => canSpawnAt(state, x, y) })[0];
     spawnPlayer(state, p.x, p.y);
   }
