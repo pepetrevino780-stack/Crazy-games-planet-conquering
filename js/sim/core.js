@@ -7,7 +7,7 @@
 // front advances tile by tile, paying troops for each tile, until it runs out.
 import { TERRAIN, isLand } from '../world/themes.js';
 import { generateWorld } from '../world/generate.js';
-import { SITE_TYPES, BUILDINGS, getPlanet, skirmishConfig } from '../campaign.js';
+import { SITE_TYPES, BUILDINGS, getPlanet, skirmishConfig, UPGRADE_GROWTH } from '../campaign.js';
 
 export const TICK = 0.1;
 export const PLAYER = 1;
@@ -90,6 +90,19 @@ export function buildingsOf(state, owner, type) {
   return n;
 }
 
+// Sum of building levels (an upgraded building counts once per level).
+export function buildingLevels(state, owner, type) {
+  let n = 0;
+  for (const b of state.buildings) if (b.type === type && state.owner[b.y * state.w + b.x] === owner) n += b.level || 1;
+  return n;
+}
+
+export const bastionRadius = b => BUILDINGS.bastion.radius + 2 * ((b.level || 1) - 1);
+
+export function upgradeCost(b) {
+  return Math.round(BUILDINGS[b.type].cost * Math.pow(UPGRADE_GROWTH, b.level || 1));
+}
+
 export function buildCost(state, owner, type) {
   return Math.round(BUILDINGS[type].cost * Math.pow(1.4, buildingsOf(state, owner, type)));
 }
@@ -97,7 +110,7 @@ export function buildCost(state, owner, type) {
 // ---------- Faction numbers ----------
 
 export function maxTroops(state, f) {
-  const hab = Math.min(5, buildingsOf(state, f.id, 'habitat'));
+  const hab = Math.min(5, buildingLevels(state, f.id, 'habitat'));
   const logistics = f.research.includes('logistics') ? 0.1 : 0;
   return Math.round((400 + f.tiles * 5) * (1 + 0.12 * hab + logistics) * (f.maxMult || 1));
 }
@@ -128,8 +141,8 @@ export function income(state, f) {
     energy += st.energy || 0;
     exotic += st.exotic || 0;
   }
-  minerals += 4 * buildingsOf(state, f.id, 'extractor');
-  exotic += 0.5 * buildingsOf(state, f.id, 'spire');
+  minerals += 4 * buildingLevels(state, f.id, 'extractor');
+  exotic += 0.5 * buildingLevels(state, f.id, 'spire');
   return { minerals: minerals * (f.income || 1), energy, exotic };
 }
 
@@ -166,7 +179,7 @@ export function tileDefense(state, i) {
   }
   for (const b of state.buildings) {
     if (b.type !== 'bastion' || empActive(state, b) || state.owner[b.y * state.w + b.x] !== o) continue;
-    const r = BUILDINGS.bastion.radius;
+    const r = bastionRadius(b);
     if ((b.x - x) ** 2 + (b.y - y) ** 2 <= r * r) d *= eclipse ? 1.3 : 1.8;
   }
   return d * (state.factions[o]?.def || 1);

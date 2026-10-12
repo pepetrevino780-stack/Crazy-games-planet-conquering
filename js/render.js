@@ -491,7 +491,17 @@ export class MapRenderer {
     };
     for (const b of st.buildings) {
       const bo = st.owner[b.y * st.w + b.x];
-      drawSprite(b.type, b.x, b.y, bo ? st.factions[bo].color : NEUTRAL);
+      const r = drawSprite(b.type, b.x, b.y, bo ? st.factions[bo].color : NEUTRAL);
+      // Upgraded buildings carry gold level pips above the roof.
+      const lvl = b.level || 1;
+      if (lvl > 1 && z >= 2) {
+        const u = Math.max(2, sc);
+        for (let k = 0; k < lvl - 1; k++) {
+          const px = Math.round(r.p.x - ((lvl - 1) * (u * 2 + u)) / 2 + k * (u * 3)), py = Math.round(r.p.y - r.h - u * 3);
+          ctx.fillStyle = '#12060a'; ctx.fillRect(px - 1, py - 1, u * 2 + 2, u * 2 + 2);
+          ctx.fillStyle = '#ffd25e'; ctx.fillRect(px, py, u * 2, u * 2);
+        }
+      }
     }
     for (const s of st.sites) {
       const so = siteOwner(st, s);

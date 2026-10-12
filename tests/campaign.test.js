@@ -8,7 +8,7 @@ import {
 } from '../js/sim/engine.js';
 import {
   world, maxTroops, regen, borders, siteOwner, isShielded, isPowered, tileDefense, eventPhase, setOwner,
-  countSites, attackFronts, config,
+  countSites, attackFronts, config, income, upgradeCost,
 } from '../js/sim/core.js';
 import { generateWorld, components } from '../js/world/generate.js';
 import { THEMES, THEME_IDS, isLand, T } from '../js/world/themes.js';
@@ -389,6 +389,38 @@ test('Vulkara training advances step by step, unlocks tools, and survives a save
   // Replays and other worlds have no training.
   assert.equal(tutorialStep(battle('vulkara', { tutorial: false })), null);
   assert.equal(tutorialStep(battle('cryonis')), null);
+});
+
+test('buildings stack: clicking your own building upgrades it up to level 3', () => {
+  const s = battle('vulkara', { tutorial: false });
+  freezeAI(s);
+  advance(s, 0.5);
+  const me = s.factions[PLAYER];
+  me.minerals = 10000;
+  const spots = [];
+  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === PLAYER && [T.PLAINS, T.WILD, T.HIGHLAND, T.RUINS].includes(world(s).terrain[i])) spots.push(i);
+  const at = spots.find(i => playerBuild(s, 'extractor', i).ok);
+  assert.ok(at !== undefined);
+  const b = s.buildings.find(x => x.type === 'extractor');
+  const base = income(s, me).minerals;
+  const cost = upgradeCost(b);
+  assert.equal(cost, Math.round(250 * 1.6));
+  const before = me.minerals;
+  const up = playerBuild(s, 'extractor', at + 1);
+  assert.ok(up.ok && up.upgraded && b.level === 2, 'clicking next to it upgraded it');
+  assert.equal(before - me.minerals, cost);
+  assert.equal(s.buildings.filter(x => x.type === 'extractor').length, 1, 'no second building');
+  assert.ok(Math.abs(income(s, me).minerals - base - 4) < 1e-6, '+4 minerals/s per level');
+  assert.ok(playerBuild(s, 'extractor', at).ok);
+  assert.equal(playerBuild(s, 'extractor', at).reason, 'maxLevel');
+  // Habitat levels count toward the 5-level cap; bastion radius grows.
+  const hab = spots.find(i => playerBuild(s, 'habitat', i).ok);
+  const m1 = maxTroops(s, me);
+  playerBuild(s, 'habitat', hab);
+  assert.ok(maxTroops(s, me) > m1);
+  assert.ok(s.notices.some(n => n.kind === 'upgraded'));
+  const restored = deserialize(serialize(s));
+  assert.equal(restored.buildings.find(x => x.type === 'extractor').level, 3, 'levels survive a save');
 });
 
 test('results: land history, battle stats and stars', () => {

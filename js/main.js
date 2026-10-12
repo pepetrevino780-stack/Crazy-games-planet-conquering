@@ -12,7 +12,7 @@ import {
 } from './sim/engine.js';
 import {
   config, world, maxTroops, regen, income, buildCost, siteOwner, isShielded, isPowered, countSites,
-  eventPhase, tileDefense, attackFronts, sitesOf, borders,
+  eventPhase, tileDefense, attackFronts, sitesOf, borders, upgradeCost as levelUpCost,
 } from './sim/core.js';
 import { MapRenderer, fmt } from './render.js';
 import { THEMES, TERRAIN, THEME_IDS, isLand } from './world/themes.js';
@@ -78,6 +78,7 @@ const REASONS = {
   locked: 'Unlock this ability in Command Upgrades.',
   terrain: 'Build on your own flat land (not mountains, rivers or volcanoes).',
   crowded: 'Too close to another structure.',
+  maxLevel: 'That building is already at its highest level (3).',
   coast: 'Starports must be built within 3 tiles of the coast.',
   noStarport: 'Build a Starport first.',
   target: 'Target enemy land.',
@@ -618,7 +619,7 @@ const TIP_FNS = {
     const f = battle.factions[PLAYER];
     if (kind === 'build') {
       const b = BUILDINGS[id], c = buildCost(battle, PLAYER, id);
-      return `<b>${esc(b.name)}</b> <kbd>${b.key}</kbd><br>${esc(b.desc)}<br><span class="${f.minerals >= c ? 'ok' : 'no'}">Cost ${fmt(c)} minerals</span> (you have ${fmt(f.minerals)}). Each one you own costs more.`;
+      return `<b>${esc(b.name)}</b> <kbd>${b.key}</kbd><br>${esc(b.desc)}<br><span class="${f.minerals >= c ? 'ok' : 'no'}">Cost ${fmt(c)} minerals</span> (you have ${fmt(f.minerals)}). Each one you own costs more.<br><span class="dim">Use it on one of your own ${esc(b.name)}s to upgrade it (up to level 3).</span>`;
     }
     if (kind === 'dropship') return `<b>Dropship</b> <kbd>6</kbd><br>Send your attack ratio of troops to land anywhere, even across the sea. Needs a Starport.${canDropship(battle) ? '' : ' <span class="no">You have no Starport.</span>'}<br>Cost ${DROPSHIP_COST} minerals.`;
     if (kind === 'research') return `<b>Research</b> <kbd>R</kbd><br>Spend exotic matter on upgrades that last this battle. You have ${fmt(f.exotic)} exotic.`;
@@ -658,7 +659,13 @@ function tileTip(i) {
   const site = battle.sites.find(s => Math.abs(s.x - x) <= 2 && Math.abs(s.y - y) <= 2);
   if (site) parts.push(`<b>${esc(site.name)}</b>: ${esc(SITE_TYPES[site.type].desc)}`);
   const bld = battle.buildings.find(b => Math.abs(b.x - x) <= 2 && Math.abs(b.y - y) <= 2);
-  if (bld) parts.push(`<b>${esc(BUILDINGS[bld.type].name)}</b>${bld.level > 1 ? ` (level ${bld.level})` : ''}: ${esc(BUILDINGS[bld.type].desc)}`);
+  if (bld) {
+    const lvl = bld.level || 1;
+    parts.push(`<b>${esc(BUILDINGS[bld.type].name)}</b> · level ${lvl}/3: ${esc(BUILDINGS[bld.type].desc)}`);
+    if (armed?.kind === 'build' && armed.id === bld.type && o === PLAYER) {
+      parts.push(lvl >= 3 ? '<span class="no">Already at the highest level.</span>' : `<span class="ok">Click to upgrade to level ${lvl + 1} for ${fmt(levelUpCost(bld))} minerals.</span>`);
+    }
+  }
   if (battle.status === 'playing' && isLand(t) && o !== PLAYER && !armed) parts.push(`<span class="ok">Click to attack with ${fmt(battle.factions[PLAYER].troops * ratio)} troops.</span>`);
   return parts.join('<br>');
 }
@@ -715,6 +722,8 @@ function initTooltips() {
   });
   document.addEventListener('pointermove', e => {
     if (e.pointerType === 'touch') return;
+    // The battle screen can appear under a resting cursor without a pointerover.
+    if (!tipSource && e.target.id === 'canvas' && battle) tipSource = 'map';
     if (tipSource === 'map') { tipXY = { x: e.clientX, y: e.clientY }; refreshTooltip(); }
     else if (tipSource) placeTooltip(e.clientX, e.clientY);
   });
@@ -998,6 +1007,12 @@ function processNotices() {
           renderer.shake(0.6, 4);
           for (const s of battle.sites.filter(x => x.type === 'vent')) { renderer.burst(s.x, s.y, '#ff7a1f', 18); renderer.burst(s.x, s.y, '#ffd25e', 8); }
         }
+        break;
+      case 'upgraded':
+        if (n.owner !== PLAYER) break;
+        sfx.build(); renderer.ring(n.x, n.y, '#ffd25e', 7); renderer.burst(n.x, n.y, '#ffd25e', 10);
+        renderer.pop(n.x, n.y, `-${fmt(n.cost)} minerals`, '#c9b8ff');
+        toast(`${esc(BUILDINGS[n.building].name)} upgraded to level ${n.level}.`, 'good', 2500);
         break;
       case 'built':
         sfx.build(); renderer.ring(n.x, n.y, '#3fd0ff', 5);
@@ -1390,6 +1405,7 @@ window.__planetConquest = {
   renderer: () => renderer,
   tileToCss: (x, y) => renderer.tileToCss(x, y),
   pointer: () => tutPointer,
+  tipSource: () => (tipSource === 'map' ? 'map' : tipSource ? tipSource.id || tipSource.className : null),
   advance: seconds => { for (let k = 0; k < seconds / TICK && battle?.status === 'playing'; k++) step(battle, TICK); },
 };
 

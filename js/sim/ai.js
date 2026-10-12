@@ -5,7 +5,7 @@ import { isLand, T } from '../world/themes.js';
 import {
   maxTroops, borderMap, launchAttack, attackFronts, siteOwner, buildCost, world, PLAYER,
 } from './core.js';
-import { npcBuild } from './engine.js';
+import { npcBuild, npcUpgrade } from './engine.js';
 
 const VALUE = { capital: 3, citadel: 3, hub: 2.5, relay: 2.2, command: 2.2, factory: 1.6, crystal: 1.4, vent: 1.2, turret: 0.6, ruin: 0.6 };
 
@@ -78,6 +78,8 @@ function tryBuild(state, fid, rand) {
   const options = ['habitat', 'extractor'];
   if (p.reserve >= 0.4) options.push('bastion');
   const type = options[Math.floor(rand() * options.length)];
+  // Sometimes raise an existing building's level instead of placing a new one.
+  if (rand() < 0.4 && npcUpgrade(state, fid, type)) return;
   if (f.minerals < buildCost(state, fid, type)) return;
   const i = randomOwnTile(state, fid, rand, j => {
     const t = terrain[j];

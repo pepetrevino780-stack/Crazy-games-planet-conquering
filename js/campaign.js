@@ -61,12 +61,16 @@ export const SITE_TYPES = {
 
 // Player-built structures (bought with minerals). Cost grows with each copy.
 export const BUILDINGS = {
-  habitat: { key: '1', name: 'Habitat', desc: '+12% max troops (up to 5 Habitats count).', cost: 300 },
-  extractor: { key: '2', name: 'Extractor', desc: '+4 minerals/s.', cost: 250 },
-  starport: { key: '3', name: 'Starport', desc: 'Launch dropships to land you do not border. Must be near the coast.', cost: 400, coastal: true },
-  bastion: { key: '4', name: 'Bastion', desc: 'Your land within 10 tiles defends at 1.8x.', cost: 300, radius: 10 },
-  spire: { key: '5', name: 'Research Spire', desc: '+0.5 exotic matter/s for research.', cost: 350 },
+  habitat: { key: '1', name: 'Habitat', desc: '+12% max troops per level (up to 5 levels count).', cost: 300 },
+  extractor: { key: '2', name: 'Extractor', desc: '+4 minerals/s per level.', cost: 250 },
+  starport: { key: '3', name: 'Starport', desc: 'Launch dropships to land you do not border. Must be near the coast. Each level makes its dropships 40% faster.', cost: 400, coastal: true },
+  bastion: { key: '4', name: 'Bastion', desc: 'Your land within 10 tiles defends at 1.8x (12 and 14 tiles when upgraded).', cost: 300, radius: 10 },
+  spire: { key: '5', name: 'Research Spire', desc: '+0.5 exotic matter/s per level, for research.', cost: 350 },
 };
+
+// Buildings stack: click one of your own with the same tool to raise its level.
+export const MAX_LEVEL = 3;
+export const UPGRADE_GROWTH = 1.6; // upgrade cost = base cost x 1.6^level
 
 export const RESEARCH = {
   swift: { name: 'Swift Assault', desc: 'Attacks advance 30% faster.', cost: 40 },

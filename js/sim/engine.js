@@ -2,12 +2,12 @@
 import { isLand, T } from '../world/themes.js';
 import { placePoints } from '../world/generate.js';
 import { rng } from '../world/noise.js';
-import { AI_PROFILES, SITE_TYPES, BUILDINGS, RESEARCH, nationName, NATION_COLORS } from '../campaign.js';
+import { AI_PROFILES, SITE_TYPES, BUILDINGS, RESEARCH, nationName, NATION_COLORS, MAX_LEVEL } from '../campaign.js';
 import { DIFFICULTIES, ABILITIES } from '../progression.js';
 import {
   TICK, PLAYER, world, config, setOwner, launchAttack, notice, siteOwner, isShielded, isPowered,
   maxTroops, regen, income, tileCost, tileLocked, neighbors4, TileHeap, eventPhase, sitesOf, countSites, buildCost,
-  alive, borders,
+  alive, borders, upgradeCost,
 } from './core.js';
 import { think } from './ai.js';
 
@@ -258,7 +258,7 @@ export function playerDropship(state, tileIndex, ratio) {
   const port = ports.reduce((a, b) => (Math.hypot(a.x - tx, a.y - ty) < Math.hypot(b.x - tx, b.y - ty) ? a : b));
   f.minerals -= DROPSHIP_COST;
   f.troops -= troops;
-  state.dropships.push({ id: state.nextId++, owner: PLAYER, troops, x: port.x, y: port.y, tx, ty });
+  state.dropships.push({ id: state.nextId++, owner: PLAYER, troops, x: port.x, y: port.y, tx, ty, speed: 28 * (1 + 0.4 * ((port.level || 1) - 1)) });
   state.stats.attacks++;
   return { ok: true, sent: troops };
 }
@@ -280,16 +280,42 @@ export function canBuildAt(state, type, i) {
   return null;
 }
 
+// An own building of this type within 1 tile of the click: building there upgrades it.
+export function upgradeTarget(state, owner, type, i) {
+  const x = i % state.w, y = (i - x) / state.w;
+  return state.buildings.find(b => b.type === type && Math.abs(b.x - x) <= 1 && Math.abs(b.y - y) <= 1 && state.owner[b.y * state.w + b.x] === owner) || null;
+}
+
+function upgradeBuilding(state, owner, b) {
+  const f = state.factions[owner];
+  if ((b.level || 1) >= MAX_LEVEL) return { ok: false, reason: 'maxLevel' };
+  const cost = upgradeCost(b);
+  if (f.minerals < cost) return { ok: false, reason: 'minerals' };
+  f.minerals -= cost;
+  b.level = (b.level || 1) + 1;
+  if (owner === PLAYER) state.flags['upgraded_' + b.type] = true;
+  notice(state, 'upgraded', { building: b.type, x: b.x, y: b.y, owner, level: b.level, cost });
+  return { ok: true, upgraded: true, level: b.level };
+}
+
+export function npcUpgrade(state, fid, type) {
+  const own = state.buildings.filter(b => b.type === type && (b.level || 1) < MAX_LEVEL && state.owner[b.y * state.w + b.x] === fid);
+  if (!own.length) return false;
+  return upgradeBuilding(state, fid, own[0]).ok;
+}
+
 export function playerBuild(state, type, i) {
   if (state.status !== 'playing' || !BUILDINGS[type]) return { ok: false, reason: 'invalid' };
   const f = state.factions[PLAYER];
+  const up = upgradeTarget(state, PLAYER, type, i);
+  if (up) return upgradeBuilding(state, PLAYER, up);
   const why = canBuildAt(state, type, i);
   if (why) return { ok: false, reason: why };
   const cost = buildCost(state, PLAYER, type);
   if (f.minerals < cost) return { ok: false, reason: 'minerals' };
   f.minerals -= cost;
   const x = i % state.w, y = (i - x) / state.w;
-  state.buildings.push({ id: state.nextId++, type, x, y });
+  state.buildings.push({ id: state.nextId++, type, x, y, level: 1 });
   state.flags['built_' + type] = true;
   notice(state, 'built', { building: type, x, y, owner: PLAYER, cost });
   return { ok: true };
@@ -302,7 +328,7 @@ export function npcBuild(state, fid, type, i) {
   const x = i % state.w, y = (i - x) / state.w;
   if (state.buildings.some(b => Math.abs(b.x - x) < 4 && Math.abs(b.y - y) < 4)) return false;
   f.minerals -= cost;
-  state.buildings.push({ id: state.nextId++, type, x, y });
+  state.buildings.push({ id: state.nextId++, type, x, y, level: 1 });
   return true;
 }
 
@@ -452,7 +478,7 @@ function advanceDropships(state, dt) {
   for (let k = state.dropships.length - 1; k >= 0; k--) {
     const d = state.dropships[k];
     const dist = Math.hypot(d.tx - d.x, d.ty - d.y);
-    const step = 28 * dt;
+    const step = (d.speed || 28) * dt;
     if (dist > step) { d.x += (d.tx - d.x) / dist * step; d.y += (d.ty - d.y) / dist * step; continue; }
     state.dropships.splice(k, 1);
     const i = d.ty * state.w + d.tx;
