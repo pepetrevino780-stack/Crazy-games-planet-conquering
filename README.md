@@ -57,6 +57,10 @@ objectives with bonus rewards, contextual tips (can be turned off), and a field 
 **Fair difficulty:**
 - Rival civilizations start with footprints comparable to yours.
 - Difficulty comes from behaviour: decision speed, when and whom to strike, reserves, retaliation, and multi-front coordination (`AI_PROFILES` in `js/campaign.js`).
+- You can read the enemy: red arrows show where attacks on you are heading (independent nations' attacks need
+  Scouting 1, which also adds attack sizes), a warning fires when a neighbour masses troops near its cap on
+  your border, and each rival's personality (Relaxed, Defensive, Aggressive, Calculating, Mastermind…) is shown
+  on the leaderboard and its hover card.
 - Every defeat ends with a debrief explaining what went wrong.
 - Repeated defeats on a planet enable an *adaptive assist* that slows its enemy commanders.
 

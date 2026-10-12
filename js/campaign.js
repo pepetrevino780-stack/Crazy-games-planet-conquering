@@ -34,6 +34,16 @@ export const AI_PROFILES = {
   },
 };
 
+// How each behaviour reads to the player (leaderboard, hover cards).
+export const PERSONAS = {
+  tribe: { name: 'Isolationist', desc: 'Settles the wilderness and fights back when attacked, but rarely starts a war.' },
+  passive: { name: 'Relaxed', desc: 'Slow to act and keeps big reserves. Attacks only when far stronger.' },
+  cautious: { name: 'Defensive', desc: 'Guards its border, holds reserves and always retaliates.' },
+  aggressive: { name: 'Aggressive', desc: 'Expands fast, attacks on two fronts and targets you often.' },
+  tactical: { name: 'Calculating', desc: 'Quick decisions, goes for objectives and weak borders.' },
+  mastermind: { name: 'Mastermind', desc: 'Fastest commander. Coordinates fronts and punishes mistakes.' },
+};
+
 // Objective and resource sites that appear on maps. Effects are applied by
 // the engine through these properties.
 export const SITE_TYPES = {

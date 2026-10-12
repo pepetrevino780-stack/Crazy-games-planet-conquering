@@ -125,7 +125,7 @@ export function createBattle(configId, loadout, opts = {}) {
   };
   const enemyId = state.factions.length;
   state.factions.push(makeFaction(enemyId, {
-    name: e.name, color: e.color, kind: 'enemy', troops: e.troops, minerals: 200, profile: enemyProfile,
+    name: e.name, color: e.color, kind: 'enemy', troops: e.troops, minerals: 200, profile: enemyProfile, persona: e.profile,
   }));
   const capPt = placePoints(w, 1, { rand: R, accept: (x, y, i) => w.comp[i] === main && x > state.w * 0.62, score: x => x * 0.5 })[0]
     || nearestLand(state, state.w * 0.75, state.h / 2, main);
@@ -155,7 +155,7 @@ export function createBattle(configId, loadout, opts = {}) {
     const id = state.factions.length;
     state.factions.push(makeFaction(id, {
       name: nationName(state.theme, R), color: NATION_COLORS[k % NATION_COLORS.length], kind: 'nation',
-      troops: cfg.nations.troops, minerals: 100,
+      troops: cfg.nations.troops, minerals: 100, persona: cfg.nations.profile,
       profile: { ...AI_PROFILES[cfg.nations.profile], interval: AI_PROFILES[cfg.nations.profile].interval * (0.85 + R() * 0.3) },
     }));
     state.sites.push({ id: `nation${id}`, type: 'capital', x: p.x, y: p.y, name: state.factions[id].name, faction: id });

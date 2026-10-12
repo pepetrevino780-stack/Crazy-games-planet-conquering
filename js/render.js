@@ -356,6 +356,41 @@ export class MapRenderer {
     ctx.globalAlpha = 1;
   }
 
+  drawIntent(a, b, it, z, now, motion) {
+    const ctx = this.ctx, d = this.dpr;
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 8 * d) return;
+    const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
+    const u = Math.max(2, Math.round(Math.min(z, 3 * d) * it.weight));
+    const stepPx = u * 3;
+    const shift = motion ? (now * 40 * d) % stepPx : 0;
+    // Marching dashes towards the target, outlined so they read on any terrain.
+    for (let t = shift; t < len - u * 4; t += stepPx) {
+      const x = Math.round(a.x + ux * t), y = Math.round(a.y + uy * t);
+      ctx.fillStyle = '#12060a'; ctx.fillRect(x - u, y - u, u * 2 + 1, u * 2 + 1);
+      ctx.fillStyle = it.color; ctx.fillRect(x - u / 2, y - u / 2, u, u);
+    }
+    // Arrowhead.
+    const hx = b.x, hy = b.y, s = u * 5;
+    const px = -uy, py = ux;
+    ctx.beginPath();
+    ctx.moveTo(Math.round(hx), Math.round(hy));
+    ctx.lineTo(Math.round(hx - ux * s + px * s * 0.6), Math.round(hy - uy * s + py * s * 0.6));
+    ctx.lineTo(Math.round(hx - ux * s - px * s * 0.6), Math.round(hy - uy * s - py * s * 0.6));
+    ctx.closePath();
+    ctx.lineWidth = Math.max(2, u);
+    ctx.strokeStyle = '#12060a'; ctx.stroke();
+    ctx.fillStyle = it.color; ctx.fill();
+    if (it.label) {
+      ctx.font = `700 ${Math.round(11 * d)}px "Pixelify Sans", monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const mx = Math.round((a.x + b.x) / 2), my = Math.round((a.y + b.y) / 2 - 8 * d);
+      ctx.lineWidth = Math.max(2, 3 * d); ctx.strokeStyle = 'rgba(5,4,12,0.9)';
+      ctx.strokeText(it.label, mx, my);
+      ctx.fillStyle = '#ffb4b4'; ctx.fillText(it.label, mx, my);
+    }
+  }
+
   drawPointer(p, now, motion) {
     const ctx = this.ctx, d = this.dpr;
     const u = Math.max(3, Math.round(3 * d));
@@ -442,6 +477,9 @@ export class MapRenderer {
         ctx.fillRect(o.x + x * z, o.y + y * z, z, z);
       }
     }
+
+    // Enemy intent: arrows from attacking empires to where they are pushing into you.
+    for (const it of ui.intents || []) this.drawIntent(T(it.x0 + 0.5, it.y0 + 0.5), T(it.x1 + 0.5, it.y1 + 0.5), it, z, now, motion);
 
     // Structures.
     const sc = Math.max(1, Math.round(z / 2));

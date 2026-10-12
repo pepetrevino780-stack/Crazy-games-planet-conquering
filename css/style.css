@@ -195,6 +195,8 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .inspector h4 { margin: 0 0 4px; padding-right: 22px; font-family: var(--font-head); font-size: 13px; display: flex; align-items: center; gap: 6px; }
 .inspector .row { display: flex; justify-content: space-between; gap: 8px; }
 .inspector .row span { color: var(--muted); }
+.inspector .note { font-size: 12px; color: var(--muted); margin: 1px 0 3px; }
+.board .persona { display: block; font-size: 11px; color: var(--muted); margin-left: 16px; }
 .inspector .tags { color: var(--cyan); font-size: 12px; margin-top: 4px; overflow-wrap: anywhere; }
 .inspector .close { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; padding: 0; background: transparent; border: 0; color: var(--muted); cursor: pointer; font-family: var(--font-head); }
 

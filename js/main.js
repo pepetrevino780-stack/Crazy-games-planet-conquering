@@ -1,5 +1,5 @@
 // Interface controller: screens, map input, HUD, notices, saving and portal hooks.
-import { PLANETS, getPlanet, skirmishConfig, BUILDINGS, RESEARCH, SITE_TYPES } from './campaign.js';
+import { PLANETS, getPlanet, skirmishConfig, BUILDINGS, RESEARCH, SITE_TYPES, PERSONAS } from './campaign.js';
 import {
   newCampaign, loadCampaign, saveCampaign, isUnlocked, UPGRADES, CIVS, ABILITIES, upgradeCost,
   buyUpgrade, unlockCiv, playerLoadout, computeRewards, applyVictory, applyDefeat, assistLevel,
@@ -12,11 +12,11 @@ import {
 } from './sim/engine.js';
 import {
   config, world, maxTroops, regen, income, buildCost, siteOwner, isShielded, isPowered, countSites,
-  eventPhase, tileDefense, attackFronts, sitesOf,
+  eventPhase, tileDefense, attackFronts, sitesOf, borders,
 } from './sim/core.js';
 import { MapRenderer, fmt } from './render.js';
 import { THEMES, TERRAIN, THEME_IDS, isLand } from './world/themes.js';
-import { iconURL, spriteCanvas } from './art/sprites.js';
+import { iconURL, spriteCanvas, mixHex } from './art/sprites.js';
 import { titleScene, planetOrb, backdropCanvas } from './art/backdrop.js';
 import { sfx, setSound, setAdMute } from './audio.js';
 import {
@@ -275,6 +275,7 @@ function enterBattle() {
   armed = null; hoverTile = -1; inspectTile = -1; paused = false; speed = 1; endTimer = 0;
   ['#overlay-pause', '#overlay-help', '#overlay-research', '#board', '#objectives', '#banner'].forEach(s => $(s).classList.add('hidden'));
   lastConquered = battle.stats.conquered;
+  lastMassing.clear(); intents = [];
   $('#toasts').innerHTML = '';
   const cfg = config(battle);
   const idx = PLANETS.indexOf(cfg);
@@ -514,6 +515,56 @@ function updateObjectives() {
   if (html !== objKey) { objKey = html; $('#objectives').innerHTML = html; }
 }
 
+// ---------- Enemy intent ----------
+// Scouting decides how much you see: the main enemy's attacks on you are
+// always marked; independent nations' need scouting level 1. Level 1 adds
+// attack sizes, level 3 live troop counts.
+
+let intents = [];
+const lastMassing = new Map();
+
+function updateIntents() {
+  const scout = battle.factions[PLAYER].scouting || 0;
+  intents = [];
+  for (const a of battle.attacks) {
+    if (a.target !== PLAYER || !a.frontier) continue;
+    const f = battle.factions[a.attacker];
+    if (f.kind !== 'enemy' && scout < 1) continue;
+    let sx = 0, sy = 0, n = 0;
+    const front = a.frontier.v;
+    for (let k = 0; k < front.length && n < 200; k++) {
+      const i = front[k];
+      if (battle.owner[i] !== PLAYER) continue;
+      sx += i % battle.w; sy += Math.floor(i / battle.w); n++;
+    }
+    if (!n) continue;
+    const x1 = sx / n, y1 = sy / n;
+    let x0 = a.ox ?? f.sx / Math.max(1, f.tiles), y0 = a.oy ?? f.sy / Math.max(1, f.tiles);
+    // Keep arrows short: they start a little way back inside the attacker's land.
+    const len = Math.hypot(x1 - x0, y1 - y0), max = 24;
+    if (len > max) { x0 = x1 + ((x0 - x1) / len) * max; y0 = y1 + ((y0 - y1) / len) * max; }
+    const troops = scout >= 3 ? a.troops : a.initial;
+    intents.push({
+      x0, y0, x1, y1, color: f.kind === 'enemy' ? '#ff4b3e' : mixHex(f.color, '#ff4b3e', 0.4),
+      weight: Math.min(1.6, 0.7 + troops / 1500), label: scout >= 1 ? fmt(troops) : '',
+    });
+  }
+  // Massing warnings: a neighbour near its troop cap is about to strike.
+  for (const f of battle.factions) {
+    if (!f || f.id === PLAYER || !f.alive || !f.profile) continue;
+    if (f.kind !== 'enemy' && scout < 2) continue;
+    if (f.troops < maxTroops(battle, f) * 0.8 || !borders(battle, f.id, PLAYER)) continue;
+    if (battle.time - (lastMassing.get(f.id) ?? -99) < 30) continue;
+    lastMassing.set(f.id, battle.time);
+    toast(`${esc(f.name)} is massing ${fmt(f.troops)} troops on your border.`, 'bad', 3500);
+    sfx.alarm();
+  }
+}
+
+function persona(f) {
+  return f.persona && PERSONAS[f.persona];
+}
+
 // ---------- Training ----------
 
 let tutPointer = null, tutPointerAt = 0, tutKey = '';
@@ -575,7 +626,7 @@ function updateBoard() {
   if ($('#board').classList.contains('hidden')) return;
   const land = world(battle).landCount;
   const rows = battle.factions.filter(f => f && f.alive).sort((a, b) => b.tiles - a.tiles).slice(0, 10);
-  $('#board').innerHTML = `<table><tr><th>#</th><th>Civilization</th><th>Land</th><th>Troops</th></tr>${rows.map((f, i) => `<tr class="${f.id === PLAYER ? 'me' : ''}"><td>${i + 1}</td><td><span class="sw" style="background:${f.color}"></span>${esc(f.id === PLAYER ? 'You' : f.name)}</td><td>${((f.tiles / land) * 100).toFixed(1)}%</td><td>${fmt(f.troops)}</td></tr>`).join('')}</table>`;
+  $('#board').innerHTML = `<table><tr><th>#</th><th>Civilization</th><th>Land</th><th>Troops</th></tr>${rows.map((f, i) => `<tr class="${f.id === PLAYER ? 'me' : ''}"><td>${i + 1}</td><td><span class="sw" style="background:${f.color}"></span>${esc(f.id === PLAYER ? 'You' : f.name)}${persona(f) ? `<small class="persona" title="${esc(persona(f).desc)}">${esc(persona(f).name)}</small>` : ''}</td><td>${((f.tiles / land) * 100).toFixed(1)}%</td><td>${fmt(f.troops)}</td></tr>`).join('')}</table>`;
 }
 
 function updateInspector() {
@@ -596,6 +647,7 @@ function updateInspector() {
     const attacking = battle.attacks.filter(a => a.attacker === o).reduce((s, a) => s + a.troops, 0);
     html += `<div class="row"><span>${o === PLAYER ? 'Civilization' : f.kind === 'enemy' ? 'Hostile civilization' : 'Independent nation'}</span><b>${fmt(f.tiles)} tiles</b></div>`;
     html += `<div class="row"><span>Troops</span><b>${fmt(f.troops)} / ${fmt(maxTroops(battle, f))}</b></div>`;
+    if (persona(f)) html += `<div class="row"><span>Personality</span><b>${esc(persona(f).name)}</b></div><div class="note">${esc(persona(f).desc)}</div>`;
     if (o !== PLAYER && scout >= 1) {
       html += `<div class="row"><span>Garrison density</span><b>${(f.troops / Math.max(1, f.tiles)).toFixed(1)}/tile</b></div>`;
       html += `<div class="row"><span>Attacking troops</span><b style="color:#ff6b6b">${fmt(attacking)}</b></div>`;
@@ -664,6 +716,7 @@ function updateHud(force = false) {
   const sb = $('#spawn-banner');
   sb.classList.toggle('hidden', battle.status !== 'spawn');
   if (battle.status === 'spawn') sb.innerHTML = `CHOOSE YOUR LANDING SITE<small>Click open land on the main continent · auto-landing in ${Math.ceil(battle.spawnLeft)}s</small>`;
+  if (battle.status === 'playing') updateIntents(); else intents = [];
   updateTutorial();
   updateObjectives();
   updateBoard();
@@ -965,6 +1018,7 @@ function frame(ts) {
     hoverOwner: hoverTile >= 0 ? battle.owner[hoverTile] : 0,
     inspectOwner: inspectTile >= 0 ? battle.owner[inspectTile] : 0,
     highlights: new Set(cur?.highlight ? [cur.highlight] : []),
+    intents,
     pointer: battle.status === 'playing' && !renderer.holdOwner && tutorialStep(battle) ? tutPointer : null,
   });
   updateHud();
