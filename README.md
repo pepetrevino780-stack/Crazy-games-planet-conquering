@@ -8,6 +8,11 @@ five-planet campaign. Each planet teaches a new strategy. Skirmish mode generate
 
 ## Play
 
+**Online (GitHub Pages):** https://pepetrevino780-stack.github.io/Crazy-games-planet-conquering/
+(after Pages is enabled: Settings → Pages → Deploy from a branch → this branch, `/ (root)`).
+
+**Locally:**
+
 No build step and no dependencies. Serve the folder over HTTP (ES modules don't load from `file://`):
 
 ```sh
