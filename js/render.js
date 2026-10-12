@@ -1,384 +1,457 @@
-// Canvas renderer. Maps are authored in landscape (1000x600); on portrait
-// screens the map is rotated so the player's side sits at the bottom.
-import { getPlanet } from './campaign.js';
-import {
-  terr, neighbors, isPowered, isShielded, networkStatus, eventPhase, index, fleetPos,
-  empActive, defMult, threatOn, TURRET_RANGE,
-} from './rules.js';
+// Pixel map renderer. One tile = one map pixel, scaled by an integer zoom
+// so pixels stay crisp. Terrain is painted once; the ownership layer is
+// updated only where tiles changed; everything else is drawn per frame.
+import { paintWorld } from './world/paint.js';
+import { isLand } from './world/themes.js';
+import { SITE_TYPES } from './campaign.js';
+import { spriteCanvas, CAPITAL_SPRITE, mixHex } from './art/sprites.js';
+import { backdropCanvas } from './art/backdrop.js';
+import { rt, world, siteOwner, isShielded, isPowered, empActive, eventPhase, PLAYER } from './sim/core.js';
 
-export const WORLD_W = 1000;
-export const WORLD_H = 600;
-const NEUTRAL_TEXT = '#e9e4f0';
+const NEUTRAL = '#8a8478';
+const hexRgb = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
-export const RADIUS = { capital: 30, citadel: 34, fortress: 26, factory: 26, command: 25, hub: 25 };
-export const radiusOf = t => RADIUS[t.type] || 22;
-
-export function makeView(width, height, insets = {}) {
-  const { top = 0, right = 0, bottom = 0, left = 0 } = insets;
-  const aw = Math.max(100, width - left - right);
-  const ah = Math.max(100, height - top - bottom);
-  const portrait = ah > aw * 1.05;
-  const ww = portrait ? WORLD_H : WORLD_W;
-  const wh = portrait ? WORLD_W : WORLD_H;
-  const pad = 36;
-  const scale = Math.min(aw / (ww + pad * 2), ah / (wh + pad * 2));
-  const ox = left + (aw - ww * scale) / 2;
-  const oy = top + (ah - wh * scale) / 2;
-  return {
-    width, height, portrait, scale, ox, oy,
-    toScreen(x, y) {
-      if (portrait) return { x: ox + y * scale, y: oy + (WORLD_W - x) * scale };
-      return { x: ox + x * scale, y: oy + y * scale };
-    },
-    toWorld(sx, sy) {
-      const u = (sx - ox) / scale, v = (sy - oy) / scale;
-      if (portrait) return { x: WORLD_W - v, y: u };
-      return { x: u, y: v };
-    },
-  };
+export function fmt(n) {
+  n = Math.max(0, Math.round(n));
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+  if (n >= 1e4) return (n / 1e3).toFixed(1) + 'K';
+  if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
+  return String(n);
 }
 
-// Territory under a screen point; generous radius for touch.
-export function hitTest(state, view, sx, sy) {
-  const w = view.toWorld(sx, sy);
-  const slack = Math.max(10, 22 / view.scale);
-  let best = null, bestD = Infinity;
-  for (const t of state.territories) {
-    const d = Math.hypot(t.x - w.x, t.y - w.y);
-    if (d < radiusOf(t) + slack && d < bestD) { best = t; bestD = d; }
+export class MapRenderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.state = null;
+    this.cam = { zoom: 2, cx: 0, cy: 0 };
+    this.insets = { top: 0, right: 0, bottom: 0, left: 0 };
+    this.particles = [];
+    this.labels = new Map();
+    this.labelTime = -10;
+    this.dpr = 1;
   }
-  return best;
-}
 
-const starCache = new Map();
-function stars(planetId) {
-  if (starCache.has(planetId)) return starCache.get(planetId);
-  let seed = [...planetId].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) >>> 0;
-  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-  const list = Array.from({ length: 140 }, () => ({ x: rnd(), y: rnd(), r: rnd() * 1.4 + 0.3, a: rnd() * 0.6 + 0.2 }));
-  starCache.set(planetId, list);
-  return list;
-}
+  attach(state, simple = false) {
+    this.state = state;
+    const w = world(state);
+    this.W = state.w; this.H = state.h;
+    this.base = this.makeCanvas(this.W, this.H);
+    this.baseSimple = null;
+    this.base.getContext('2d').putImageData(new ImageData(paintWorld(w, false), this.W, this.H), 0, 0);
+    this.over = this.makeCanvas(this.W, this.H);
+    this.overCtx = this.over.getContext('2d');
+    this.overImg = this.overCtx.createImageData(this.W, this.H);
+    this.hi = this.makeCanvas(this.W, this.H);
+    this.hiOwner = -1; this.hiTime = 0;
+    this.colors = new Map();
+    this.simple = simple;
+    rt(state).allDirty = true;
+    this.labels.clear();
+    this.labelTime = -10;
+    this.fit();
+  }
 
-function ownerColor(state, owner, theme) {
-  if (owner === 0) return theme.neutral;
-  return state.factions[owner].color;
-}
+  makeCanvas(w, h) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    return c;
+  }
 
-function shade(hex, amt) {
-  const n = parseInt(hex.slice(1), 16);
-  const c = v => Math.max(0, Math.min(255, Math.round(v)));
-  const r = c(((n >> 16) & 255) * amt), g = c(((n >> 8) & 255) * amt), b = c((n & 255) * amt);
-  return `rgb(${r},${g},${b})`;
-}
-
-function drawIcon(ctx, type, x, y, s, color) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.fillStyle = color;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = Math.max(1, s * 0.18);
-  ctx.beginPath();
-  switch (type) {
-    case 'capital': case 'citadel': { // crown
-      ctx.moveTo(-s, s * 0.5); ctx.lineTo(-s, -s * 0.4); ctx.lineTo(-s * 0.5, s * 0.05);
-      ctx.lineTo(0, -s * 0.7); ctx.lineTo(s * 0.5, s * 0.05); ctx.lineTo(s, -s * 0.4); ctx.lineTo(s, s * 0.5);
-      ctx.closePath(); ctx.fill();
-      if (type === 'citadel') { ctx.beginPath(); ctx.arc(0, -s * 1.05, s * 0.3, 0, Math.PI * 2); ctx.fill(); }
-      break;
+  setSimple(on) {
+    if (this.simple === on) return;
+    this.simple = on;
+    if (on && !this.baseSimple) {
+      this.baseSimple = this.makeCanvas(this.W, this.H);
+      this.baseSimple.getContext('2d').putImageData(new ImageData(paintWorld(world(this.state), true), this.W, this.H), 0, 0);
     }
-    case 'fortress': // shield
-      ctx.moveTo(0, -s); ctx.lineTo(s * 0.85, -s * 0.6); ctx.lineTo(s * 0.7, s * 0.3);
-      ctx.lineTo(0, s); ctx.lineTo(-s * 0.7, s * 0.3); ctx.lineTo(-s * 0.85, -s * 0.6); ctx.closePath(); ctx.fill();
-      break;
-    case 'crystal': // diamond
-      ctx.moveTo(0, -s); ctx.lineTo(s * 0.65, 0); ctx.lineTo(0, s); ctx.lineTo(-s * 0.65, 0); ctx.closePath(); ctx.fill();
-      break;
-    case 'hub': // spore burst
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * s, Math.sin(a) * s);
+    rt(this.state).allDirty = true;
+  }
+
+  resize(cssW, cssH, dpr, insets) {
+    this.dpr = dpr;
+    this.canvas.width = Math.round(cssW * dpr);
+    this.canvas.height = Math.round(cssH * dpr);
+    this.cssW = cssW; this.cssH = cssH;
+    if (insets) this.insets = insets;
+    if (this.state) this.clamp();
+  }
+
+  // Largest integer zoom that shows the whole map in the free area.
+  fitZoom() {
+    const i = this.insets, d = this.dpr;
+    const aw = (this.cssW - i.left - i.right) * d, ah = (this.cssH - i.top - i.bottom) * d;
+    return Math.max(1, Math.floor(Math.min(aw / this.W, ah / this.H)));
+  }
+
+  fit() {
+    if (!this.cssW) return;
+    // Small screens fill the view (and pan) rather than shrinking the map.
+    const i = this.insets, d = this.dpr;
+    const aw = (this.cssW - i.left - i.right) * d, ah = (this.cssH - i.top - i.bottom) * d;
+    const exact = Math.min(aw / this.W, ah / this.H);
+    this.cam.zoom = exact < 1.6 ? Math.max(1, Math.ceil(Math.max(aw / this.W, ah / this.H) * 0.75)) : this.fitZoom();
+    this.cam.cx = this.W / 2; this.cam.cy = this.H / 2;
+    this.clamp();
+  }
+
+  // Screen centre of the free area, in device pixels.
+  centre() {
+    const i = this.insets, d = this.dpr;
+    return { x: (i.left + (this.cssW - i.left - i.right) / 2) * d, y: (i.top + (this.cssH - i.top - i.bottom) / 2) * d };
+  }
+
+  origin() {
+    const c = this.centre();
+    return { x: Math.round(c.x - this.cam.cx * this.cam.zoom), y: Math.round(c.y - this.cam.cy * this.cam.zoom) };
+  }
+
+  // Keep the map filling the view when it is larger than the screen;
+  // centre it when it is smaller.
+  clamp() {
+    const { W, H } = this, i = this.insets, d = this.dpr, z = this.cam.zoom;
+    const vw = ((this.cssW - i.left - i.right) * d) / z, vh = ((this.cssH - i.top - i.bottom) * d) / z;
+    // Allow panning past the edges far enough to clear the HUD panels.
+    const margin = Math.max(6, Math.min(vw, vh) * 0.45);
+    this.cam.cx = vw >= W ? W / 2 : Math.max(vw / 2 - margin, Math.min(W - vw / 2 + margin, this.cam.cx));
+    this.cam.cy = vh >= H ? H / 2 : Math.max(vh / 2 - margin, Math.min(H - vh / 2 + margin, this.cam.cy));
+  }
+
+  zoomBy(dir, sx, sy) {
+    const z0 = this.cam.zoom;
+    const z1 = Math.max(1, Math.min(14, z0 + dir));
+    if (z1 === z0) return;
+    // Keep the point under the cursor fixed.
+    if (sx !== undefined) {
+      const t = this.screenToTileF(sx, sy);
+      this.cam.zoom = z1;
+      const t2 = this.screenToTileF(sx, sy);
+      this.cam.cx += t.x - t2.x; this.cam.cy += t.y - t2.y;
+    } else this.cam.zoom = z1;
+    this.clamp();
+  }
+
+  panBy(dxCss, dyCss) {
+    this.cam.cx -= (dxCss * this.dpr) / this.cam.zoom;
+    this.cam.cy -= (dyCss * this.dpr) / this.cam.zoom;
+    this.clamp();
+  }
+
+  centerOn(x, y) { this.cam.cx = x; this.cam.cy = y; this.clamp(); }
+
+  screenToTileF(sxCss, syCss) {
+    const o = this.origin();
+    return { x: (sxCss * this.dpr - o.x) / this.cam.zoom, y: (syCss * this.dpr - o.y) / this.cam.zoom };
+  }
+
+  screenToTile(sxCss, syCss) {
+    const t = this.screenToTileF(sxCss, syCss);
+    const x = Math.floor(t.x), y = Math.floor(t.y);
+    if (x < 0 || y < 0 || x >= this.W || y >= this.H) return -1;
+    return y * this.W + x;
+  }
+
+  tileToCss(x, y) {
+    const o = this.origin();
+    return { x: (o.x + (x + 0.5) * this.cam.zoom) / this.dpr, y: (o.y + (y + 0.5) * this.cam.zoom) / this.dpr };
+  }
+
+  colorOf(o) {
+    if (!this.colors.has(o)) {
+      const f = this.state.factions[o];
+      const c = f ? f.color : NEUTRAL;
+      this.colors.set(o, { rgb: hexRgb(c), edge: hexRgb(mixHex(c, '#ffffff', 0.45)), kind: f?.kind });
+    }
+    return this.colors.get(o);
+  }
+
+  // Recompute ownership pixels for changed tiles (and their neighbours).
+  updateOverlay() {
+    const st = this.state, c = rt(st), W = this.W, H = this.H;
+    const img = this.overImg.data;
+    const owner = st.owner, terrain = world(st).terrain;
+    const paint = i => {
+      const o = owner[i];
+      const p = i * 4;
+      if (!o || !isLand(terrain[i])) { img[p + 3] = 0; return; }
+      const x = i % W, y = (i - x) / W;
+      const col = this.colorOf(o);
+      const edge = (x > 0 && owner[i - 1] !== o && isLand(terrain[i - 1])) || (x < W - 1 && owner[i + 1] !== o && isLand(terrain[i + 1]))
+        || (y > 0 && owner[i - W] !== o && isLand(terrain[i - W])) || (y < H - 1 && owner[i + W] !== o && isLand(terrain[i + W]));
+      if (edge) {
+        img[p] = col.edge[0]; img[p + 1] = col.edge[1]; img[p + 2] = col.edge[2]; img[p + 3] = 255;
+        return;
       }
-      ctx.stroke(); ctx.beginPath(); ctx.arc(0, 0, s * 0.35, 0, Math.PI * 2); ctx.fill();
-      break;
-    case 'relay': // bolt
-      ctx.moveTo(s * 0.2, -s); ctx.lineTo(-s * 0.6, s * 0.15); ctx.lineTo(-s * 0.05, s * 0.15);
-      ctx.lineTo(-s * 0.25, s); ctx.lineTo(s * 0.6, -s * 0.2); ctx.lineTo(s * 0.05, -s * 0.2); ctx.closePath(); ctx.fill();
-      break;
-    case 'turret': // triangle with barrel
-      ctx.moveTo(0, -s); ctx.lineTo(s * 0.9, s * 0.7); ctx.lineTo(-s * 0.9, s * 0.7); ctx.closePath(); ctx.fill();
-      break;
-    case 'factory': // gear
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2;
-        ctx.rect(Math.cos(a) * s * 0.75 - s * 0.15, Math.sin(a) * s * 0.75 - s * 0.15, s * 0.3, s * 0.3);
+      img[p] = col.rgb[0]; img[p + 1] = col.rgb[1]; img[p + 2] = col.rgb[2];
+      // Ownership patterns, so colour is not the only cue.
+      let a = this.simple ? 215 : 118;
+      if (col.kind === 'player' && (x + y) % 5 === 0) a += 60;
+      else if (col.kind === 'enemy' && (x % 3 === 0 && y % 3 === 0)) a += 80;
+      img[p + 3] = a;
+    };
+    if (c.allDirty) {
+      for (let i = 0; i < W * H; i++) paint(i);
+      c.allDirty = false;
+      c.dirty.length = 0;
+    } else if (c.dirty.length) {
+      for (const i of c.dirty) {
+        paint(i);
+        const x = i % W;
+        if (x > 0) paint(i - 1);
+        if (x < W - 1) paint(i + 1);
+        if (i >= W) paint(i - W);
+        if (i + W < W * H) paint(i + W);
       }
-      ctx.fill(); ctx.beginPath(); ctx.arc(0, 0, s * 0.55, 0, Math.PI * 2); ctx.fill();
-      break;
-    case 'command': // hexagon with dot
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
-        ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * s, Math.sin(a) * s);
+      c.dirty.length = 0;
+    } else return;
+    this.overCtx.putImageData(this.overImg, 0, 0);
+  }
+
+  // Bright outline of one civilization's whole territory (hover/inspect).
+  updateHighlight(owner, now) {
+    if (owner === this.hiOwner && now - this.hiTime < 400) return;
+    this.hiOwner = owner; this.hiTime = now;
+    const ctx = this.hi.getContext('2d');
+    ctx.clearRect(0, 0, this.W, this.H);
+    if (owner <= 0) return;
+    const img = ctx.createImageData(this.W, this.H);
+    const st = this.state, W = this.W, o = owner;
+    for (let i = 0; i < W * this.H; i++) {
+      if (st.owner[i] !== o) continue;
+      const x = i % W;
+      const edge = (x > 0 && st.owner[i - 1] !== o) || (x < W - 1 && st.owner[i + 1] !== o) || (i >= W && st.owner[i - W] !== o) || (i + W < st.owner.length && st.owner[i + W] !== o);
+      if (edge) { img.data[i * 4] = 255; img.data[i * 4 + 1] = 255; img.data[i * 4 + 2] = 255; img.data[i * 4 + 3] = 255; }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  updateLabels() {
+    const st = this.state;
+    if (st.time - this.labelTime < 1 && this.labels.size) return;
+    this.labelTime = st.time;
+    for (const f of st.factions) {
+      if (!f || !f.alive || f.tiles < 8) { if (f) this.labels.delete(f.id); continue; }
+      let x = Math.round(f.sx / f.tiles), y = Math.round(f.sy / f.tiles);
+      if (st.owner[y * st.w + x] !== f.id) {
+        let found = null;
+        for (let r = 1; r < 60 && !found; r++) {
+          for (let k = 0; k < r * 8 && !found; k++) {
+            const a = (k / (r * 8)) * Math.PI * 2;
+            const xx = Math.round(x + Math.cos(a) * r), yy = Math.round(y + Math.sin(a) * r);
+            if (xx >= 0 && yy >= 0 && xx < st.w && yy < st.h && st.owner[yy * st.w + xx] === f.id) found = { x: xx, y: yy };
+          }
+        }
+        if (found) ({ x, y } = found);
       }
-      ctx.closePath(); ctx.stroke(); ctx.beginPath(); ctx.arc(0, 0, s * 0.3, 0, Math.PI * 2); ctx.fill();
-      break;
-    case 'vent': // flame
-      ctx.moveTo(0, -s); ctx.quadraticCurveTo(s * 0.9, 0, 0, s); ctx.quadraticCurveTo(-s * 0.9, 0, 0, -s); ctx.fill();
-      break;
-    default:
-      ctx.restore();
-      return;
-  }
-  ctx.restore();
-}
-
-/**
- * ui: { selection:Set, hover, drag:{from, x, y}, highlights:Set, vision:Set,
- *       abilityMode, now (ms), validTargets:Set }
- */
-export function render(ctx, state, view, ui) {
-  const planet = getPlanet(state.planetId);
-  const th = planet.theme;
-  const ix = index(state);
-  const now = ui.now / 1000;
-  const S = view.scale;
-  const P = (x, y) => view.toScreen(x, y);
-  const ev = eventPhase(state);
-
-  // Background.
-  const g = ctx.createRadialGradient(view.width / 2, view.height / 2, 10, view.width / 2, view.height / 2, Math.max(view.width, view.height) * 0.75);
-  g.addColorStop(0, th.bg2);
-  g.addColorStop(1, th.bg1);
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, view.width, view.height);
-  for (const s of stars(state.planetId)) {
-    ctx.globalAlpha = s.a * (0.7 + 0.3 * Math.sin(now * 1.3 + s.x * 40));
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(s.x * view.width, s.y * view.height, s.r, s.r);
-  }
-  ctx.globalAlpha = 1;
-
-  // Network links (hub -> member regions).
-  for (const t of state.territories) {
-    if (!t.net) continue;
-    const hub = terr(state, ix.hubs.get(t.net));
-    const a = P(hub.x, hub.y), b = P(t.x, t.y);
-    const status = networkStatus(state, t);
-    ctx.strokeStyle = status === 'nourished' ? 'rgba(160,255,120,0.55)' : status === 'withered' ? 'rgba(150,110,70,0.45)' : 'rgba(160,255,120,0.18)';
-    ctx.lineWidth = Math.max(1, 3 * S);
-    ctx.setLineDash([2 * S + 1, 5 * S + 1]);
-    ctx.lineDashOffset = status === 'nourished' ? -now * 20 : 0;
-    ctx.beginPath();
-    const mx = (a.x + b.x) / 2 + (a.y - b.y) * 0.12, my = (a.y + b.y) / 2 + (b.x - a.x) * 0.12;
-    ctx.moveTo(a.x, a.y);
-    ctx.quadraticCurveTo(mx, my, b.x, b.y);
-    ctx.stroke();
-  }
-  // Power conduits (relay -> turret).
-  for (const t of state.territories) {
-    for (const tid of t.powers || []) {
-      const tu = terr(state, tid);
-      const a = P(t.x, t.y), b = P(tu.x, tu.y);
-      const lit = isPowered(state, tu) && tu.owner === t.owner;
-      ctx.strokeStyle = lit ? 'rgba(255,230,90,0.75)' : 'rgba(255,230,90,0.15)';
-      ctx.lineWidth = Math.max(1, 2 * S);
-      ctx.setLineDash([6 * S + 1, 6 * S + 1]);
-      ctx.lineDashOffset = lit ? -now * 40 : 0;
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      this.labels.set(f.id, { x, y });
     }
   }
-  ctx.setLineDash([]);
 
-  // Lanes.
-  for (const [aId, bId, kind] of state.lanes) {
-    const A = terr(state, aId), B = terr(state, bId);
-    const a = P(A.x, A.y), b = P(B.x, B.y);
-    const active = ui.selection.size && ((ui.selection.has(aId) && ui.validTargets.has(bId)) || (ui.selection.has(bId) && ui.validTargets.has(aId)));
-    ctx.strokeStyle = active ? 'rgba(255,255,255,0.65)' : kind === 'ice' ? 'rgba(200,240,255,0.55)' : th.lane;
-    ctx.lineWidth = Math.max(1.5, (active ? 5 : 4) * S);
-    if (kind === 'ice') ctx.setLineDash([8 * S + 2, 6 * S + 2]);
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-    ctx.setLineDash([]);
+  burst(x, y, color, n = 14) {
+    for (let k = 0; k < n; k++) {
+      const a = Math.random() * Math.PI * 2, v = 6 + Math.random() * 14;
+      this.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.8 + Math.random() * 0.5, color });
+    }
   }
 
-  // Turret range rings.
-  for (const t of state.territories) {
-    if (t.type !== 'turret' || !isPowered(state, t)) continue;
-    const c = P(t.x, t.y);
-    ctx.fillStyle = ev.type === 'surge' && ev.active ? 'rgba(255,80,80,0.14)' : 'rgba(255,80,80,0.07)';
-    ctx.strokeStyle = 'rgba(255,90,90,0.35)';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(c.x, c.y, TURRET_RANGE * S, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ring(x, y, color, r = 10) {
+    this.particles.push({ ring: true, x, y, r0: 1, r, life: 0.9, max: 0.9, color });
   }
 
-  // Event ambience under the territories.
-  if (ev.active) {
-    ctx.save();
-    if (ev.type === 'eclipse') {
-      ctx.fillStyle = 'rgba(0,0,0,0.38)';
-      ctx.fillRect(0, 0, view.width, view.height);
-    } else if (ev.type === 'eruption') {
-      for (const t of state.territories) if (t.type === 'vent') {
-        const c = P(t.x, t.y);
-        const rg = ctx.createRadialGradient(c.x, c.y, 2, c.x, c.y, 80 * S);
-        rg.addColorStop(0, 'rgba(255,120,30,0.45)'); rg.addColorStop(1, 'rgba(255,120,30,0)');
-        ctx.fillStyle = rg; ctx.fillRect(c.x - 80 * S, c.y - 80 * S, 160 * S, 160 * S);
+  render(ui) {
+    const st = this.state, ctx = this.ctx;
+    if (!st) return;
+    const z = this.cam.zoom, d = this.dpr;
+    const o = this.origin();
+    const now = ui.now / 1000;
+    const motion = !ui.reducedMotion;
+    ctx.imageSmoothingEnabled = false;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+    // Space backdrop at a fixed pixel scale.
+    const bs = Math.max(2, Math.round(2 * d));
+    const sky = backdropCanvas(st.theme, Math.ceil(this.canvas.width / bs), Math.ceil(this.canvas.height / bs));
+    ctx.drawImage(sky, 0, 0, sky.width * bs, sky.height * bs);
+
+    // Map frame, terrain, ownership.
+    ctx.fillStyle = '#05040a';
+    ctx.fillRect(o.x - z, o.y - z, (this.W + 2) * z, (this.H + 2) * z);
+    ctx.drawImage(this.simple && this.baseSimple ? this.baseSimple : this.base, o.x, o.y, this.W * z, this.H * z);
+    this.updateOverlay();
+    ctx.drawImage(this.over, o.x, o.y, this.W * z, this.H * z);
+    const hiOwner = ui.hoverOwner > 0 ? ui.hoverOwner : ui.inspectOwner;
+    this.updateHighlight(hiOwner || 0, ui.now);
+    if (hiOwner > 0) {
+      ctx.globalAlpha = motion ? 0.55 + 0.35 * Math.sin(now * 4) : 0.8;
+      ctx.drawImage(this.hi, o.x, o.y, this.W * z, this.H * z);
+      ctx.globalAlpha = 1;
+    }
+
+    const T = (x, y) => ({ x: o.x + x * z, y: o.y + y * z });
+    const ev = eventPhase(st);
+
+    // Defense ranges.
+    for (const s of st.sites) {
+      const so = siteOwner(st, s);
+      if (s.type === 'turret' && isPowered(st, s)) this.dotCircle(T(s.x + 0.5, s.y + 0.5), SITE_TYPES.turret.radius * z, ev.type === 'surge' && ev.active ? '#ff6a4a' : '#ff3b3b', z);
+      if (s.type === 'hub' && so && !empActive(st, s)) this.dotCircle(T(s.x + 0.5, s.y + 0.5), SITE_TYPES.hub.radius * z, '#b8ff5a', z * 3);
+      if ((s.type === 'capital' || s.type === 'citadel') && isShielded(st, s)) {
+        const r = (4.5 + (motion ? Math.sin(now * 3) * 0.4 : 0)) * z;
+        this.dotCircle(T(s.x + 0.5, s.y + 0.5), r, '#c4ff6a', Math.max(1, z / 2), true);
       }
     }
-    ctx.restore();
+
+    // Attack fronts: the next tiles each attack will take.
+    for (const a of st.attacks) {
+      if (!a.frontier) continue;
+      const col = a.target === PLAYER ? '#ff2a2a' : a.attacker === PLAYER ? '#fff2a8' : mixHex(st.factions[a.attacker].color, '#ffffff', 0.3);
+      ctx.fillStyle = col;
+      const front = a.frontier.v;
+      const end = Math.min(front.length, 200);
+      for (let k = 0; k < end; k++) {
+        const i = front[k];
+        if (st.owner[i] !== a.target) continue;
+        if (motion && (k + Math.floor(now * 8)) % 3 === 0) continue;
+        const x = i % this.W, y = (i - x) / this.W;
+        ctx.fillRect(o.x + x * z, o.y + y * z, z, z);
+      }
+    }
+
+    // Structures.
+    const sc = Math.max(1, Math.round(z / 2));
+    const drawSprite = (name, x, y, color) => {
+      const spr = spriteCanvas(name, color);
+      const p = T(x + 0.5, y + 0.5);
+      ctx.drawImage(spr, Math.round(p.x - (spr.width * sc) / 2), Math.round(p.y - spr.height * sc + sc), spr.width * sc, spr.height * sc);
+      return { p, w: spr.width * sc, h: spr.height * sc };
+    };
+    for (const b of st.buildings) {
+      const bo = st.owner[b.y * st.w + b.x];
+      drawSprite(b.type, b.x, b.y, bo ? st.factions[bo].color : NEUTRAL);
+    }
+    for (const s of st.sites) {
+      const so = siteOwner(st, s);
+      const color = so ? st.factions[so].color : NEUTRAL;
+      let name = s.type;
+      if (s.type === 'capital') name = s.id === 'enemy-capital' ? CAPITAL_SPRITE[st.theme] : s.id === 'player-capital' ? 'fortress' : 'normal';
+      const r = drawSprite(name, s.x, s.y, color);
+      if (empActive(st, s)) {
+        ctx.strokeStyle = '#7fd8ff'; ctx.lineWidth = Math.max(1, d);
+        if (!motion || Math.floor(now * 6) % 2) ctx.strokeRect(r.p.x - r.w / 2 - 2, r.p.y - r.h - 2, r.w + 4, r.h + 4);
+      }
+      if (ui.highlights && (ui.highlights.has(s.type) || ui.highlights.has(s.id)) && so !== PLAYER) {
+        const pulse = motion ? Math.floor(now * 3) % 2 : 1;
+        ctx.strokeStyle = pulse ? '#ffe066' : '#ffb020'; ctx.lineWidth = Math.max(2, 2 * d);
+        const pad = 4 * d;
+        ctx.strokeRect(r.p.x - r.w / 2 - pad, r.p.y - r.h - pad, r.w + pad * 2, r.h + pad * 2);
+      }
+    }
+
+    // Dropships.
+    for (const ds of st.dropships) drawSprite('fleet', ds.x, ds.y, st.factions[ds.owner].color);
+
+    // Particles and rings.
+    const dt = ui.dt || 0.016;
+    this.particles = this.particles.filter(p => (p.life -= dt) > 0);
+    for (const p of this.particles) {
+      if (p.ring) {
+        const k = 1 - p.life / p.max;
+        this.dotCircle(T(p.x + 0.5, p.y + 0.5), (p.r0 + (p.r - p.r0) * k) * z, p.color, Math.max(1, z / 2));
+        continue;
+      }
+      p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 10 * dt;
+      ctx.fillStyle = p.color;
+      const q = T(p.x, p.y);
+      ctx.fillRect(Math.round(q.x), Math.round(q.y), Math.max(1, z), Math.max(1, z));
+    }
+
+    // Planetary events over the map.
+    this.drawEvent(ev, o, z, now, motion);
+
+    // Spawn phase.
+    if (st.status === 'spawn') {
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(o.x, o.y, this.W * z, this.H * z);
+      if (ui.spawnHover) {
+        const c = T(ui.spawnHover.x + 0.5, ui.spawnHover.y + 0.5);
+        const col = ui.spawnHover.ok ? '#7ff0c8' : '#ff4b3e';
+        for (let k = 0; k < 3; k++) {
+          const rr = ((motion ? (now * 0.8 + k / 3) % 1 : k / 3) * 14 + 4) * z;
+          this.dotCircle(c, rr, col, Math.max(1, z / 2));
+        }
+      }
+    }
+
+    if (ui.labels !== false) this.drawLabels(o, z);
   }
 
-  const vision = ui.vision;
-  const threatened = new Set();
-  if (state.factions[1].scouting >= 3) {
-    for (const t of state.territories) {
-      if (t.owner === 1 && threatOn(state, t) > t.troops * defMult(state, t)) threatened.add(t.id);
+  dotCircle(c, r, color, step, solid = false) {
+    const ctx = this.ctx;
+    ctx.fillStyle = color;
+    const n = Math.max(12, Math.floor((r * 2 * Math.PI) / Math.max(2, step * 2)));
+    const s = Math.max(1, Math.round(this.dpr));
+    for (let k = 0; k < n; k++) {
+      if (!solid && k % 2) continue;
+      const a = (k / n) * Math.PI * 2;
+      ctx.fillRect(Math.round(c.x + Math.cos(a) * r), Math.round(c.y + Math.sin(a) * r), s * (solid ? 2 : 1), s * (solid ? 2 : 1));
     }
   }
 
-  // Territories.
-  for (const t of state.territories) {
-    const c = P(t.x, t.y);
-    const r = radiusOf(t) * S;
-    const col = ownerColor(state, t.owner, th);
-    const shielded = isShielded(state, t);
+  drawEvent(ev, o, z, now, motion) {
+    if (!ev.type || (!ev.active && !ev.warning)) return;
+    const ctx = this.ctx, W = this.W * z, H = this.H * z;
+    if (ev.type === 'eclipse' && ev.active) {
+      ctx.fillStyle = 'rgba(10,0,8,0.38)';
+      ctx.fillRect(o.x, o.y, W, H);
+    }
+    if (!motion) return;
+    const count = ev.active ? 160 : 40;
+    const seedT = Math.floor(now * 20);
+    const colors = { storm: '#e6f6ff', bloom: '#c4ff6a', eruption: '#ffb02e', surge: '#7fe8ff', eclipse: '#ff3a4a' };
+    ctx.fillStyle = colors[ev.type] || '#ffffff';
+    for (let k = 0; k < count; k++) {
+      const u = ((k * 9301 + 49297) % 233280) / 233280, v = ((k * 4513 + 1931) % 104729) / 104729;
+      let x, y;
+      if (ev.type === 'storm') { x = (u * W + now * 120 * this.dpr) % W; y = (v * H + now * 60 * this.dpr) % H; }
+      else { x = u * W; y = (v * H - now * 25 * this.dpr * (0.5 + u)) % H; if (y < 0) y += H; }
+      if (ev.type !== 'storm' && (k + seedT) % 4 === 0) continue;
+      ctx.fillRect(Math.round(o.x + x), Math.round(o.y + y), Math.max(1, z), Math.max(1, z));
+    }
+  }
 
-    if (ui.highlights.has(t.id)) {
-      const pulse = 0.5 + 0.5 * Math.sin(now * 4);
-      ctx.strokeStyle = `rgba(255,255,140,${0.4 + 0.5 * pulse})`;
-      ctx.lineWidth = Math.max(2, 4 * S);
-      ctx.beginPath(); ctx.arc(c.x, c.y, r + (10 + 6 * pulse) * S, 0, Math.PI * 2); ctx.stroke();
-    }
-    if (threatened.has(t.id)) {
-      const pulse = 0.5 + 0.5 * Math.sin(now * 6);
-      ctx.strokeStyle = `rgba(255,60,60,${0.4 + 0.5 * pulse})`;
-      ctx.lineWidth = Math.max(2, 3 * S);
-      ctx.beginPath(); ctx.arc(c.x, c.y, r + 7 * S, 0, Math.PI * 2); ctx.stroke();
-    }
-    const ns = networkStatus(state, t);
-    if (ns === 'nourished') {
-      ctx.fillStyle = 'rgba(150,255,110,0.18)';
-      ctx.beginPath(); ctx.arc(c.x, c.y, r + 6 * S, 0, Math.PI * 2); ctx.fill();
-    }
-
-    // Body.
-    const grad = ctx.createRadialGradient(c.x - r * 0.3, c.y - r * 0.3, r * 0.1, c.x, c.y, r);
-    grad.addColorStop(0, shade(col.startsWith('#') ? col : '#888888', 1.35));
-    grad.addColorStop(1, shade(col.startsWith('#') ? col : '#888888', ns === 'withered' ? 0.45 : 0.75));
-    ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, Math.PI * 2); ctx.fill();
-    ctx.lineWidth = Math.max(1.5, 3 * S);
-    ctx.strokeStyle = t.type === 'fortress' || t.type === 'citadel' ? '#dfe8ff' : 'rgba(255,255,255,0.35)';
-    if ((t.type === 'fortress' || t.type === 'citadel') && defMult(state, t) < 1.5 * (state.factions[t.owner]?.def || 1)) ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-    ctx.stroke();
-    if (t.type === 'fortress' || t.type === 'citadel') {
-      ctx.lineWidth = Math.max(1, 1.5 * S);
-      ctx.beginPath(); ctx.arc(c.x, c.y, r - 4 * S, 0, Math.PI * 2); ctx.stroke();
-    }
-
-    if (ui.selection.has(t.id)) {
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = Math.max(2, 4 * S);
-      ctx.setLineDash([6 * S + 2, 4 * S + 2]);
-      ctx.lineDashOffset = -now * 30;
-      ctx.beginPath(); ctx.arc(c.x, c.y, r + 6 * S, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([]);
-    } else if (ui.validTargets.has(t.id)) {
-      ctx.strokeStyle = t.owner === 1 ? 'rgba(140,220,255,0.7)' : 'rgba(255,200,120,0.85)';
-      ctx.lineWidth = Math.max(1.5, 2.5 * S);
-      ctx.beginPath(); ctx.arc(c.x, c.y, r + 5 * S, 0, Math.PI * 2); ctx.stroke();
-    }
-    if (ui.hover === t.id) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-      ctx.lineWidth = Math.max(1, 2 * S);
-      ctx.beginPath(); ctx.arc(c.x, c.y, r + 2 * S, 0, Math.PI * 2); ctx.stroke();
-    }
-
-    if (shielded) {
-      const pulse = 0.5 + 0.5 * Math.sin(now * 3);
-      ctx.strokeStyle = `rgba(190,255,150,${0.5 + 0.4 * pulse})`;
-      ctx.fillStyle = 'rgba(190,255,150,0.12)';
-      ctx.lineWidth = Math.max(2, 3 * S);
-      ctx.beginPath(); ctx.arc(c.x, c.y, r + 12 * S, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    }
-    if (empActive(state, t)) {
-      ctx.strokeStyle = 'rgba(120,200,255,0.9)';
-      ctx.lineWidth = Math.max(1, 2 * S);
-      ctx.setLineDash([3, 4]);
-      ctx.beginPath(); ctx.arc(c.x, c.y, r + 9 * S, now * 2, now * 2 + Math.PI * 1.6); ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    // Icon and troop count.
-    const iconColor = 'rgba(255,255,255,0.9)';
-    const hasIcon = t.type !== 'normal';
-    if (hasIcon) drawIcon(ctx, t.type, c.x, c.y - r * 0.42, r * 0.28, iconColor);
-    if (t.type === 'turret' && !isPowered(state, t) && t.owner !== 0) {
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, Math.PI * 2); ctx.fill();
-    }
-    const visible = vision.has(t.id);
-    const label = visible ? String(Math.floor(t.troops)) : '?';
-    ctx.font = `700 ${Math.max(10, Math.round(r * (hasIcon ? 0.62 : 0.75)))}px system-ui, sans-serif`;
+  drawLabels(o, z) {
+    const st = this.state, ctx = this.ctx, d = this.dpr;
+    this.updateLabels();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-    ctx.strokeText(label, c.x, c.y + (hasIcon ? r * 0.22 : 0));
-    ctx.fillStyle = t.owner === 0 ? NEUTRAL_TEXT : '#fff';
-    ctx.fillText(label, c.x, c.y + (hasIcon ? r * 0.22 : 0));
-
-    if (t.name && S > 0.45) {
-      ctx.font = `600 ${Math.max(9, Math.round(11 * S))}px system-ui, sans-serif`;
-      ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      ctx.fillText(t.name, c.x, c.y + r + 12 * S + 5);
+    // Biggest empires first; skip labels that would overlap one already drawn.
+    const order = [...this.labels.keys()].filter(id => st.factions[id]?.alive)
+      .sort((a, b) => (a === PLAYER ? -1 : b === PLAYER ? 1 : st.factions[b].tiles - st.factions[a].tiles));
+    const placed = [];
+    for (const id of order) {
+      const pos = this.labels.get(id);
+      const f = st.factions[id];
+      const base = Math.sqrt(f.tiles) * z * 0.2;
+      const size = Math.max(10 * d, Math.min(24 * d, base));
+      if (id !== PLAYER && base < 6 * d) continue;
+      const p = { x: o.x + (pos.x + 0.5) * z, y: o.y + (pos.y + 0.5) * z };
+      const name = id === PLAYER ? 'YOU' : f.name;
+      const big = id === PLAYER || f.kind === 'enemy';
+      ctx.font = `${big ? 700 : 400} ${Math.round(size)}px "Pixelify Sans", monospace`;
+      const wHalf = ctx.measureText(name).width / 2 + 4;
+      const box = { x0: p.x - wHalf, x1: p.x + wHalf, y0: p.y - size * 1.1, y1: p.y + size * 1.1 };
+      if (id !== PLAYER && placed.some(b => b.x0 < box.x1 && b.x1 > box.x0 && b.y0 < box.y1 && b.y1 > box.y0)) continue;
+      placed.push(box);
+      ctx.lineWidth = Math.max(2, size / 5);
+      ctx.strokeStyle = 'rgba(5,4,12,0.85)';
+      ctx.fillStyle = id === PLAYER ? '#e6fbff' : '#f2ecff';
+      ctx.strokeText(name, p.x, p.y - size * 0.55);
+      ctx.fillText(name, p.x, p.y - size * 0.55);
+      const troops = fmt(f.troops);
+      ctx.font = `700 ${Math.round(size * 0.95)}px "Pixelify Sans", monospace`;
+      ctx.strokeText(troops, p.x, p.y + size * 0.5);
+      ctx.fillStyle = id === PLAYER ? '#7fe8ff' : f.kind === 'enemy' ? mixHex(f.color, '#ffffff', 0.4) : '#ffffff';
+      ctx.fillText(troops, p.x, p.y + size * 0.5);
     }
   }
-
-  // Fleets.
-  for (const fl of state.fleets) {
-    const visible = fl.owner === 1 || vision.has(fl.to) || vision.has(fl.from);
-    if (!visible) continue;
-    const w = fleetPos(fl);
-    const c = P(w.x, w.y);
-    const rr = Math.max(5, (6 + Math.min(10, Math.sqrt(fl.troops) * 1.3)) * S);
-    ctx.fillStyle = fl.frost ? '#bfe9ff' : state.factions[fl.owner].color;
-    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(c.x, c.y, rr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.font = `700 ${Math.max(9, Math.round(rr * 1.1))}px system-ui, sans-serif`;
-    ctx.fillStyle = '#fff';
-    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-    ctx.lineWidth = 3;
-    const lbl = String(Math.ceil(fl.troops));
-    ctx.strokeText(lbl, c.x, c.y - rr - 7);
-    ctx.fillText(lbl, c.x, c.y - rr - 7);
-  }
-
-  // Drag line.
-  if (ui.drag && ui.drag.active) {
-    const from = terr(state, ui.drag.from);
-    const a = P(from.x, from.y);
-    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-    ctx.lineWidth = Math.max(2, 4 * S);
-    ctx.setLineDash([10, 8]);
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(ui.drag.x, ui.drag.y); ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  // Storm haze on top.
-  if (ev.type === 'storm' && (ev.active || ev.warning)) {
-    ctx.fillStyle = `rgba(220,240,255,${ev.active ? 0.22 + 0.05 * Math.sin(now * 5) : 0.06})`;
-    ctx.fillRect(0, 0, view.width, view.height);
-  }
-  if (ev.type === 'bloom' && ev.active) {
-    ctx.fillStyle = 'rgba(150,255,100,0.08)';
-    ctx.fillRect(0, 0, view.width, view.height);
-  }
-}
-
-export function validTargetsFor(state, selection) {
-  const out = new Set();
-  for (const id of selection) for (const n of neighbors(state, id)) if (!selection.has(n)) out.add(n);
-  return out;
 }

@@ -24,7 +24,10 @@ function moduleGraph(entry) {
   return [...seen];
 }
 
-const files = ['index.html', 'css/style.css', ...moduleGraph('js/main.js')];
+const files = [
+  'index.html', 'css/style.css', ...moduleGraph('js/main.js'),
+  'assets/fonts/PixelifySans.woff2', 'assets/fonts/Silkscreen-400.woff2', 'assets/fonts/Silkscreen-700.woff2', 'assets/fonts/README.md',
+];
 rmSync(join(ROOT, 'dist'), { recursive: true, force: true });
 for (const f of files) {
   mkdirSync(dirname(join(OUT, f)), { recursive: true });

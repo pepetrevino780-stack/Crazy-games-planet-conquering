@@ -1,7 +1,8 @@
 // Procedural pixel-art skies: per-planet space backdrops, the title
 // landscape, and planet orbs for the campaign screen. Everything is drawn
 // into low-resolution ImageData and scaled up with nearest-neighbour.
-import { fbm, bayer, PLANET_ART } from './terrain.js';
+import { fbm, bayer } from '../world/noise.js';
+import { THEMES } from '../world/themes.js';
 
 const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
@@ -150,13 +151,13 @@ export function backdropCanvas(planetId, w, h) {
 
 // Rotating-free planet orb for menus.
 export function planetOrb(planetId, size = 48) {
-  const art = PLANET_ART[planetId];
+  const p = THEMES[planetId].pal;
   const px = new Pix(size, size);
   const r = size / 2 - 3;
-  const pal = [art.sea[1], art.sea[2], ...art.land.slice(2), art.coast];
+  const pal = [p.deep[1], p.shallow[1], p.plains[1], p.wild[1], p.highland[2], p.coast].map(hex);
   sphere(px, size / 2, size / 2, r, pal, { tex: 0.9, seed: planetId.length * 31 });
   // Thin atmosphere rim.
-  const rimC = art.coast;
+  const rimC = hex(p.coast);
   for (let a = 0; a < Math.PI * 2; a += 0.02) {
     const x = size / 2 + Math.cos(a) * (r + 1), y = size / 2 + Math.sin(a) * (r + 1);
     if (Math.cos(a) * -0.6 + Math.sin(a) * -0.6 > 0.1 || bayer(x | 0, y | 0) < 0.3) px.set(x, y, rimC);

@@ -1,320 +1,268 @@
-// Campaign definition: the five-planet learning curve.
-// Vulkara teaches expansion, Cryonis survival, Mycelion disruption,
-// Xythera planning, and Noctyra tests everything together.
-//
-// Map coordinates live in a 1000x600 virtual space.
-// Node tuple: [id, x, y, type, owner, troops, extra?]
-// Owners: 0 = neutral, 1 = player, 2 = enemy civilization.
+// Campaign and content definitions. Everything here is data: worlds, enemy
+// civilizations, objective sites, victory rules and tutorial objectives.
+// New planets, civilizations or skirmish setups can be added without
+// touching the engine.
 
-export const TYPE_INFO = {
-  normal:   { label: 'Territory',      growth: 0.45, cap: 50,  def: 1.0,  value: 1.0 },
-  capital:  { label: 'Capital',        growth: 0.9,  cap: 100, def: 1.3,  value: 4.0 },
-  vent:     { label: 'Magma Vent',     growth: 0.8,  cap: 60,  def: 1.0,  value: 1.6 },
-  fortress: { label: 'Fortified Region', growth: 0.35, cap: 70, def: 1.8, value: 1.5 },
-  crystal:  { label: 'Crystal Deposit', growth: 0.25, cap: 40, def: 1.0,  value: 2.5 },
-  hub:      { label: 'Network Hub',    growth: 0.6,  cap: 60,  def: 1.1,  value: 3.0 },
-  relay:    { label: 'Energy Relay',   growth: 0.3,  cap: 40,  def: 1.0,  value: 2.5 },
-  turret:   { label: 'Automated Defense', growth: 0.3, cap: 50, def: 2.6, value: 1.2 },
-  factory:  { label: 'Ancient Factory', growth: 0.8, cap: 70,  def: 1.0,  value: 3.0 },
-  command:  { label: 'Command Node',   growth: 0.4,  cap: 60,  def: 1.2,  value: 3.0 },
-  citadel:  { label: 'Eclipse Citadel', growth: 0.9, cap: 120, def: 3.6,  value: 4.0 },
+// NPC behaviour profiles. Later planets get smarter commanders, not bigger
+// armies: faster decisions, better targets, defence, retaliation and
+// coordinated multi-front attacks.
+export const AI_PROFILES = {
+  // Small independent nations: expand into wilderness, retaliate, rarely start wars.
+  tribe: {
+    interval: 3.2, attackAt: 0.55, ratio: 0.3, wildBias: 2.2, playerBias: 0.4, nationBias: 0.6,
+    objectiveSense: 0.1, retaliate: true, fronts: 1, reserve: 0.25, build: 0.3, noise: 0.5,
+  },
+  passive: {
+    interval: 3.6, attackAt: 0.75, ratio: 0.22, wildBias: 0.8, playerBias: 0.3, nationBias: 0.6,
+    objectiveSense: 0.2, retaliate: false, fronts: 1, reserve: 0.4, build: 0.3, noise: 0.5,
+  },
+  cautious: {
+    interval: 2.4, attackAt: 0.5, ratio: 0.35, wildBias: 1.4, playerBias: 0.8, nationBias: 0.8,
+    objectiveSense: 0.6, retaliate: true, fronts: 1, reserve: 0.45, build: 0.7, noise: 0.3,
+  },
+  aggressive: {
+    interval: 2.0, attackAt: 0.42, ratio: 0.4, wildBias: 1.1, playerBias: 1.2, nationBias: 1.0,
+    objectiveSense: 0.5, retaliate: true, fronts: 2, reserve: 0.25, build: 0.6, noise: 0.25,
+  },
+  tactical: {
+    interval: 1.6, attackAt: 0.45, ratio: 0.4, wildBias: 1.2, playerBias: 1.1, nationBias: 1.0,
+    objectiveSense: 1.0, retaliate: true, fronts: 2, reserve: 0.4, build: 0.9, noise: 0.15,
+  },
+  mastermind: {
+    interval: 1.3, attackAt: 0.42, ratio: 0.42, wildBias: 1.1, playerBias: 1.3, nationBias: 1.0,
+    objectiveSense: 1.0, retaliate: true, fronts: 1, reserve: 0.4, build: 1.0, noise: 0.1, // + command nodes
+  },
 };
 
-// NPC behaviour profiles. Difficulty rises through smarter decisions,
-// not bigger armies: think speed, target quality, defence and coordination.
-export const AI_PROFILES = {
-  // Vulkara: relaxed natives that mostly grab neutral land.
-  passive: {
-    interval: 3.6, idleChance: 0.35, neutralMargin: 1.35, playerMargin: 2.2,
-    playerBias: 0.35, objectiveSense: 0.1, noise: 0.6, fronts: 1,
-    multiSource: false, defend: false, counterattack: false, consolidate: false,
-    homeGuard: 0, keepHome: 0.4, sendBuffer: 1.1, eventAware: false, punishWeak: false,
-  },
-  // Cryonis: cautious defenders who reinforce and retake what they lose.
-  cautious: {
-    interval: 2.6, idleChance: 0.15, neutralMargin: 1.4, playerMargin: 1.6,
-    playerBias: 0.8, objectiveSense: 0.6, noise: 0.3, fronts: 1,
-    multiSource: true, defend: true, counterattack: true, consolidate: true,
-    homeGuard: 20, keepHome: 0.5, sendBuffer: 1.2, eventAware: true, punishWeak: false,
-  },
-  // Mycelion: fast, greedy expanders.
-  aggressive: {
-    interval: 1.9, idleChance: 0.05, neutralMargin: 1.1, playerMargin: 1.35,
-    playerBias: 1.2, objectiveSense: 0.5, noise: 0.25, fronts: 2,
-    multiSource: true, defend: false, counterattack: true, consolidate: true,
-    homeGuard: 8, keepHome: 0.3, sendBuffer: 1.15, eventAware: false, punishWeak: false,
-  },
-  // Xythera: guards valuable infrastructure and punishes overextension.
-  tactical: {
-    interval: 1.7, idleChance: 0.05, neutralMargin: 1.25, playerMargin: 1.3,
-    playerBias: 1.1, objectiveSense: 1.0, noise: 0.15, fronts: 2,
-    multiSource: true, defend: true, counterattack: true, consolidate: true,
-    homeGuard: 25, keepHome: 0.45, sendBuffer: 1.2, eventAware: true, punishWeak: true,
-  },
-  // Noctyra: coordinated multi-front warfare driven by command nodes.
-  mastermind: {
-    interval: 1.4, idleChance: 0.0, neutralMargin: 1.2, playerMargin: 1.25,
-    playerBias: 1.3, objectiveSense: 1.0, noise: 0.1, fronts: 0, // + one per command node
-    multiSource: true, defend: true, counterattack: true, consolidate: true,
-    homeGuard: 30, keepHome: 0.45, sendBuffer: 1.2, eventAware: true, punishWeak: true,
-  },
+// Objective and resource sites that appear on maps. Effects are applied by
+// the engine through these properties.
+export const SITE_TYPES = {
+  capital: { label: 'Capital', desc: 'Fortified: land within 6 tiles defends at 2x. Lose it and the civilization falls.', fortress: 2, radius: 6 },
+  citadel: { label: 'Eclipse Citadel', desc: 'Capital fortress: nearly impregnable except during an eclipse.', fortress: 4, radius: 9, eclipseOnly: true },
+  vent: { label: 'Magma Vent', desc: '+energy and +minerals; erupts with riches.', energy: 1.2, minerals: 2 },
+  crystal: { label: 'Crystal Deposit', desc: '+minerals and +5% troop growth for its owner.', minerals: 4, growth: 0.05 },
+  hub: { label: 'Network Hub', desc: 'Nourishes its owner\'s land within 26 tiles (+35% defense). Shields the Brood Heart.', nourish: 1.35, radius: 26 },
+  relay: { label: 'Energy Relay', desc: 'Powers automated defenses. +energy.', energy: 1 },
+  turret: { label: 'Automated Defense', desc: 'While powered, land around it costs 2.5x to attack.', guard: 2.5, radius: 14 },
+  factory: { label: 'Ancient Factory', desc: '+minerals and +10% troop growth.', minerals: 5, growth: 0.1 },
+  command: { label: 'Command Node', desc: 'Grants its owner an extra attack front and +6% attack strength. +energy.', energy: 0.5 },
+  ruin: { label: 'Ancient Ruin', desc: '+exotic matter.', exotic: 0.5 },
+};
+
+// Player-built structures (bought with minerals). Cost grows with each copy.
+export const BUILDINGS = {
+  habitat: { key: '1', name: 'Habitat', desc: '+12% max troops (up to 5 Habitats count).', cost: 300 },
+  extractor: { key: '2', name: 'Extractor', desc: '+4 minerals/s.', cost: 250 },
+  starport: { key: '3', name: 'Starport', desc: 'Launch dropships to land you do not border. Must be near the coast.', cost: 400, coastal: true },
+  bastion: { key: '4', name: 'Bastion', desc: 'Your land within 10 tiles defends at 1.8x.', cost: 300, radius: 10 },
+  spire: { key: '5', name: 'Research Spire', desc: '+0.5 exotic matter/s for research.', cost: 350 },
+};
+
+export const RESEARCH = {
+  swift: { name: 'Swift Assault', desc: 'Attacks advance 30% faster.', cost: 40 },
+  hardened: { name: 'Hardened Troops', desc: 'Attacks cost 12% fewer troops.', cost: 60 },
+  logistics: { name: 'Deep Logistics', desc: '+10% max troops and growth.', cost: 80 },
 };
 
 export const PLANETS = [
   {
     id: 'vulkara',
     name: 'Vulkara',
+    title: 'The Ashen Cradle',
     lesson: 'Learn to Attack',
-    tagline: 'A molten world of open plains. Expand fast and strike the Ember Throne.',
-    theme: { bg1: '#2a0d06', bg2: '#5c1a0a', accent: '#ff7a2f', lane: 'rgba(255,150,90,0.35)', neutral: '#6d5a52' },
-    enemy: { name: 'Ember Tribes', color: '#ff4b3e', profile: 'passive', startDelay: 15, growth: 0.85, atk: 1.0, def: 1.0 },
-    briefing: [
-      'Your territories produce troops over time. Neutral land is free to take if you bring more troops than its garrison.',
-      'Select one of your territories, then tap a connected target to attack. The attack ratio decides how many troops leave.',
-      'Magma vents produce troops quickly. Holding them speeds up your growth.',
-    ],
-    lessons: ['Capture neutral territories', 'Balance attacking and defending', 'Choose attack ratios', 'Capture the enemy capital'],
-    events: { type: 'eruption', period: 45, duration: 10, warn: 5 },
-    victory: { mode: 'all', conds: [{ type: 'own', ids: ['ecap'], label: 'Capture the Ember Throne' }] },
+    tagline: 'A volcanic world of ash plains and magma seas. Expand fast and break the Cindari.',
+    theme: 'vulkara', seed: 4101, size: [300, 190],
+    enemy: { name: 'Cindari Clans', color: '#ff4b3e', profile: 'passive', radius: 8, troops: 900, capitalName: 'Ember Throne', startDelay: 12 },
+    nations: { count: 5, radius: 5, troops: 400, profile: 'passive' },
+    sites: [{ type: 'vent', count: 4, where: 'middle' }, { type: 'ruin', count: 2, where: 'any' }],
+    events: { type: 'eruption', period: 45, duration: 8, warn: 5 },
+    victory: { mode: 'all', conds: [{ type: 'capture', site: 'enemy-capital', label: 'Capture the Ember Throne' }] },
     objectives: [
-      { id: 'v1', type: 'own', ids: ['n1'], label: 'Capture the highlighted neutral territory', reward: 5, highlight: ['n1'],
-        tip: 'Tap your capital, then tap the glowing territory. You can also drag from one to the other.' },
-      { id: 'v2', type: 'ratioAttack', ratio: 0.75, label: 'Launch an attack with a 75% ratio', reward: 5,
-        tip: 'Higher ratios send more troops, but leave the source weaker. Try 75% (key 3) for a decisive strike.' },
-      { id: 'v3', type: 'count', n: 7, label: 'Control 7 territories', reward: 5,
-        tip: 'Each territory you hold adds production. Keep expanding while your capital stays guarded.' },
-      { id: 'v4', type: 'own', ids: ['n8'], label: 'Seize the central magma vent', reward: 5, highlight: ['n8'],
-        tip: 'Vents grow troops fast. Taking the centre gives you the momentum to push for the Ember Throne.' },
+      { id: 'v1', type: 'tiles', n: 300, label: 'Expand to 300 tiles', reward: 5,
+        tip: 'Click unclaimed land next to your border. Wilderness is cheap to take.' },
+      { id: 'v2', type: 'ratioAttack', ratio: 0.5, label: 'Attack with a 50% ratio or more', reward: 5,
+        tip: 'The ratio sets how much of your army joins an attack. Troops regrow fastest when your army is not full.' },
+      { id: 'v3', type: 'ownType', site: 'vent', n: 1, label: 'Seize a magma vent', reward: 5, highlight: 'vent',
+        tip: 'Vents give energy and minerals. Eruptions pay out to whoever holds them.' },
+      { id: 'v4', type: 'build', building: 'habitat', label: 'Build a Habitat', reward: 5,
+        tip: 'Spend minerals on buildings. Habitats raise your troop cap.' },
     ],
+    briefing: [
+      'Pick your landing site, then click land next to your border to attack it. Your border advances tile by tile until the attack runs out of troops.',
+      'Your troop cap grows with territory. Troops regrow fastest when your army is well below its cap, so keep attacking.',
+      'Mountains, rivers and volcanoes are slow and costly to cross. Plains are fast.',
+    ],
+    lessons: ['Expand into wilderness', 'Use the attack ratio', 'Grow your troop cap', 'Capture an enemy capital'],
     rewards: { base: 30 },
-    nodes: [
-      ['p0', 90, 300, 'capital', 1, 30, { name: 'Landing Zone' }],
-      ['n1', 200, 200, 'normal', 0, 6], ['n2', 200, 410, 'normal', 0, 9],
-      ['n3', 320, 110, 'normal', 0, 12], ['n4', 330, 300, 'vent', 0, 14], ['n5', 320, 490, 'normal', 0, 12],
-      ['n6', 460, 200, 'normal', 0, 15], ['n7', 460, 410, 'normal', 0, 15],
-      ['n8', 570, 300, 'vent', 0, 20, { name: 'Caldera' }],
-      ['n9', 600, 110, 'normal', 0, 14], ['n10', 600, 490, 'normal', 0, 14],
-      ['e1', 720, 200, 'normal', 2, 11], ['e2', 720, 410, 'normal', 2, 11],
-      ['e3', 830, 110, 'normal', 2, 8], ['e4', 830, 490, 'normal', 2, 8],
-      ['ecap', 910, 300, 'capital', 2, 28, { name: 'Ember Throne' }],
-    ],
-    lanes: [
-      ['p0', 'n1'], ['p0', 'n2'], ['n1', 'n3'], ['n1', 'n4'], ['n2', 'n4'], ['n2', 'n5'],
-      ['n3', 'n6'], ['n4', 'n6'], ['n4', 'n7'], ['n5', 'n7'], ['n6', 'n8'], ['n7', 'n8'],
-      ['n6', 'n9'], ['n7', 'n10'], ['n8', 'e1'], ['n8', 'e2'], ['n9', 'e1'], ['n9', 'e3'],
-      ['n10', 'e2'], ['n10', 'e4'], ['e1', 'ecap'], ['e2', 'ecap'], ['e3', 'ecap'], ['e4', 'ecap'], ['e1', 'e2'],
-    ],
   },
   {
     id: 'cryonis',
     name: 'Cryonis',
+    title: 'The Frozen Frontier',
     lesson: 'Learn to Defend',
-    tagline: 'A frozen world split by ice passes. Hold the crystals or break the Frost Bastion.',
-    theme: { bg1: '#06162a', bg2: '#123e63', accent: '#7fd8ff', lane: 'rgba(160,220,255,0.35)', neutral: '#5a6b7a' },
-    enemy: { name: 'Glacial Concord', color: '#c46bff', profile: 'cautious', startDelay: 12, growth: 0.7, atk: 1.0, def: 1.0 },
-    briefing: [
-      'Fortified regions (shield icon) multiply their defenders. Attacking one head-on is expensive; holding one is cheap.',
-      'Crystal deposits boost production in every territory you own. The enemy will counterattack to take them back.',
-      'Ice passes (dashed lanes) are slow. Whiteout storms freeze fleets in transit: troops launched during a storm arrive weakened.',
-    ],
-    lessons: ['Use fortified chokepoints', 'Protect resource regions', 'Know when an attack is too expensive', 'Survive counterattacks'],
+    tagline: 'A frozen world of glaciers and crystal fields. The Glacari defend every ridge.',
+    theme: 'cryonis', seed: 5207, size: [330, 210],
+    enemy: { name: 'Glacari Concord', color: '#b48cff', profile: 'cautious', radius: 9, troops: 1000, capitalName: 'Frost Bastion', startDelay: 10 },
+    nations: { count: 6, radius: 5, troops: 450, profile: 'tribe' },
+    sites: [{ type: 'crystal', count: 4, where: 'middle' }, { type: 'ruin', count: 2, where: 'any' }],
     events: { type: 'storm', period: 50, duration: 12, warn: 6 },
     victory: { mode: 'any', conds: [
-      { type: 'hold', ids: ['c1', 'c2'], duration: 150, label: 'Hold Crystal Alpha and Beta together for 2:30' },
-      { type: 'own', ids: ['ecap'], label: 'Or capture the Frost Bastion' },
+      { type: 'holdType', site: 'crystal', n: 3, duration: 150, label: 'Hold 3 crystal deposits for 2:30' },
+      { type: 'capture', site: 'enemy-capital', label: 'Or capture the Frost Bastion' },
     ] },
     objectives: [
-      { id: 'c_1', type: 'own', ids: ['c1'], label: 'Secure Crystal Alpha', reward: 5, highlight: ['c1'],
-        tip: 'Crystal deposits raise production everywhere you rule. Defend this one: the Concord wants it back.' },
-      { id: 'c_2', type: 'repel', n: 3, label: 'Repel 3 enemy attacks', reward: 10,
-        tip: 'Defenders in fortified regions count for more. Reinforce the chokepoint by dragging troops onto it.' },
-      { id: 'c_3', type: 'own', ids: ['n3'], label: 'Take the Frozen Gate chokepoint', reward: 5, highlight: ['n3'],
-        tip: 'The Frozen Gate guards both crystals. A fortified gate turns enemy waves into wasted troops.' },
+      { id: 'c1', type: 'ownType', site: 'crystal', n: 1, label: 'Secure a crystal deposit', reward: 5, highlight: 'crystal',
+        tip: 'Crystals give minerals and faster troop growth. The Glacari will try to take them back.' },
+      { id: 'c2', type: 'build', building: 'bastion', label: 'Build a Bastion near a crystal', reward: 5,
+        tip: 'Bastions make your land nearby defend at 1.8x. Put them where enemies attack.' },
+      { id: 'c3', type: 'repel', n: 3, label: 'Repel 3 enemy attacks', reward: 10,
+        tip: 'An attack is repelled when it runs out of troops on your land. Keep a reserve and use high ground.' },
     ],
+    briefing: [
+      'Mountains, glaciers and rivers multiply your defence. Hold the high ground and let attacks break on it.',
+      'Bastions strengthen your land nearby. Crystal deposits fund your war; holding three of them long enough wins the planet.',
+      'Whiteout storms freeze troops in transit: attacks launched during a storm lose a quarter of their troops.',
+    ],
+    lessons: ['Defend with terrain', 'Protect resource regions', 'Build defences', 'Survive counterattacks'],
     rewards: { base: 40 },
-    nodes: [
-      ['p0', 80, 300, 'capital', 1, 30, { name: 'Ice Citadel' }],
-      ['f1', 200, 300, 'fortress', 1, 18, { name: 'Rimewall' }],
-      ['n1', 190, 150, 'normal', 0, 8], ['n2', 190, 460, 'normal', 0, 8],
-      ['c1', 330, 160, 'crystal', 0, 12, { name: 'Crystal Alpha' }],
-      ['c2', 330, 450, 'crystal', 0, 12, { name: 'Crystal Beta' }],
-      ['n3', 350, 300, 'fortress', 0, 22, { name: 'Frozen Gate' }],
-      ['n4', 480, 100, 'normal', 0, 14], ['n5', 500, 300, 'normal', 0, 18], ['n6', 480, 510, 'normal', 0, 14],
-      ['c3', 620, 300, 'crystal', 2, 12, { name: 'Crystal Gamma' }],
-      ['e1', 720, 150, 'fortress', 2, 13], ['e2', 720, 450, 'fortress', 2, 13],
-      ['e3', 820, 300, 'normal', 2, 10], ['e4', 840, 110, 'normal', 2, 6], ['e5', 840, 490, 'normal', 2, 6],
-      ['ecap', 920, 300, 'capital', 2, 27, { name: 'Frost Bastion' }],
-    ],
-    lanes: [
-      ['p0', 'f1'], ['p0', 'n1'], ['p0', 'n2'], ['f1', 'n1'], ['f1', 'n2'], ['f1', 'n3'],
-      ['n1', 'c1'], ['n2', 'c2'], ['c1', 'n3'], ['c2', 'n3'],
-      ['c1', 'n4', 'ice'], ['c2', 'n6', 'ice'], ['n3', 'n5', 'ice'], ['n4', 'n5'], ['n6', 'n5'],
-      ['n5', 'c3', 'ice'], ['n4', 'e1'], ['n6', 'e2'], ['c3', 'e1'], ['c3', 'e2'], ['c3', 'e3'],
-      ['e1', 'e4'], ['e2', 'e5'], ['e1', 'e3'], ['e2', 'e3'], ['e3', 'ecap'], ['e4', 'ecap'], ['e5', 'ecap'],
-    ],
   },
   {
     id: 'mycelion',
     name: 'Mycelion',
+    title: 'The Living World',
     lesson: 'Learn to Disrupt',
-    tagline: 'A living fungal world. Its regions share strength through network hubs.',
-    theme: { bg1: '#0b1a0c', bg2: '#25401c', accent: '#9dff6a', lane: 'rgba(170,255,140,0.28)', neutral: '#5d6650' },
-    enemy: { name: 'Sporeborn Swarm', color: '#ffd23f', profile: 'aggressive', startDelay: 10, growth: 0.7, atk: 1.0, def: 1.0 },
-    briefing: [
-      'Network hubs feed every region linked to them: nourished regions grow faster and defend better.',
-      'Capturing a hub cuts its links. Starved regions stop growing and slowly wither.',
-      'The Brood Heart is shielded while the Swarm holds any hub. The biggest army is rarely the best target.',
-    ],
-    lessons: ['Locate network hubs', 'Break enemy connections', 'Prioritize multi-territory targets', 'Contain an aggressive expander'],
+    tagline: 'A fungal world wired together by living hubs. The Mycelials spread without pause.',
+    theme: 'mycelion', seed: 6311, size: [360, 220],
+    enemy: { name: 'Mycelial Swarm', color: '#c6ff3d', profile: 'aggressive', radius: 9, troops: 1000, capitalName: 'Brood Heart', startDelay: 8,
+      sites: [{ type: 'hub', count: 3, ring: [16, 26], name: 'Hub' }], shieldedBy: 'hub' },
+    nations: { count: 6, radius: 5, troops: 450, profile: 'tribe' },
+    sites: [{ type: 'ruin', count: 2, where: 'any' }],
     events: { type: 'bloom', period: 40, duration: 4, warn: 5 },
-    victory: { mode: 'all', conds: [{ type: 'own', ids: ['heart'], label: 'Destroy the Brood Heart' }] },
+    victory: { mode: 'all', conds: [{ type: 'capture', site: 'enemy-capital', label: 'Destroy the Brood Heart' }] },
     objectives: [
-      { id: 'm1', type: 'own', ids: ['h2'], label: 'Capture the central network hub', reward: 10, highlight: ['h2'],
-        tip: 'This hub nourishes every region linked to it. Taking it weakens all of them at once.' },
-      { id: 'm2', type: 'hubsCut', n: 2, label: 'Hold 2 of the 3 network hubs', reward: 10,
-        tip: 'Spore blooms only feed nourished regions. Every hub you hold starves the Swarm a little more.' },
-      { id: 'm3', type: 'unshield', ids: ['heart'], label: 'Drop the Brood Heart shield', reward: 5, highlight: ['heart'],
-        tip: 'The shield is down! Strike the Brood Heart before the Swarm retakes a hub.' },
+      { id: 'm1', type: 'ownType', site: 'hub', n: 1, label: 'Capture a network hub', reward: 10, highlight: 'hub',
+        tip: 'Hubs nourish all Mycelial land around them. Taking one weakens a whole region at once.' },
+      { id: 'm2', type: 'ownType', site: 'hub', n: 2, label: 'Hold two hubs', reward: 10,
+        tip: 'Each hub you hold also stops the spore bloom from feeding the Swarm.' },
+      { id: 'm3', type: 'unshield', label: 'Drop the Brood Heart shield', reward: 5, highlight: 'enemy-capital',
+        tip: 'The shield is down. Strike the Brood Heart before the Swarm retakes a hub.' },
     ],
+    briefing: [
+      'Network hubs nourish the land around them: nourished land defends at 1.35x.',
+      'The Brood Heart is shielded while the Swarm holds any hub. Its biggest armies are not the target. The hubs are.',
+      'Spore blooms give every hub owner a burst of troops. Cut the hubs and the blooms feed you instead.',
+    ],
+    lessons: ['Locate network hubs', 'Break enemy connections', 'Prioritise key targets', 'Contain a fast expander'],
     rewards: { base: 50 },
-    nodes: [
-      ['p0', 80, 300, 'capital', 1, 35, { name: 'Spore Shelter' }],
-      ['p1', 180, 200, 'normal', 1, 12], ['p2', 180, 400, 'normal', 1, 12],
-      ['n1', 290, 100, 'normal', 0, 10], ['n2', 300, 300, 'normal', 0, 12], ['n3', 290, 500, 'normal', 0, 10],
-      ['h1', 420, 130, 'hub', 2, 18, { network: 'A', name: 'Northern Hub' }],
-      ['a1', 520, 55, 'normal', 0, 8, { net: 'A' }],
-      ['a2', 540, 190, 'normal', 0, 10, { net: 'A' }],
-      ['h2', 430, 310, 'hub', 2, 22, { network: 'B', name: 'Central Hub' }],
-      ['b1', 570, 310, 'normal', 2, 8, { net: 'B' }],
-      ['h3', 420, 490, 'hub', 2, 18, { network: 'C', name: 'Southern Hub' }],
-      ['c1', 540, 420, 'normal', 0, 10, { net: 'C' }],
-      ['c2', 520, 550, 'normal', 0, 8, { net: 'C' }],
-      ['m1', 690, 150, 'normal', 0, 10, { net: 'A' }],
-      ['m2', 690, 460, 'normal', 0, 10, { net: 'C' }],
-      ['m3', 710, 310, 'normal', 2, 22, { net: 'B', name: 'Spore Legion' }],
-      ['n4', 820, 110, 'normal', 0, 10], ['n5', 820, 500, 'normal', 0, 10],
-      ['heart', 890, 310, 'capital', 2, 24, { name: 'Brood Heart', shieldedBy: ['h1', 'h2', 'h3'] }],
-    ],
-    lanes: [
-      ['p0', 'p1'], ['p0', 'p2'], ['p1', 'n1'], ['p1', 'n2'], ['p2', 'n2'], ['p2', 'n3'],
-      ['n1', 'h1'], ['n2', 'h2'], ['n3', 'h3'], ['n2', 'h1'], ['n2', 'h3'],
-      ['h1', 'a1'], ['h1', 'a2'], ['a1', 'm1'], ['a2', 'm1'], ['a2', 'b1'], ['h2', 'b1'],
-      ['h3', 'c1'], ['h3', 'c2'], ['c1', 'b1'], ['c1', 'm2'], ['c2', 'm2'],
-      ['b1', 'm3'], ['m1', 'm3'], ['m2', 'm3'], ['m1', 'n4'], ['m2', 'n5'],
-      ['m3', 'heart'], ['n4', 'heart'], ['n5', 'heart'],
-    ],
   },
   {
     id: 'xythera',
     name: 'Xythera',
+    title: 'The World of Ancient Machines',
     lesson: 'Learn to Plan',
-    tagline: 'An ancient machine world. Its defenses still run on relay power.',
-    theme: { bg1: '#0a0a1f', bg2: '#22204a', accent: '#5ef0ff', lane: 'rgba(120,230,255,0.3)', neutral: '#5c5c78' },
-    enemy: { name: 'Xythian Directorate', color: '#ff3f8e', profile: 'tactical', startDelay: 10, growth: 0.6, atk: 1.0, def: 1.0 },
-    growthScale: 0.8,
-    briefing: [
-      'Automated defenses fire on enemy fleets passing nearby and are heavily fortified, but only while their energy relay is held by the same side.',
-      'Ancient factories boost production in every territory their owner controls. Production on Xythera is scarce.',
-      'The Directorate guards its infrastructure and punishes territories left empty after an attack. Plan each strike.',
-    ],
-    lessons: ['Capture energy relays', 'Disable defenses before assaulting', 'Secure ancient factories', 'Plan around scarce resources'],
+    tagline: 'A ruined machine world. Axiom defenses still hum with relay power.',
+    theme: 'xythera', seed: 7417, size: [380, 230],
+    enemy: { name: 'Axiom Directorate', color: '#ffae3d', profile: 'tactical', radius: 9, troops: 1100, capitalName: 'Core Foundry', startDelay: 8,
+      sites: [{ type: 'relay', count: 2, ring: [20, 30], name: 'Relay' }, { type: 'turret', count: 4, ring: [9, 15], name: 'Defense' }],
+      powers: true },
+    nations: { count: 6, radius: 5, troops: 500, profile: 'tribe' },
+    sites: [{ type: 'factory', count: 3, where: 'middle' }, { type: 'ruin', count: 3, where: 'any' }],
+    growthScale: 0.85,
     events: { type: 'surge', period: 55, duration: 10, warn: 5 },
     victory: { mode: 'all', conds: [
-      { type: 'own', ids: ['core'], label: 'Capture the Core Foundry' },
-      { type: 'ownCount', ids: ['f1', 'f2', 'f3'], n: 2, label: 'Control 2 Ancient Factories' },
+      { type: 'capture', site: 'enemy-capital', label: 'Capture the Core Foundry' },
+      { type: 'ownType', site: 'factory', n: 2, label: 'Control 2 Ancient Factories' },
     ] },
     objectives: [
-      { id: 'x1', type: 'ownCount', ids: ['f1', 'f2'], n: 1, label: 'Secure an Ancient Factory', reward: 5, highlight: ['f1', 'f2'],
-        tip: 'Factories raise production everywhere you rule. On a scarce world they decide prolonged battles.' },
-      { id: 'x2', type: 'own', ids: ['r2'], label: 'Capture the northern energy relay', reward: 10, highlight: ['r2'],
-        tip: 'This relay powers two automated defenses. Take it and they go dark: no fire, no fortification.' },
+      { id: 'x1', type: 'ownType', site: 'factory', n: 1, label: 'Secure an Ancient Factory', reward: 5, highlight: 'factory',
+        tip: 'Factories pay minerals and speed up troop growth. Production is scarce here.' },
+      { id: 'x2', type: 'ownType', site: 'relay', n: 1, label: 'Capture an energy relay', reward: 10, highlight: 'relay',
+        tip: 'Relays power the automated defenses around the Core Foundry. No power, no defense.' },
       { id: 'x3', type: 'unpowered', n: 3, label: 'Disable 3 automated defenses', reward: 10,
-        tip: 'Unpowered defenses are ordinary garrisons. Now the road to the Core Foundry is open.' },
+        tip: 'Unpowered defenses are just land. The road to the Core Foundry is open.' },
     ],
+    briefing: [
+      'Automated defenses make land within 14 tiles cost 2.5x to attack, but only while an Axiom relay is powered.',
+      'Ancient factories boost minerals and troop growth. Troops grow more slowly on Xythera, so factories decide long wars.',
+      'The Directorate guards its infrastructure and strikes whoever empties their army. Plan each attack.',
+    ],
+    lessons: ['Capture energy relays', 'Disable defenses first', 'Secure factories', 'Plan around scarce resources'],
     rewards: { base: 60 },
-    nodes: [
-      ['p0', 80, 300, 'capital', 1, 35, { name: 'Forward Base' }],
-      ['p1', 190, 190, 'normal', 1, 14], ['p2', 190, 410, 'normal', 1, 14],
-      ['f1', 300, 80, 'factory', 0, 22, { name: 'Ancient Factory I' }],
-      ['r1', 320, 300, 'normal', 0, 14],
-      ['f2', 300, 520, 'factory', 0, 22, { name: 'Ancient Factory II' }],
-      ['n1', 430, 190, 'normal', 0, 14], ['n2', 430, 410, 'normal', 0, 14],
-      ['r2', 530, 70, 'relay', 2, 9, { name: 'North Relay', powers: ['t1', 't3'] }],
-      ['r3', 530, 530, 'relay', 2, 9, { name: 'South Relay', powers: ['t2', 't4'] }],
-      ['n3', 560, 300, 'normal', 0, 16],
-      ['t1', 620, 200, 'turret', 2, 9], ['t2', 620, 400, 'turret', 2, 9],
-      ['f3', 720, 300, 'factory', 2, 13, { name: 'Ancient Factory III' }],
-      ['e1', 700, 70, 'normal', 0, 12], ['e2', 700, 530, 'normal', 0, 12],
-      ['t3', 810, 180, 'turret', 2, 10], ['t4', 810, 420, 'turret', 2, 10],
-      ['core', 915, 300, 'capital', 2, 25, { name: 'Core Foundry' }],
-    ],
-    lanes: [
-      ['p0', 'p1'], ['p0', 'p2'], ['p1', 'f1'], ['p1', 'r1'], ['p2', 'r1'], ['p2', 'f2'],
-      ['f1', 'n1'], ['r1', 'n1'], ['r1', 'n2'], ['f2', 'n2'], ['f1', 'r2'], ['f2', 'r3'],
-      ['n1', 'r2'], ['n2', 'r3'], ['n1', 't1'], ['n2', 't2'], ['n1', 'n3'], ['n2', 'n3'],
-      ['n3', 't1'], ['n3', 't2'], ['t1', 'f3'], ['t2', 'f3'], ['r2', 'e1'], ['r3', 'e2'],
-      ['r2', 't1'], ['r3', 't2'], ['e1', 't3'], ['e2', 't4'], ['f3', 't3'], ['f3', 't4'],
-      ['t3', 'core'], ['t4', 'core'],
-    ],
   },
   {
     id: 'noctyra',
     name: 'Noctyra',
+    title: 'The Eternal Eclipse',
     lesson: 'Prove Your Mastery',
-    tagline: 'A world of endless night. The Umbral Dominion strikes on every front.',
-    theme: { bg1: '#05030c', bg2: '#1d0f33', accent: '#b98bff', lane: 'rgba(190,150,255,0.28)', neutral: '#4f4a60' },
-    enemy: { name: 'Umbral Dominion', color: '#ff5d5d', profile: 'mastermind', startDelay: 12, growth: 0.55, atk: 1.0, def: 1.0 },
-    supplyCap: { base: 70, perTerritory: 22 },
-    briefing: [
-      'Command nodes let the Dominion attack on several fronts at once and sharpen its assaults. Each one you take removes a front.',
-      'During an eclipse, fortified regions and the Eclipse Citadel lose their defensive bonus. Time your assault.',
-      'Supply is limited: total troops are capped by how many territories you hold. Hubs, relays, crystals and factories work as before.',
-    ],
-    lessons: ['Break multi-front coordination', 'Capture command nodes', 'Manage limited supply', 'Time attacks to the eclipse', 'Storm the Eclipse Citadel'],
+    tagline: 'A world under a dead sun. The Umbral Dominion strikes on every front.',
+    theme: 'noctyra', seed: 8521, size: [410, 250],
+    enemy: { name: 'Umbral Dominion', color: '#ff3355', profile: 'mastermind', radius: 9, troops: 1200, capitalName: 'Eclipse Citadel', capitalType: 'citadel', startDelay: 6,
+      sites: [{ type: 'command', count: 3, ring: [20, 34], name: 'Command Node' }, { type: 'hub', count: 1, ring: [12, 18], name: 'Umbral Hub' },
+        { type: 'relay', count: 1, ring: [22, 28], name: 'Shade Relay' }, { type: 'turret', count: 2, ring: [10, 14], name: 'Shade Defense' }],
+      powers: true },
+    nations: { count: 7, radius: 5, troops: 500, profile: 'tribe' },
+    sites: [{ type: 'crystal', count: 2, where: 'middle' }, { type: 'factory', count: 1, where: 'middle' }, { type: 'ruin', count: 3, where: 'any' }],
     events: { type: 'eclipse', period: 70, duration: 18, warn: 8 },
-    victory: { mode: 'all', conds: [{ type: 'own', ids: ['cit'], label: 'Conquer the Eclipse Citadel' }] },
+    victory: { mode: 'all', conds: [{ type: 'capture', site: 'enemy-capital', label: 'Conquer the Eclipse Citadel' }] },
     objectives: [
-      { id: 'k1', type: 'own', ids: ['cn2'], label: 'Capture the central command node', reward: 10, highlight: ['cn2'],
-        tip: 'Each command node grants the Dominion another attack front. Taking one reduces its coordination immediately.' },
-      { id: 'k2', type: 'ownCount', ids: ['c1', 'c2'], n: 2, label: 'Hold both crystal deposits', reward: 10,
-        tip: 'Supply is limited on Noctyra; crystals let your territories refill faster within that cap.' },
-      { id: 'k3', type: 'eclipseStrike', label: 'Attack a fortified region during an eclipse', reward: 10,
-        tip: 'The eclipse strips fortifications. Strike fortresses and the Citadel while it lasts.' },
+      { id: 'k1', type: 'ownType', site: 'command', n: 1, label: 'Capture a command node', reward: 10, highlight: 'command',
+        tip: 'Every command node gives the Dominion another attack front. Take one and its coordination drops.' },
+      { id: 'k2', type: 'ownType', site: 'crystal', n: 2, label: 'Hold both crystal deposits', reward: 10,
+        tip: 'A long war needs income. Crystals keep your troops and minerals flowing.' },
+      { id: 'k3', type: 'eclipseStrike', label: 'Attack the Citadel during an eclipse', reward: 10,
+        tip: 'The eclipse strips the Citadel\'s defenses. Strike while it lasts.' },
     ],
+    briefing: [
+      'Command nodes let the Dominion attack on several fronts at once. Each one you take removes a front.',
+      'The Eclipse Citadel defends at 4x, except during an eclipse. Gather your army and strike then.',
+      'Everything you have learned applies: hubs, relays and defenses, crystals and factories all return.',
+    ],
+    lessons: ['Break multi-front coordination', 'Capture command nodes', 'Manage a long war', 'Time the eclipse', 'Storm the Citadel'],
     rewards: { base: 80 },
-    nodes: [
-      ['p0', 70, 300, 'capital', 1, 40, { name: 'Last Light' }],
-      ['p1', 165, 170, 'normal', 1, 15], ['p2', 165, 430, 'normal', 1, 15],
-      ['c1', 260, 60, 'crystal', 0, 15, { name: 'Crystal Shard North' }],
-      ['c2', 260, 540, 'crystal', 0, 15, { name: 'Crystal Shard South' }],
-      ['n1', 270, 300, 'fortress', 1, 16, { name: 'Duskwall' }],
-      ['n2', 380, 175, 'normal', 0, 14], ['n3', 380, 425, 'normal', 0, 14],
-      ['cn1', 490, 65, 'command', 2, 11, { name: 'Command Node North' }],
-      ['cn2', 500, 300, 'command', 2, 13, { name: 'Command Node Prime' }],
-      ['cn3', 490, 535, 'command', 2, 11, { name: 'Command Node South' }],
-      ['h1', 610, 175, 'hub', 2, 10, { network: 'U', name: 'Umbral Hub' }],
-      ['f1', 650, 300, 'factory', 2, 12, { name: 'Umbral Foundry' }],
-      ['r1', 610, 430, 'relay', 2, 10, { name: 'Shade Relay', powers: ['t1'] }],
-      ['e1', 720, 80, 'normal', 0, 12, { net: 'U' }],
-      ['e2', 740, 200, 'fortress', 2, 12, { net: 'U' }],
-      ['e3', 740, 410, 'normal', 0, 12],
-      ['t1', 780, 520, 'turret', 2, 11],
-      ['e4', 830, 300, 'fortress', 2, 14],
-      ['cit', 925, 300, 'citadel', 2, 25, { name: 'Eclipse Citadel' }],
-    ],
-    lanes: [
-      ['p0', 'p1'], ['p0', 'p2'], ['p0', 'n1'], ['p1', 'c1'], ['p2', 'c2'], ['p1', 'n1'], ['p2', 'n1'],
-      ['p1', 'n2'], ['p2', 'n3'], ['c1', 'cn1'], ['c2', 'cn3'], ['n2', 'cn1'], ['n1', 'cn2'], ['n3', 'cn3'],
-      ['n2', 'cn2'], ['n3', 'cn2'], ['cn1', 'h1'], ['cn2', 'h1'], ['cn2', 'f1'], ['cn2', 'r1'], ['cn3', 'r1'],
-      ['h1', 'e1'], ['h1', 'e2'], ['e1', 'e2'], ['f1', 'e2'], ['f1', 'e3'], ['f1', 'e4'],
-      ['r1', 'e3'], ['r1', 't1'], ['e3', 't1'], ['e2', 'e4'], ['e3', 'e4'],
-      ['e1', 'cit'], ['e4', 'cit'], ['t1', 'cit'],
-    ],
   },
 ];
 
-export const PLANET_INDEX = Object.fromEntries(PLANETS.map((p, i) => [p.id, i]));
-
-export function getPlanet(id) {
-  return PLANETS[PLANET_INDEX[id]];
+// A replayable random battle on any world.
+export function skirmishConfig(theme, seed) {
+  const profiles = { vulkara: 'aggressive', cryonis: 'cautious', mycelion: 'aggressive', xythera: 'tactical', noctyra: 'mastermind' };
+  return {
+    id: 'skirmish', name: 'Skirmish', title: 'Uncharted World', lesson: 'Free conquest',
+    tagline: 'A procedurally generated world. Conquer it your way.',
+    theme, seed, size: [380, 230], skirmish: true,
+    enemy: { name: 'Hostile Dominion', color: '#ff4b3e', profile: profiles[theme] || 'aggressive', radius: 9, troops: 1000, capitalName: 'Enemy Capital', startDelay: 8 },
+    nations: { count: 9, radius: 5, troops: 500, profile: 'tribe' },
+    sites: [{ type: 'crystal', count: 2, where: 'middle' }, { type: 'factory', count: 2, where: 'middle' }, { type: 'vent', count: 2, where: 'any' }, { type: 'ruin', count: 3, where: 'any' }],
+    events: null,
+    victory: { mode: 'any', conds: [
+      { type: 'capture', site: 'enemy-capital', label: 'Capture the enemy capital' },
+      { type: 'landShare', share: 0.6, label: 'Or rule 60% of the land' },
+    ] },
+    objectives: [],
+    briefing: ['A new world every time. Capture the enemy capital or rule most of the land.'],
+    lessons: ['Free conquest'],
+    rewards: { base: 15 },
+  };
 }
+
+export const PLANET_INDEX = Object.fromEntries(PLANETS.map((p, i) => [p.id, i]));
+export const getPlanet = id => PLANETS[PLANET_INDEX[id]];
+
+// Pronounceable alien names for independent nations.
+const SYLL = {
+  vulkara: ['ash', 'kor', 'vul', 'mag', 'ter', 'pyr', 'ox', 'zan', 'cin', 'dra'],
+  cryonis: ['gla', 'cri', 'ne', 'vos', 'tal', 'ice', 'rim', 'sil', 'ka', 'mor'],
+  mycelion: ['spo', 'my', 'gal', 'rho', 'ven', 'lic', 'thal', 'bry', 'ul', 'osh'],
+  xythera: ['ax', 'xy', 'tek', 'ron', 'vex', 'ior', 'sar', 'qua', 'lum', 'dex'],
+  noctyra: ['um', 'noc', 'tyr', 'vael', 'shad', 'mor', 'kra', 'eth', 'nyx', 'or'],
+};
+const SUFFIX = ['Clans', 'Hegemony', 'Brood', 'Covenant', 'Remnant', 'League', 'Dominion', 'Collective', 'Tribes', 'Order', 'Choir', 'Assembly'];
+export function nationName(theme, r) {
+  const s = SYLL[theme] || SYLL.noctyra;
+  const a = s[Math.floor(r() * s.length)], b = s[Math.floor(r() * s.length)];
+  const word = (a + b).replace(/^./, c => c.toUpperCase());
+  return `${word} ${SUFFIX[Math.floor(r() * SUFFIX.length)]}`;
+}
+
+// Muted colours for independent nations: distinct from the player (cyan),
+// from bright enemy civilizations, and from each other.
+export const NATION_COLORS = ['#b07a6a', '#8a8f5a', '#7a6aa0', '#a0708e', '#6a8a86', '#a08a5e', '#8a6a5a', '#6e7aa0', '#9a7e9e', '#7e9a6e', '#a07a5a', '#8e8e9e'];

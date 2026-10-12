@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#07060f">
+  <meta name="theme-color" content="#06050c">
   <title>Alien Worlds: Planetary Conquest</title>
+  <link rel="preload" href="assets/fonts/PixelifySans.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
   <!-- CrazyGames SDK v3; the game runs normally if it is missing or blocked. -->
   <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
@@ -13,28 +14,30 @@
   <div id="app">
     <!-- Title -->
     <section id="screen-title" class="screen active">
-      <div class="title-wrap">
-        <h1>ALIEN WORLDS<br><span>PLANETARY CONQUEST</span></h1>
-        <p class="subtitle">Five worlds. Five lessons. Become a commander.</p>
+      <div class="title-wrap panel">
+        <h1>ALIEN WORLDS<span>PLANETARY CONQUEST</span></h1>
+        <p class="subtitle">Five strange worlds. Five lessons. One war.</p>
         <div class="menu">
           <button id="btn-resume" class="btn primary hidden">Resume battle</button>
           <button id="btn-continue" class="btn primary">Start campaign</button>
+          <button id="btn-skirmish" class="btn">Skirmish</button>
           <button id="btn-new" class="btn ghost hidden">New campaign</button>
+          <button class="btn ghost" data-open="settings">Settings</button>
         </div>
         <p class="hint">Your progress is saved automatically.</p>
       </div>
     </section>
 
-    <!-- Campaign map -->
+    <!-- Campaign -->
     <section id="screen-campaign" class="screen">
       <header class="bar">
-        <button class="btn small ghost" data-nav="title">&larr; Menu</button>
+        <button class="btn small" data-nav="title">&lt; Menu</button>
         <h2>Campaign</h2>
-        <div class="cores" title="Stellar Cores: spend them on permanent upgrades"><span class="core-icon"></span><b id="cores-campaign">0</b></div>
+        <div class="res-inline" title="Stellar Cores: spend them on permanent upgrades"><img data-icon="exotic" alt=""><b id="cores-campaign">0</b></div>
       </header>
       <div class="campaign-body">
         <ol id="planet-list" class="planet-list"></ol>
-        <div class="campaign-side">
+        <div class="campaign-side panel">
           <button id="btn-resume-campaign" class="btn primary wide hidden">Resume battle</button>
           <button id="btn-upgrades" class="btn primary wide">Command upgrades</button>
           <label class="field">Difficulty
@@ -44,21 +47,36 @@
               <option value="warlord">Warlord (sharper enemies)</option>
             </select>
           </label>
-          <label class="field check"><input type="checkbox" id="chk-tips"> Show contextual tips</label>
+          <button class="btn wide" data-open="settings">Settings</button>
           <button id="btn-reset" class="btn small danger">Reset campaign</button>
         </div>
+      </div>
+    </section>
+
+    <!-- Skirmish -->
+    <section id="screen-skirmish" class="screen">
+      <header class="bar">
+        <button class="btn small" data-nav="title">&lt; Menu</button>
+        <h2>Skirmish</h2>
+        <span></span>
+      </header>
+      <div class="scroll narrow">
+        <p class="note">A new procedurally generated world every time. Pick a world type.</p>
+        <ol id="skirmish-list" class="planet-list"></ol>
+        <label class="field">World seed <input id="skirmish-seed" type="number" min="1" max="999999"></label>
+        <button id="btn-skirmish-reroll" class="btn small">New seed</button>
       </div>
     </section>
 
     <!-- Upgrades -->
     <section id="screen-upgrades" class="screen">
       <header class="bar">
-        <button class="btn small ghost" data-nav="campaign">&larr; Campaign</button>
+        <button class="btn small" data-nav="campaign">&lt; Campaign</button>
         <h2>Command Upgrades</h2>
-        <div class="cores"><span class="core-icon"></span><b id="cores-upgrades">0</b></div>
+        <div class="res-inline"><img data-icon="exotic" alt=""><b id="cores-upgrades">0</b></div>
       </header>
       <div class="scroll">
-        <p class="note">Upgrades are permanent and carry into every planet. They give an edge, not a win: each world still demands its own strategy.</p>
+        <p class="note">Permanent upgrades carry into every world. They give an edge, never a win.</p>
         <h3>Doctrine</h3>
         <ul id="upgrade-list" class="card-list"></ul>
         <h3>Alien civilizations</h3>
@@ -69,22 +87,27 @@
     <!-- Briefing -->
     <section id="screen-briefing" class="screen">
       <header class="bar">
-        <button class="btn small ghost" data-nav="campaign">&larr; Campaign</button>
+        <button class="btn small" data-nav="campaign" id="brief-back">&lt; Back</button>
         <h2 id="brief-title">Planet</h2>
         <span></span>
       </header>
       <div class="scroll brief">
-        <p class="lesson-tag" id="brief-lesson"></p>
-        <p class="tagline" id="brief-tagline"></p>
-        <div class="brief-grid">
+        <div class="brief-head">
+          <canvas id="brief-orb" width="64" height="64"></canvas>
           <div>
+            <p class="lesson-tag" id="brief-lesson"></p>
+            <p class="tagline" id="brief-tagline"></p>
+          </div>
+        </div>
+        <div class="brief-grid">
+          <div class="panel">
             <h3>Victory</h3>
             <ul id="brief-victory" class="bullets"></ul>
             <h3>Enemy</h3>
             <p id="brief-enemy"></p>
             <p id="brief-assist" class="assist hidden"></p>
           </div>
-          <div>
+          <div class="panel">
             <h3>Field notes</h3>
             <ul id="brief-notes" class="bullets"></ul>
           </div>
@@ -96,51 +119,75 @@
     <!-- Battle -->
     <section id="screen-battle" class="screen">
       <canvas id="canvas"></canvas>
+
       <div class="hud-top">
-        <div class="hud-title">
-          <b id="hud-planet"></b>
-          <span id="hud-lesson"></span>
+        <div class="hud-box hud-info">
+          <button id="btn-board" class="btn icon" title="Leaderboard (L)"><img data-icon="crown" alt=""></button>
+          <div>
+            <b id="hud-planet"></b>
+            <span id="hud-sub"></span>
+          </div>
         </div>
-        <div id="hud-event" class="chip hidden"></div>
-        <div id="hud-intel" class="chip hidden"></div>
-        <div class="hud-buttons">
-          <span id="hud-time" class="chip">0:00</span>
-          <button id="btn-speed" class="btn icon" title="Game speed">1&times;</button>
-          <button id="btn-help" class="btn icon" title="Planet mechanics">?</button>
-          <button id="btn-pause" class="btn icon" title="Pause (Space)">&#10073;&#10073;</button>
+        <div class="hud-box hud-status">
+          <button id="obj-toggle" class="obj-line" title="Objectives (O)"><span id="hud-objective"></span><span id="obj-count"></span></button>
+          <div class="progress"><i id="hud-progress"></i></div>
+          <div class="status-row"><span id="hud-time" class="chip">0:00</span><span id="hud-event" class="chip hidden"></span><span id="hud-intel" class="chip hidden"></span></div>
         </div>
-      </div>
-      <div id="objectives" class="objectives">
-        <button id="obj-toggle" class="obj-head"><span>Objectives <span id="obj-count"></span></span><span id="obj-current" class="obj-current"></span></button>
-        <div id="obj-body"></div>
-      </div>
-      <div id="inspector" class="inspector hidden"></div>
-      <div id="toasts" class="toasts"></div>
-      <div class="hud-bottom">
-        <div class="ratios" role="group" aria-label="Attack ratio">
-          <span class="lbl">Send</span>
-          <button class="btn ratio" data-ratio="0.25">25%</button>
-          <button class="btn ratio active" data-ratio="0.5">50%</button>
-          <button class="btn ratio" data-ratio="0.75">75%</button>
-          <button class="btn ratio" data-ratio="1">100%</button>
+        <div class="hud-box hud-controls">
+          <button id="btn-pause" class="btn icon" title="Pause (Space)"><img data-icon="pause" alt=""></button>
+          <button id="btn-speed" class="btn icon" title="Game speed"><img data-icon="speed" alt=""></button>
+          <button id="btn-sound" class="btn icon" title="Sound"><img data-icon="sound" alt=""></button>
+          <button id="btn-help" class="btn icon" title="Field manual"><img data-icon="help" alt=""></button>
+          <button class="btn icon" data-open="settings" title="Settings"><img data-icon="settings" alt=""></button>
         </div>
-        <div id="abilities" class="abilities"></div>
       </div>
 
+      <div id="board" class="hud-box board hidden"></div>
+      <div id="objectives" class="hud-box objectives hidden"></div>
+
+      <div id="empire" class="hud-box empire">
+        <button id="empire-toggle" class="drawer-tab" title="Empire">&lt;</button>
+        <div class="stat big"><img data-icon="troops" alt=""><span>Troops</span><b id="st-troops">0</b></div>
+        <div class="stat sub"><span></span><small id="st-troops-sub"></small></div>
+        <div class="stat"><img data-icon="minerals" alt=""><span>Minerals</span><b id="st-minerals">0</b><small id="st-minerals-rate"></small></div>
+        <div class="stat"><img data-icon="energy" alt=""><span>Energy</span><b id="st-energy">0</b><small id="st-energy-rate"></small></div>
+        <div class="stat"><img data-icon="exotic" alt=""><span>Exotic</span><b id="st-exotic">0</b><small id="st-exotic-rate"></small></div>
+        <div class="stat"><img data-icon="territory" alt=""><span>Land</span><b id="st-land">0</b><small id="st-land-share"></small></div>
+        <label class="ratio">
+          <span>Attack ratio <b id="ratio-label">20% (0)</b></span>
+          <input id="ratio" type="range" min="5" max="100" step="5" value="20">
+        </label>
+      </div>
+
+      <div id="inspector" class="hud-box inspector hidden"></div>
+
+      <div id="toasts" class="toasts"></div>
+
+      <div class="toolbar" id="toolbar"></div>
+      <div id="spawn-banner" class="spawn-banner hidden"></div>
+
       <div id="overlay-pause" class="overlay hidden">
-        <div class="panel">
+        <div class="panel dialog">
           <h2>Paused</h2>
           <p class="note">Your battle is saved. You can close the game and resume later.</p>
           <button id="btn-resume-battle" class="btn primary wide">Resume</button>
-          <button id="btn-restart" class="btn wide">Restart planet</button>
-          <button id="btn-quit" class="btn ghost wide">Save &amp; exit to campaign</button>
+          <button id="btn-restart" class="btn wide">Restart world</button>
+          <button id="btn-quit" class="btn ghost wide">Save &amp; exit</button>
         </div>
       </div>
       <div id="overlay-help" class="overlay hidden">
-        <div class="panel">
-          <h2 id="help-title">Mechanics</h2>
+        <div class="panel dialog">
+          <h2 id="help-title">Field manual</h2>
           <div id="help-body" class="help-body"></div>
           <button id="btn-help-close" class="btn primary wide">Back to battle</button>
+        </div>
+      </div>
+      <div id="overlay-research" class="overlay hidden">
+        <div class="panel dialog">
+          <h2>Research</h2>
+          <p class="note">Spend exotic matter on technology for this battle.</p>
+          <div id="research-list" class="research-list"></div>
+          <button id="btn-research-close" class="btn wide">Close</button>
         </div>
       </div>
     </section>
@@ -148,7 +195,7 @@
     <!-- Debrief -->
     <section id="screen-debrief" class="screen">
       <div class="scroll debrief">
-        <h2 id="debrief-title"></h2>
+        <div class="debrief-head"><img id="debrief-icon" alt=""><h2 id="debrief-title"></h2></div>
         <p id="debrief-sub" class="tagline"></p>
         <div id="debrief-body"></div>
         <div class="menu row">
@@ -158,8 +205,30 @@
       </div>
     </section>
 
+    <!-- Settings -->
+    <div id="overlay-settings" class="overlay hidden">
+      <div class="panel dialog">
+        <h2>Settings</h2>
+        <label class="field check"><input type="checkbox" id="set-sound"> Sound effects</label>
+        <label class="field check"><input type="checkbox" id="set-tips"> Contextual tips</label>
+        <label class="field check"><input type="checkbox" id="set-labels"> Nation labels and troop counts</label>
+        <label class="field check"><input type="checkbox" id="set-simple"> Strategic view (flat terrain, strong colours)</label>
+        <label class="field check"><input type="checkbox" id="set-motion"> Reduce motion</label>
+        <label class="field">Your colour
+          <select id="set-color">
+            <option value="civ">Civilization colour</option>
+            <option value="#3fd0ff">Cyan</option>
+            <option value="#4f7bff">Blue</option>
+            <option value="#3fe0c0">Teal</option>
+            <option value="#f2f2ff">White</option>
+          </select>
+        </label>
+        <button id="btn-settings-close" class="btn primary wide">Done</button>
+      </div>
+    </div>
+
     <div id="modal-confirm" class="overlay hidden">
-      <div class="panel">
+      <div class="panel dialog">
         <p id="confirm-text"></p>
         <div class="menu row">
           <button id="confirm-yes" class="btn danger">Confirm</button>

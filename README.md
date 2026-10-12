@@ -1,115 +1,117 @@
 # Alien Worlds: Planetary Conquest
 
-A real-time territory-conquest strategy game for desktop and mobile browsers.
-The campaign is five connected planets. Each one teaches a new strategy, and the last one tests them all.
+A real-time territory-conquest strategy game in retro pixel art, for desktop and mobile browsers.
+Land on a strange alien world, grow your empire tile by tile, and break rival civilizations across a
+five-planet campaign. Each planet teaches a new strategy. Skirmish mode generates a new world every time.
 
-> Vulkara teaches you to expand, Cryonis to survive, Mycelion to disrupt, Xythera to plan,
-> and Noctyra asks you to combine everything you have learned.
+**Publishing on CrazyGames:** `npm run build` creates `dist/alien-worlds.zip`. See [CRAZYGAMES.md](CRAZYGAMES.md).
 
 ## Play
 
 No build step and no dependencies. Serve the folder over HTTP (ES modules don't load from `file://`):
 
 ```sh
-npm start            # npx http-server on http://localhost:8080
-# or: python3 -m http.server 8080
+npm start            # http://localhost:8080
 ```
 
-**Publishing on CrazyGames:** `npm run build` creates `dist/alien-worlds.zip`. See [CRAZYGAMES.md](CRAZYGAMES.md) for the SDK integration, submission settings, listing text and cover art.
+### How it plays
 
-**Controls**
+1. **Land.** Click open ground on the main continent to choose your landing site. You have 10 seconds; if you don't choose, you land automatically.
+2. **Expand.** Click land next to your border. That sends your *attack ratio* of troops, and the border advances tile by tile until the attack runs out of troops. Unclaimed wilderness is cheap. Mountains, rivers and volcanoes are slow and costly.
+3. **Grow.** You have one troop pool. Its cap grows with your land, and troops regrow fastest when your army is well below the cap, so keep attacking.
+4. **Fight.** Every rival is a labelled nation blob. Attacking a civilization costs more where its garrison is dense or the land is fortified. **Capture a capital and that civilization collapses.** Lose yours and you are defeated.
+5. **Build and research.** Spend minerals on Habitats (+troop cap), Extractors (+minerals), Starports (dropships across the sea), Bastions (defence) and Research Spires (exotic matter). Spend exotic matter on research and energy on special abilities.
 
-| Action | Mouse / keyboard | Touch |
+| Action | Desktop | Touch |
 | --- | --- | --- |
-| Select a territory (tap more to combine) | Click | Tap |
-| Attack a connected target | Click the target while selected | Tap the target |
-| Attack or reinforce | Drag from your territory | Drag |
-| Attack ratio 25 / 50 / 75 / 100 % | `1` `2` `3` `4` | Ratio buttons |
-| Abilities | `Q` `W` `E`, then click a target | Ability buttons |
-| Pause (and save) | `Space` | ❚❚ |
-| Clear selection | `Esc` | Tap empty space |
-
-**Combat:** an attack captures a territory when *arriving troops × attack strength* beat
-*defenders × defense bonus*. Fortified regions, capitals, powered defenses and hub-nourished regions
-defend better. Fleets only travel along lanes, so chokepoints matter.
+| Attack / expand | Click land next to your border | Tap |
+| Pan | Drag, or WASD / arrow keys | Drag (never attacks) |
+| Zoom | Mouse wheel, `+` / `-` | Pinch |
+| Attack ratio | Slider, `[` / `]` | Slider |
+| Build | `1`–`5`, then click your land | Build bar |
+| Dropship / Research | `6` / `R` | Build bar |
+| Abilities | `7` `8` `9` | Build bar |
+| Leaderboard / Objectives | `L` / `O` | Top bar |
+| Center on capital / Pause | `C` / `Space` | Top bar |
 
 ## The campaign
 
-| # | Planet | Lesson | New mechanics | Victory | NPC behaviour |
+| # | World | Lesson | What's new | Victory | Main enemy |
 |---|---|---|---|---|---|
-| 1 | **Vulkara** | Learn to Attack | Neutral expansion, attack ratios, magma vents, eruptions | Capture the Ember Throne | *Relaxed*: grabs empty land, rarely strikes you |
-| 2 | **Cryonis** | Learn to Defend | Fortified chokepoints, crystal deposits (+production), slow ice passes, whiteout storms that freeze fleets in transit | Hold both crystals for 2:30 **or** take the Frost Bastion | *Cautious*: reinforces threatened regions, retakes losses, waits out storms |
-| 3 | **Mycelion** | Learn to Disrupt | Network hubs nourish linked regions (growth and defense); cut-off regions wither; the Brood Heart is shielded while any hub stands; spore blooms | Destroy the Brood Heart | *Aggressive*: expands on two fronts |
-| 4 | **Xythera** | Learn to Plan | Energy relays power automated defenses (fortified, fire on passing fleets); ancient factories (+production); scarce production; grid surges | Capture the Core Foundry **and** hold 2 factories | *Tactical*: guards infrastructure and home, punishes territories left empty |
-| 5 | **Noctyra** | Prove Your Mastery | Command nodes (one enemy attack front each), eclipse cycle that strips fortifications, limited supply; reuses fortresses, crystals, hubs, relays, defenses and factories | Conquer the Eclipse Citadel | *Coordinated*: multi-front attacks, defends its core, times assaults to the eclipse |
+| 1 | **Vulkara**: Ashen Cradle | Attack | Expansion, attack ratio, magma vents, eruptions | Capture the Ember Throne | Cindari Clans: relaxed |
+| 2 | **Cryonis**: Frozen Frontier | Defend | Terrain defence, bastions, crystal deposits, whiteout storms | Hold 3 crystals for 2:30, or take the Frost Bastion | Glacari Concord: cautious, retaliates |
+| 3 | **Mycelion**: Living World | Disrupt | Network hubs nourish land and shield the Brood Heart; spore blooms | Destroy the Brood Heart | Mycelial Swarm: aggressive expander |
+| 4 | **Xythera**: Ancient Machines | Plan | Relays power automated defences; ancient factories; scarce growth | Core Foundry plus 2 factories | Axiom Directorate: tactical |
+| 5 | **Noctyra**: Eternal Eclipse | Mastery | Command nodes add enemy attack fronts; the eclipse strips the Citadel; everything returns | Conquer the Eclipse Citadel | Umbral Dominion: coordinated |
 
-Each planet adds short tutorial objectives, each worth bonus cores. The current one highlights its
-target on the map and shows a one-line tip. The **?** button holds optional explanations, and
-contextual tips can be switched off.
+Each world also has independent nations, short tutorial objectives with bonus rewards, contextual
+tips (can be turned off), and a field manual (`?`).
 
-### Fair difficulty
+**Fair difficulty:**
+- Rival civilizations start with footprints comparable to yours.
+- Difficulty comes from behaviour: decision speed, when and whom to strike, reserves, retaliation, and multi-front coordination (`AI_PROFILES` in `js/campaign.js`).
+- Every defeat ends with a debrief explaining what went wrong.
+- Repeated defeats on a planet enable an *adaptive assist* that slows its enemy commanders.
 
-Difficulty rises through NPC *behaviour*, not bigger armies:
+**Permanent progression:**
+- Victories pay Stellar Cores, which buy upgrades, abilities and new player civilizations.
+- First clears pay in full; replays and skirmishes pay less.
 
-- Decision speed, targeting precision, objective awareness, defense, counterattacks and coordination all improve from planet to planet (see `AI_PROFILES` in `js/campaign.js`).
-- No enemy civilization gets better production, attack or defense multipliers than the player's baseline. Enemy start garrisons are calibrated against the player's own.
-- Every defeat ends with a debrief that names what went wrong: capital stripped, attacks into fortifications, storm or turret losses, a shielded target, idle production, ignored command nodes.
-- **Adaptive assist:** each defeat on a planet (up to 3) makes its NPCs react a little slower. It switches off once the planet is conquered. Difficulty can also be set to Cadet, Commander or Warlord.
+**Saving:**
+- The campaign and the battle in progress autosave every 5 seconds, on pause, and when the tab closes.
+- Saves go to the CrazyGames Data module on CrazyGames, and to `localStorage` elsewhere.
+- A world is regenerated from its seed, so a save is only the ownership map plus a little state (about 150 KB).
 
-### Permanent progression
+## Art direction
 
-Victories pay **Stellar Cores**: a base reward, plus bonus objectives (once each), a swift-victory
-bonus and a capital-safety bonus. Replaying a conquered planet pays 30% of the base reward.
-Cores buy permanent upgrades:
+Everything is original pixel art, generated or hand-authored in code:
+- **Maps:** each world is generated as a coherent planet.
+  - Continents with domain-warped coastlines, mountain ranges with passes, and rivers that run to the sea.
+  - Volcano clusters, inland lakes, biomes and ruins.
+  - Painted from the theme's limited palette with ordered dithering.
+- **Sprites:** buildings, capitals (one per civilization), sites, dropships and icons are character grids, tinted with the owner's colour.
+- **Backdrops:** skies, planets, the eclipsed sun and the title landscape are procedural.
+- **Scaling:** pixels stay crisp, because the camera only uses integer zoom.
+- **Fonts:** Pixelify Sans and Silkscreen, bundled locally (SIL OFL).
 
-- Starting reserves, production efficiency, resource extraction (crystals and factories), defensive doctrine
-- Scouting & intelligence: deeper vision, full intel, threat forecasts
-- Abilities: Orbital Strike, Rapid Muster, EMP Pulse
-- Alien civilizations with their own trade-offs: Kryll Hive, Vexari Ascendancy, Lumen Wardens
+Readability comes first:
+- Ownership is shown by colour, borders and patterns (the player's land is striped, the main enemy's is dotted).
+- Labels are sized by empire and never overlap.
+- A strategic view flattens the terrain.
+- Reduced motion turns off particles and pulsing.
 
-The cores you can earn are well short of buying everything, so you have to choose.
+## Adding content
 
-### Saving
-
-The campaign autosaves (to the CrazyGames Data module on CrazyGames, otherwise to `localStorage`), including the battle in progress (every 5 seconds, on
-pause, and when the tab is hidden or closed). Close the browser mid-battle and **Resume battle**
-continues from the same moment. The simulation is deterministic, so a resumed battle plays out
-exactly as it would have. Corrupt or outdated saves fall back to a fresh campaign without breaking the game.
+- **A new world type:** add an entry to `THEMES` in `js/world/themes.js` with terrain names, a palette and generator settings. Skirmish mode picks it up automatically.
+- **A new planet:** add an entry to `PLANETS` in `js/campaign.js` with theme, seed, size, enemy, nations, sites, events, victory conditions and objectives.
+- **A new site type or building:** add it to `SITE_TYPES` or `BUILDINGS` (its effects are data: income, growth, defence radius, power), plus a sprite in `js/art/sprites.js`.
+- **A new enemy behaviour:** add a profile to `AI_PROFILES`.
 
 ## Project layout
 
 ```
-index.html, css/style.css   UI shell and responsive layout
-js/campaign.js              planets, maps, objectives, NPC profiles (all data)
-js/rules.js                 shared rule queries (defense, growth, power, shields, vision)
-js/game.js                  deterministic, serialisable battle simulation
-js/ai.js                    NPC commander brain
-js/progression.js           rewards, upgrades, civilizations, save file
-js/render.js                canvas renderer (rotates the map on portrait screens)
-js/main.js                  screens, input, HUD, tips, autosave
+index.html, css/style.css   interface shell and responsive layout
+js/world/                   noise, themes, procedural world generation, terrain painting
+js/sim/core.js              rules: troops, costs, defence, sites, attacks
+js/sim/engine.js            battle setup, spawn, simulation loop, commands, victory, saves
+js/sim/ai.js                NPC commanders
+js/campaign.js              planets, enemies, sites, buildings, research (data)
+js/progression.js           rewards, upgrades, civilizations, settings, save file
+js/render.js                pixel map renderer and camera
+js/art/                     sprites, icons, backdrops, title scene, planet orbs
+js/main.js                  screens, input, HUD, notices, sound, saving
+js/audio.js                 synthesised sound effects
 js/platform.js              CrazyGames SDK v3 wrapper (no-op elsewhere)
-js/art/                     pixel-art terrain, sprites and backdrops (redesign in progress)
-tools/build.js              builds dist/game and the upload zip
-assets/crazygames/          store cover images
-tests/campaign.test.js      automated checks for the campaign success criteria
-tools/balance.js            bot-vs-bot balance probe
-tools/production.js         production balance per map
+tools/                      build, balance probes, world previews, cover renderer
+tests/                      automated tests
 ```
 
-## Tests
+## Tests and tools
 
 ```sh
-npm test
+npm test                                   # engine, worlds, campaign, saves, platform
+npm run lint
+node tools/balance.js mastermind 4 2       # bot plays every planet (profile, seeds, upgrade tier)
+node tools/trace.js mycelion tactical 0 1  # empire sizes over time for one battle
+node tools/worldpreview.js out 1234        # PNG previews of every world type
 ```
-
-The suite covers the campaign success criteria:
-
-- Map validity and each planet's distinct mechanics.
-- NPC profiles that improve from planet to planet.
-- Every victory condition, including Cryonis's hold-the-crystals path.
-- The defeat debrief.
-- Rewards and upgrades carrying over.
-- Save, load and resume determinism, and corrupt-save recovery.
-- A bot-driven learning-curve check: a careless commander loses planets 2–5, while a capable commander with upgrades can win all five.
-
-Balance probe: `node tools/balance.js <profile> <seeds> <upgradeTier>`, e.g. `node tools/balance.js mastermind 8 2`.

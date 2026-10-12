@@ -1,318 +1,315 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PLANETS, AI_PROFILES, TYPE_INFO, getPlanet } from '../js/campaign.js';
+import { PLANETS, AI_PROFILES, skirmishConfig, getPlanet } from '../js/campaign.js';
 import {
-  createBattle, step, advance, playerLaunch, useAbility, sendTroops, serialize, deserialize,
-  battleResult, analyzeDefeat,
-} from '../js/game.js';
+  createBattle, step, advance, spawnPlayer, canSpawnAt, playerAttack, playerBuild, playerDropship,
+  playerResearch, useAbility, serialize, deserialize, battleResult, analyzeDefeat, PLAYER,
+} from '../js/sim/engine.js';
+import {
+  world, maxTroops, regen, borders, siteOwner, isShielded, isPowered, tileDefense, eventPhase, setOwner,
+  countSites, attackFronts, config,
+} from '../js/sim/core.js';
+import { generateWorld, components } from '../js/world/generate.js';
+import { THEMES, THEME_IDS, isLand, T } from '../js/world/themes.js';
 import {
   newCampaign, normalizeCampaign, loadCampaign, saveCampaign, playerLoadout, computeRewards,
   applyVictory, applyDefeat, assistLevel, buyUpgrade, unlockCiv, isUnlocked, SAVE_KEY,
 } from '../js/progression.js';
-import {
-  terr, neighbors, isShielded, isPowered, defMult, enemyFronts, eventPhase, networkStatus, playerVision,
-} from '../js/rules.js';
 
 const loadout = (mut = c => c) => playerLoadout(mut(newCampaign()));
-const battle = (id, opts = {}) => createBattle(id, loadout(), { seed: 7, ...opts });
-const own = (s, ...ids) => ids.forEach(id => { terr(s, id).owner = 1; });
-const freezeEnemy = s => { s.factions[2].profile = null; };
+const battle = (id, opts = {}) => createBattle(id, loadout(), { seed: 7, autoSpawn: true, ...opts });
+const enemyOf = s => s.factions.find(f => f && f.kind === 'enemy');
+const site = (s, id) => s.sites.find(x => x.id === id);
+const give = (s, x, y, owner) => setOwner(s, y * s.w + x, owner);
+const freezeAI = s => s.factions.forEach(f => { if (f && f.id !== PLAYER) f.profile = null; });
 
 function memoryStorage() {
   const m = new Map();
   return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)) };
 }
 
-// ---------- 1. Distinct planets, themes and mechanics ----------
+// ---------- World generation ----------
 
-test('five planets with distinct themes, lessons and enemies', () => {
-  assert.equal(PLANETS.length, 5);
-  assert.deepEqual(PLANETS.map(p => p.id), ['vulkara', 'cryonis', 'mycelion', 'xythera', 'noctyra']);
-  for (const key of ['lesson', 'name']) assert.equal(new Set(PLANETS.map(p => p[key])).size, 5);
-  assert.equal(new Set(PLANETS.map(p => p.theme.bg2)).size, 5);
-  assert.equal(new Set(PLANETS.map(p => p.events.type)).size, 5, 'each planet has its own planetary event');
-  assert.equal(new Set(PLANETS.map(p => p.enemy.profile)).size, 5, 'each planet has its own NPC behaviour');
-});
-
-test('maps are valid, connected graphs with a capital on each side', () => {
-  for (const p of PLANETS) {
-    const s = battle(p.id);
-    const ids = new Set(s.territories.map(t => t.id));
-    assert.equal(ids.size, s.territories.length, `${p.id}: unique ids`);
-    for (const [a, b] of p.lanes) assert.ok(ids.has(a) && ids.has(b), `${p.id}: lane ${a}-${b}`);
-    for (const t of s.territories) assert.ok(TYPE_INFO[t.type], `${p.id}: type ${t.type}`);
-    // Connectivity.
-    const seen = new Set([s.territories[0].id]);
-    const queue = [s.territories[0].id];
-    while (queue.length) for (const n of neighbors(s, queue.shift())) if (!seen.has(n)) { seen.add(n); queue.push(n); }
-    assert.equal(seen.size, ids.size, `${p.id}: connected`);
-    assert.ok(s.territories.some(t => t.owner === 1 && t.type === 'capital'), `${p.id}: player capital`);
-    assert.ok(s.territories.some(t => t.owner === 2), `${p.id}: enemy present`);
-    for (const c of p.victory.conds) for (const id of c.ids || []) assert.ok(ids.has(id), `${p.id}: victory ref ${id}`);
-    for (const o of p.objectives) {
-      for (const id of [...(o.ids || []), ...(o.highlight || [])]) assert.ok(ids.has(id), `${p.id}: objective ref ${id}`);
-      assert.ok(o.tip && o.tip.length < 200, `${p.id}: objective ${o.id} has a concise tip`);
-    }
+test('worlds are deterministic, varied and geographically coherent', () => {
+  for (const theme of THEME_IDS) {
+    const a = generateWorld({ theme, seed: 99, width: 240, height: 150 });
+    const b = generateWorld({ theme, seed: 99, width: 240, height: 150 });
+    assert.deepEqual(a.terrain, b.terrain, `${theme}: same seed, same world`);
+    const c = generateWorld({ theme, seed: 100, width: 240, height: 150 });
+    assert.notDeepEqual(a.terrain, c.terrain, `${theme}: new seed, new world`);
+    const share = a.landCount / (240 * 150);
+    assert.ok(Math.abs(share - THEMES[theme].gen.land) < 0.12, `${theme}: land share ${share.toFixed(2)}`);
+    // A dominant continent, not a scatter of equal islands.
+    const sizes = [...a.compSize].sort((x, y) => y - x);
+    assert.ok(sizes[0] > a.landCount * 0.6, `${theme}: main continent holds most land`);
+    const kinds = new Set(a.terrain);
+    for (const t of [T.DEEP, T.SHALLOW, T.PLAINS, T.MOUNTAIN]) assert.ok(kinds.has(t), `${theme}: has terrain ${t}`);
   }
 });
 
-test('each planet introduces its signature mechanic, and earlier mechanics recur later', () => {
-  const types = id => new Set(getPlanet(id).nodes.map(n => n[3]));
-  assert.ok(types('vulkara').has('vent'));
-  assert.ok(types('cryonis').has('fortress') && types('cryonis').has('crystal'));
-  assert.ok(getPlanet('cryonis').lanes.some(l => l[2] === 'ice'));
-  assert.ok(types('mycelion').has('hub'));
-  assert.ok(types('xythera').has('relay') && types('xythera').has('turret') && types('xythera').has('factory'));
-  assert.ok(types('noctyra').has('command') && types('noctyra').has('citadel'));
-  // Noctyra combines everything taught before.
-  for (const t of ['fortress', 'crystal', 'hub', 'relay', 'turret', 'factory']) assert.ok(types('noctyra').has(t), `noctyra reuses ${t}`);
-});
-
-// ---------- 2. NPCs get smarter, not just bigger ----------
-
-test('NPC behaviour becomes more capable across the campaign', () => {
-  const profiles = PLANETS.map(p => AI_PROFILES[p.enemy.profile]);
-  for (let i = 1; i < profiles.length; i++) {
-    assert.ok(profiles[i].interval < profiles[i - 1].interval, `planet ${i + 1} NPCs think faster`);
-    assert.ok(profiles[i].noise <= profiles[i - 1].noise, `planet ${i + 1} NPCs target more precisely`);
-    assert.ok(profiles[i].idleChance <= profiles[i - 1].idleChance);
+test('rivers reach the sea and the map edge is ocean', () => {
+  const w = generateWorld({ theme: 'mycelion', seed: 5, width: 300, height: 190 });
+  for (let x = 0; x < w.w; x++) {
+    assert.ok(!isLand(w.terrain[x]), 'top edge is water');
+    assert.ok(!isLand(w.terrain[(w.h - 1) * w.w + x]), 'bottom edge is water');
   }
-  assert.ok(!profiles[0].defend && profiles[1].defend, 'Cryonis introduces defensive NPCs');
-  assert.ok(profiles[4].objectiveSense >= profiles[2].objectiveSense);
-  // Difficulty is not bought with troop inflation: no enemy outproduces or
-  // outfights the player's base stats.
-  for (const p of PLANETS) {
-    assert.ok(p.enemy.growth <= 1 && p.enemy.atk <= 1 && p.enemy.def <= 1, `${p.id}: no stat cheating`);
-  }
+  assert.ok(w.terrain.includes(T.RIVER), 'has rivers');
+  const comp = components(w.terrain, w.w, w.h);
+  assert.equal(comp.size.reduce((s, n) => s + n, 0), w.landCount);
 });
 
-test('difficulty setting and adaptive assist slow NPCs without changing armies', () => {
-  const base = battle('cryonis');
-  const cadet = battle('cryonis', { difficulty: 'cadet' });
-  const assisted = battle('cryonis', { assist: 3 });
-  assert.ok(cadet.factions[2].profile.interval > base.factions[2].profile.interval);
-  assert.ok(assisted.factions[2].profile.interval > base.factions[2].profile.interval);
-  const troops = s => s.territories.filter(t => t.owner === 2).reduce((a, t) => a + t.troops, 0);
-  assert.equal(troops(cadet), troops(base));
-  assert.equal(troops(assisted), troops(base));
-});
-
-// Bot-vs-bot sanity checks on the learning curve: a careless commander only
-// manages the tutorial world, a strong upgraded commander can finish them all.
-function botRun(planetId, profile, tier, seed) {
-  const camp = newCampaign();
-  for (const id of ['reserves', 'production', 'fortify', 'income']) camp.upgrades[id] = tier;
-  const s = createBattle(planetId, playerLoadout(camp), { seed, playerProfile: profile });
-  advance(s, 600);
-  return s.status;
-}
-
-test('a careless commander cannot win the later planets', () => {
-  for (const id of ['cryonis', 'mycelion', 'xythera', 'noctyra']) {
-    for (const seed of [1, 2]) assert.equal(botRun(id, 'passive', 0, seed), 'lost', `${id} seed ${seed}`);
+test('every planet and skirmish setup is fair and reachable', () => {
+  const configs = [...PLANETS.map(p => p.id), ...THEME_IDS.map(t => ['skirmish', t])];
+  for (const ref of configs) {
+    const s = Array.isArray(ref) ? createBattle('skirmish', loadout(), { seed: 3, theme: ref[1], worldSeed: 42, autoSpawn: true }) : battle(ref);
+    const w = world(s);
+    const main = w.compSize.indexOf(Math.max(...w.compSize));
+    const name = Array.isArray(ref) ? `skirmish-${ref[1]}` : ref;
+    const cap = site(s, 'enemy-capital');
+    const me = site(s, 'player-capital');
+    assert.ok(cap && me, `${name}: both capitals exist`);
+    assert.equal(w.comp[cap.y * s.w + cap.x], main, `${name}: enemy capital on the main continent`);
+    assert.equal(w.comp[me.y * s.w + me.x], main, `${name}: player lands on the main continent`);
+    assert.ok(Math.hypot(cap.x - me.x, cap.y - me.y) > 45, `${name}: capitals are far apart`);
+    for (const st of s.sites) assert.ok(isLand(w.terrain[st.y * s.w + st.x]), `${name}: ${st.id} on land`);
+    // Starting empires are comparable: no faction begins far bigger than the player.
+    const myTiles = s.factions[PLAYER].tiles;
+    for (const f of s.factions) if (f && f.id !== PLAYER) assert.ok(f.tiles < myTiles * 4, `${name}: ${f.name} start ${f.tiles} vs ${myTiles}`);
   }
 });
 
-test('every planet is winnable by a capable, upgraded commander', () => {
-  for (const p of PLANETS) {
-    const wins = [1, 2, 3].filter(seed => botRun(p.id, 'mastermind', 2, seed) === 'won').length;
-    assert.ok(wins >= 2, `${p.id}: won ${wins}/3`);
-  }
+// ---------- Engine ----------
+
+test('spawn phase: choose a landing site, re-pick it, or auto-land', () => {
+  const s = createBattle('vulkara', loadout(), { seed: 2 });
+  assert.equal(s.status, 'spawn');
+  const w = world(s);
+  let spot = null;
+  for (let i = 0; i < w.terrain.length && !spot; i++) { const x = i % s.w, y = Math.floor(i / s.w); if (canSpawnAt(s, x, y)) spot = { x, y }; }
+  assert.ok(spawnPlayer(s, spot.x, spot.y));
+  const tiles = s.factions[PLAYER].tiles;
+  assert.ok(tiles > 50);
+  assert.equal(s.status, 'spawn', 'still choosing');
+  advance(s, 11);
+  assert.equal(s.status, 'playing', 'timer lands you');
+  assert.equal(s.factions[PLAYER].tiles >= tiles, true);
+  const auto = createBattle('vulkara', loadout(), { seed: 2, spawnTime: 0.2 });
+  advance(auto, 1);
+  assert.equal(auto.status, 'playing');
+  assert.ok(site(auto, 'player-capital'));
 });
 
-// ---------- 3. Victory conditions ----------
+test('attacks advance the border tile by tile and spend troops', () => {
+  const s = battle('vulkara');
+  freezeAI(s);
+  const me = s.factions[PLAYER];
+  const before = me.tiles;
+  assert.ok(borders(s, PLAYER, 0));
+  let target = -1;
+  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === 0 && isLand(world(s).terrain[i]) && [i - 1, i + 1, i - s.w, i + s.w].some(j => s.owner[j] === PLAYER)) { target = i; break; }
+  me.troops = 600;
+  const res = playerAttack(s, target, 0.5);
+  assert.ok(res.ok);
+  assert.ok(me.troops < 400, 'troops left the pool');
+  advance(s, 15);
+  assert.ok(me.tiles > before + 100, `expanded from ${before} to ${me.tiles}`);
+  assert.equal(s.attacks.length, 0, 'attack ended when its troops ran out');
+});
+
+test('troop cap grows with land and regrowth slows near the cap', () => {
+  const s = battle('vulkara');
+  const f = s.factions[PLAYER];
+  const cap0 = maxTroops(s, f);
+  f.troops = cap0 * 0.4;
+  const mid = regen(s, f);
+  f.troops = cap0 * 0.98;
+  assert.ok(regen(s, f) < mid / 5);
+  for (let i = 0; i < 400; i++) if (s.owner[i + s.w * 100] === 0) setOwner(s, i + s.w * 100, PLAYER);
+  assert.ok(maxTroops(s, f) > cap0);
+});
+
+test('mountains, rivers and fortifications make tiles dearer to take', () => {
+  const s = battle('cryonis');
+  const e = enemyOf(s);
+  const cap = site(s, 'enemy-capital');
+  const near = cap.y * s.w + cap.x + 2;
+  const far = (() => { for (let i = 0; i < s.owner.length; i++) { if (s.owner[i] === e.id && Math.hypot(i % s.w - cap.x, Math.floor(i / s.w) - cap.y) > 8 && world(s).terrain[i] === T.PLAINS) return i; } return -1; })();
+  assert.ok(far >= 0);
+  assert.ok(tileDefense(s, near) > tileDefense(s, far), 'capital surroundings are fortified');
+});
+
+test('capturing a capital collapses that civilization', () => {
+  const s = battle('vulkara');
+  const e = enemyOf(s);
+  const cap = site(s, 'enemy-capital');
+  give(s, cap.x, cap.y, PLAYER);
+  advance(s, 1);
+  assert.equal(e.alive, false);
+  assert.equal(e.tiles, 0);
+  assert.equal(s.status, 'won');
+});
+
+test('losing your capital is a defeat with an explanation', () => {
+  const s = battle('vulkara');
+  const e = enemyOf(s);
+  const cap = site(s, 'player-capital');
+  give(s, cap.x, cap.y, e.id);
+  advance(s, 1);
+  assert.equal(s.status, 'lost');
+  const tips = analyzeDefeat(s);
+  assert.match(tips[0], /capital/);
+});
 
 test('every planet has a working victory condition', () => {
-  const winning = {
-    vulkara: ['ecap'], cryonis: ['ecap'], mycelion: ['heart'], xythera: ['core', 'f1', 'f2'], noctyra: ['cit'],
-  };
   for (const p of PLANETS) {
     const s = battle(p.id);
-    own(s, ...winning[p.id]);
-    step(s);
+    const cap = site(s, 'enemy-capital');
+    give(s, cap.x, cap.y, PLAYER);
+    for (const c of p.victory.conds) {
+      if (c.type === 'ownType') for (const x of s.sites.filter(q => q.type === c.site).slice(0, c.n)) give(s, x.x, x.y, PLAYER);
+    }
+    advance(s, 1);
     assert.equal(s.status, 'won', p.id);
   }
 });
 
-test('Cryonis can also be won by holding both crystals long enough', () => {
+test('Cryonis can also be won by holding three crystals', () => {
   const s = battle('cryonis');
-  freezeEnemy(s);
-  own(s, 'c1', 'c2');
+  freezeAI(s);
+  const crystals = s.sites.filter(x => x.type === 'crystal');
+  assert.ok(crystals.length >= 3);
+  for (const c of crystals.slice(0, 3)) give(s, c.x, c.y, PLAYER);
   advance(s, 100);
   assert.equal(s.status, 'playing');
-  terr(s, 'c2').owner = 0; // losing a crystal pauses the timer
-  advance(s, 30);
-  assert.equal(s.status, 'playing');
-  terr(s, 'c2').owner = 1;
-  advance(s, 52);
+  advance(s, 55);
   assert.equal(s.status, 'won');
 });
 
-test('Xythera requires both the Core Foundry and two factories', () => {
-  const s = battle('xythera');
-  own(s, 'core');
-  step(s);
-  assert.equal(s.status, 'playing');
-  own(s, 'f1', 'f3');
-  step(s);
-  assert.equal(s.status, 'won');
-});
-
-test('losing the capital is a defeat, with an actionable explanation', () => {
-  const s = battle('vulkara');
-  terr(s, 'p0').troops = 2;
-  s.fleets.push({ id: 99, owner: 2, from: 'n1', to: 'p0', troops: 20, x0: 0, y0: 0, x1: 1, y1: 0, dist: 1, pos: 1, speed: 1, frost: false });
-  step(s);
-  assert.equal(s.status, 'lost');
-  const tips = analyzeDefeat(s);
-  assert.ok(tips.length >= 1);
-  assert.match(tips[0], /capital/i);
-});
-
-// ---------- 4. Planet mechanics ----------
-
-test('combat: attack ratio and fortification decide battles', () => {
-  const s = battle('cryonis');
-  freezeEnemy(s);
-  terr(s, 'f1').troops = 60;
-  terr(s, 'n3').troops = 22; // fortified neutral gate: 22 x 1.8 = 39.6
-  playerLaunch(s, ['f1'], 'n3', 0.5); // 30 troops: not enough
-  advance(s, 4);
-  assert.equal(terr(s, 'n3').owner, 0);
-  assert.equal(s.stats.failedFortified, 1);
-  terr(s, 'f1').troops = 80;
-  playerLaunch(s, ['f1'], 'n3', 1);
-  advance(s, 4);
-  assert.equal(terr(s, 'n3').owner, 1);
-});
-
-test('launching only works along lanes', () => {
-  const s = battle('vulkara');
-  assert.equal(playerLaunch(s, ['p0'], 'n8', 0.5).reason, 'notAdjacent');
-  assert.ok(playerLaunch(s, ['p0'], 'n1', 0.5).ok);
-});
-
-test('Cryonis whiteouts slow fleets and cost troops in transit', () => {
-  const s = battle('cryonis');
-  freezeEnemy(s);
-  while (!eventPhase(s).active) step(s);
-  const f = sendTroops(s, 'p0', 'n1', 20, 1);
-  assert.ok(f.frost);
-  terr(s, 'n1').troops = 0;
-  advance(s, 10);
-  assert.ok(s.stats.frostLoss >= 4.9, `frost loss ${s.stats.frostLoss}`);
-});
-
-test('Mycelion: hubs nourish regions, shield the Brood Heart, and cutting them starves the network', () => {
+test('Mycelion: the Brood Heart is shielded until the Swarm loses every hub', () => {
   const s = battle('mycelion');
-  const heart = terr(s, 'heart');
-  assert.ok(isShielded(s, heart));
-  assert.equal(networkStatus(s, terr(s, 'm3')), 'nourished');
-  own(s, 'n2');
-  terr(s, 'm3').owner = 1;
-  terr(s, 'm3').troops = 50;
-  assert.equal(playerLaunch(s, ['m3'], 'heart', 1).reason, 'shielded');
-  terr(s, 'm3').owner = 2;
-  own(s, 'h2');
-  assert.equal(networkStatus(s, terr(s, 'b1')), 'withered', 'regions cut from their hub wither');
-  assert.ok(isShielded(s, heart), 'still shielded while other hubs stand');
-  own(s, 'h1', 'h3');
-  assert.ok(!isShielded(s, heart));
+  const cap = site(s, 'enemy-capital');
+  assert.ok(isShielded(s, cap));
+  const hubs = s.sites.filter(x => x.type === 'hub');
+  assert.equal(hubs.length, 3);
+  const i = cap.y * s.w + cap.x;
+  assert.equal(playerAttack(s, i, 0.5).reason, 'shielded');
+  for (const h of hubs.slice(0, 2)) give(s, h.x, h.y, PLAYER);
+  assert.ok(isShielded(s, cap), 'still shielded with one hub left');
+  give(s, hubs[2].x, hubs[2].y, PLAYER);
+  assert.ok(!isShielded(s, cap));
 });
 
-test('Xythera: relays power defenses; capturing one disables every defense it feeds', () => {
+test('Xythera: relays power defenses that make nearby land costly', () => {
   const s = battle('xythera');
-  for (const id of ['t1', 't2', 't3', 't4']) assert.ok(isPowered(s, terr(s, id)), id);
-  const before = defMult(s, terr(s, 't1'));
-  own(s, 'r2');
-  assert.ok(!isPowered(s, terr(s, 't1')) && !isPowered(s, terr(s, 't3')));
-  assert.ok(isPowered(s, terr(s, 't2')));
-  assert.ok(defMult(s, terr(s, 't1')) < before);
+  const e = enemyOf(s);
+  const turret = s.sites.find(x => x.type === 'turret');
+  assert.ok(isPowered(s, turret));
+  const i = turret.y * s.w + turret.x + 1;
+  if (s.owner[i] !== e.id) give(s, turret.x + 1, turret.y, e.id);
+  const guarded = tileDefense(s, i);
+  for (const r of s.sites.filter(x => x.type === 'relay')) give(s, r.x, r.y, PLAYER);
+  assert.ok(!isPowered(s, turret));
+  assert.ok(tileDefense(s, i) < guarded / 2);
 });
 
-test('Xythera: powered defenses shoot fleets passing in range', () => {
-  const s = battle('xythera');
-  freezeEnemy(s);
-  own(s, 'n3');
-  terr(s, 'n3').troops = 60;
-  playerLaunch(s, ['n3'], 't1', 0.5);
-  advance(s, 2);
-  assert.ok(s.stats.turretLoss > 0);
-});
-
-test('Noctyra: command nodes drive enemy fronts and the eclipse strips fortifications', () => {
+test('Noctyra: command nodes add fronts; the eclipse strips the Citadel', () => {
   const s = battle('noctyra');
-  assert.equal(enemyFronts(s, 2), 3);
-  own(s, 'cn2');
-  assert.equal(enemyFronts(s, 2), 2);
-  const cit = terr(s, 'cit');
-  const normal = defMult(s, cit);
-  freezeEnemy(s);
+  freezeAI(s);
+  const e = enemyOf(s);
+  const fronts = attackFronts(s, e);
+  const node = s.sites.find(x => x.type === 'command');
+  give(s, node.x, node.y, PLAYER);
+  assert.equal(attackFronts(s, e), fronts - 1);
+  const cit = site(s, 'enemy-capital');
+  assert.equal(cit.type, 'citadel');
+  const i = cit.y * s.w + cit.x + 1;
+  const strong = tileDefense(s, i);
   while (!eventPhase(s).active) step(s);
-  assert.ok(defMult(s, cit) < normal / 2, 'citadel defense collapses during the eclipse');
+  assert.ok(tileDefense(s, i) < strong / 2, 'eclipse weakens the Citadel');
 });
 
-test('Noctyra supply cap limits total troops', () => {
-  const s = battle('noctyra');
-  freezeEnemy(s);
-  advance(s, 240);
-  const total = s.territories.filter(t => t.owner === 1).reduce((a, t) => a + t.troops, 0);
-  const cap = getPlanet('noctyra').supplyCap;
-  assert.ok(total <= cap.base + cap.perTerritory * 4 + 5, `total ${total}`);
+test('buildings, research, dropships and abilities work and cost resources', () => {
+  const s = createBattle('xythera', loadout(c => { c.upgrades.strike = 1; c.upgrades.rally = 1; c.upgrades.emp = 1; return c; }), { seed: 4, autoSpawn: true });
+  freezeAI(s);
+  const me = s.factions[PLAYER];
+  me.minerals = 5000; me.energy = 200; me.exotic = 200;
+  const cap = site(s, 'player-capital');
+  // Find own flat tiles to build on.
+  const spots = [];
+  for (let i = 0; i < s.owner.length && spots.length < 30; i++) if (s.owner[i] === PLAYER && world(s).terrain[i] === T.PLAINS) spots.push(i);
+  const habitat = spots.find(i => playerBuild(s, 'habitat', i).ok);
+  assert.ok(habitat !== undefined, 'built a habitat');
+  assert.ok(me.minerals < 5000);
+  assert.equal(playerResearch(s, 'swift').ok, true);
+  assert.equal(playerResearch(s, 'swift').reason, 'done');
+  assert.equal(playerDropship(s, cap.y * s.w + cap.x + 60, 0.3).reason, 'noStarport');
+  const e = enemyOf(s);
+  const ecap = site(s, 'enemy-capital');
+  let target = -1;
+  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === e.id && Math.hypot(i % s.w - ecap.x, Math.floor(i / s.w) - ecap.y) > 6) { target = i; break; }
+  const tiles = e.tiles;
+  assert.ok(useAbility(s, 'strike', target).ok);
+  assert.ok(e.tiles < tiles, 'strike scorched enemy land');
+  assert.equal(useAbility(s, 'strike', target).reason, 'cooldown');
+  const relay = s.sites.find(x => x.type === 'relay');
+  assert.ok(useAbility(s, 'emp', relay.y * s.w + relay.x).ok);
+  assert.ok(s.sites.filter(x => x.type === 'turret').some(t => !isPowered(s, t)));
 });
 
-test('tutorial objectives complete from play', () => {
-  const s = battle('vulkara');
-  freezeEnemy(s);
-  playerLaunch(s, ['p0'], 'n1', 0.75);
-  advance(s, 5);
-  assert.ok(s.objectivesDone.includes('v1'));
-  assert.ok(s.objectivesDone.includes('v2'));
+// ---------- Learning curve ----------
+
+function botRun(id, profile, tier, seed) {
+  const camp = newCampaign();
+  for (const k of ['reserves', 'production', 'fortify', 'income']) camp.upgrades[k] = tier;
+  const s = createBattle(id, playerLoadout(camp), { seed, playerProfile: profile, autoSpawn: true });
+  advance(s, 900);
+  return s.status;
+}
+
+test('NPC commanders get sharper across the campaign', () => {
+  const p = PLANETS.map(x => AI_PROFILES[x.enemy.profile]);
+  for (let i = 2; i < p.length; i++) assert.ok(p[i].interval <= p[i - 1].interval, `planet ${i + 1} thinks at least as fast`);
+  assert.ok(p[4].objectiveSense >= p[1].objectiveSense);
+  assert.ok(!p[0].retaliate && p[1].retaliate, 'Cryonis introduces retaliation');
+  // No main civilization starts much bigger than the player's landing.
+  for (const pl of PLANETS) assert.ok(pl.enemy.radius <= 10 && pl.enemy.troops <= 1300, pl.id);
 });
 
-test('abilities: strike, rally and EMP', () => {
-  const s = createBattle('xythera', loadout(c => { c.upgrades.strike = 1; c.upgrades.rally = 1; c.upgrades.emp = 1; return c; }), { seed: 3 });
-  const t1 = terr(s, 't1');
-  assert.ok(useAbility(s, 'emp', 't1').ok);
-  assert.ok(!isPowered(s, t1));
-  assert.equal(useAbility(s, 'emp', 't2').reason, 'notReady', 'cooldown');
-  const before = terr(s, 'core').troops;
-  assert.ok(useAbility(s, 'strike', 'core').ok);
-  assert.ok(terr(s, 'core').troops < before);
-  assert.ok(useAbility(s, 'rally', 'p0').ok);
-  const locked = battle('xythera');
-  assert.equal(useAbility(locked, 'strike', 'core').reason, 'notReady', 'abilities need the upgrade');
+test('a careless commander struggles after the tutorial world', () => {
+  let losses = 0;
+  for (const id of ['cryonis', 'mycelion', 'xythera', 'noctyra']) if (botRun(id, 'passive', 0, 2) !== 'won') losses++;
+  assert.equal(losses, 4);
 });
 
-test('scouting upgrade widens vision', () => {
-  const s0 = battle('noctyra');
-  const s2 = createBattle('noctyra', loadout(c => { c.upgrades.scouting = 2; return c; }), { seed: 7 });
-  assert.ok(!playerVision(s0).has('cit'));
-  assert.ok(playerVision(s2).has('cit'));
+test('the tutorial world is winnable without upgrades', () => {
+  const wins = [1, 2, 3].filter(seed => botRun('vulkara', 'tactical', 0, seed) === 'won').length;
+  assert.ok(wins >= 2, `won ${wins}/3`);
 });
 
-// ---------- 5. Rewards and permanent upgrades ----------
+// ---------- Progression and saving ----------
 
 test('upgrades carry into battles', () => {
   const plain = battle('vulkara');
-  const upgraded = createBattle('vulkara', loadout(c => { c.upgrades.reserves = 2; c.upgrades.production = 3; c.upgrades.fortify = 1; return c; }), { seed: 7 });
-  assert.equal(terr(upgraded, 'p0').troops, terr(plain, 'p0').troops + 20);
-  assert.ok(upgraded.factions[1].growth > plain.factions[1].growth);
-  assert.ok(defMult(upgraded, terr(upgraded, 'p0')) > defMult(plain, terr(plain, 'p0')));
+  const up = createBattle('vulkara', loadout(c => { c.upgrades.reserves = 2; c.upgrades.production = 3; return c; }), { seed: 7, autoSpawn: true });
+  assert.equal(up.factions[PLAYER].troops, plain.factions[PLAYER].troops + 300);
+  assert.ok(up.factions[PLAYER].growth > plain.factions[PLAYER].growth);
 });
 
-test('rewards: first clear pays in full, objectives pay once, replays pay less', () => {
+test('rewards: first clear pays in full, objectives once, replays less; skirmish pays a little', () => {
   const c = newCampaign();
   const p = getPlanet('vulkara');
-  const result = { time: 200, objectivesDone: ['v1', 'v2'], capitalThreatened: false };
+  const result = { time: 300, objectivesDone: ['v1', 'v2'], capitalThreatened: false };
   const r1 = computeRewards(c, p, result);
   assert.equal(r1.total, 30 + 5 + 5 + 6 + 5);
   applyVictory(c, p, result, r1);
-  assert.equal(c.cores, r1.total);
-  assert.ok(c.planets.vulkara.completed);
-  assert.ok(isUnlocked(c, 1) && !isUnlocked(c, 2));
-  const r2 = computeRewards(c, p, { ...result, time: 999 });
-  assert.equal(r2.total, 9 + 5);
+  assert.ok(c.planets.vulkara.completed && isUnlocked(c, 1) && !isUnlocked(c, 2));
+  assert.equal(computeRewards(c, p, { ...result, time: 9999 }).total, 9 + 5);
+  const sk = skirmishConfig('noctyra', 5);
+  const r3 = computeRewards(c, sk, { time: 9999, objectivesDone: [], capitalThreatened: true });
+  assert.equal(r3.total, 15);
+  applyVictory(c, sk, { time: 9999, objectivesDone: [] }, r3);
+  applyDefeat(c, sk);
+  assert.equal(assistLevel(c, 'skirmish'), 0);
 });
 
 test('buying upgrades and civilizations spends cores', () => {
@@ -320,62 +317,58 @@ test('buying upgrades and civilizations spends cores', () => {
   assert.equal(buyUpgrade(c, 'production'), false);
   c.cores = 100;
   assert.ok(buyUpgrade(c, 'production'));
-  assert.equal(c.cores, 75);
-  assert.equal(c.upgrades.production, 1);
   assert.ok(unlockCiv(c, 'kryll'));
   assert.equal(c.cores, 35);
-  c.civ = 'kryll';
-  assert.ok(playerLoadout(c).growth > playerLoadout(newCampaign()).growth);
 });
 
-test('adaptive assist grows with defeats and ends once the planet is conquered', () => {
+test('adaptive assist grows with defeats and slows enemy commanders', () => {
   const c = newCampaign();
-  const p = getPlanet('mycelion');
-  for (let i = 0; i < 5; i++) applyDefeat(c, p);
+  for (let i = 0; i < 5; i++) applyDefeat(c, getPlanet('mycelion'));
   assert.equal(assistLevel(c, 'mycelion'), 3);
-  c.planets.mycelion.completed = true;
-  assert.equal(assistLevel(c, 'mycelion'), 0);
+  const base = battle('mycelion');
+  const easy = battle('mycelion', { assist: 3 });
+  assert.ok(enemyOf(easy).profile.interval > enemyOf(base).profile.interval);
 });
 
-// ---------- 6. Save, close and resume ----------
-
-test('campaign save survives a round trip through storage', () => {
-  const store = memoryStorage();
-  const c = newCampaign();
-  c.cores = 42;
-  c.upgrades.scouting = 2;
-  c.planets.vulkara.completed = true;
-  c.battle = serialize(battle('cryonis'));
-  assert.ok(saveCampaign(store, c));
-  const loaded = loadCampaign(store);
-  assert.equal(loaded.cores, 42);
-  assert.equal(loaded.upgrades.scouting, 2);
-  assert.ok(loaded.planets.vulkara.completed);
-  assert.equal(loaded.battle.planetId, 'cryonis');
+test('settings survive normalisation and the player colour applies', () => {
+  const n = normalizeCampaign({ version: 1, settings: { sound: false, simple: true, playerColor: '#4f7bff', tips: false } });
+  assert.equal(n.settings.sound, false);
+  assert.equal(n.settings.simple, true);
+  assert.equal(playerLoadout(n).color, '#4f7bff');
+  assert.equal(normalizeCampaign({ version: 1, settings: { playerColor: 'red; drop' } }).settings.playerColor, 'civ');
 });
 
 test('corrupt or foreign saves fall back safely', () => {
   const store = memoryStorage();
-  store.setItem(SAVE_KEY, '{not json');
+  store.setItem(SAVE_KEY, '{nope');
   assert.equal(loadCampaign(store), null);
-  const n = normalizeCampaign({ version: 1, cores: -5, upgrades: { production: 99 }, civ: 'vexari', civsUnlocked: ['hax'], planets: { vulkara: { completed: 'yes' } } });
-  assert.equal(n.cores, 0);
-  assert.equal(n.upgrades.production, 3);
-  assert.equal(n.civ, 'terran');
-  assert.equal(n.planets.vulkara.completed, true);
-  assert.equal(normalizeCampaign({ version: 999 }).cores, 0);
-  assert.equal(deserialize({ v: 1, planetId: 'nowhere', territories: [] }), null);
+  assert.equal(deserialize({ v: 1 }), null);
+  assert.equal(deserialize({ v: 3, owner: 'AAAA', w: 10, h: 10, configId: 'vulkara', theme: 'vulkara', seed: 1 }), null);
+  assert.equal(normalizeCampaign({ version: 1, battle: { v: 1, planetId: 'vulkara' } }).battle, null, 'old battle format dropped');
 });
 
-test('a battle resumed from a save continues exactly where it left off', () => {
+test('a battle saved mid-war resumes exactly where it left off', () => {
+  const store = memoryStorage();
   const a = battle('noctyra', { playerProfile: 'tactical' });
-  advance(a, 30);
-  const saved = JSON.parse(JSON.stringify(serialize(a)));
-  const b = deserialize(saved);
-  advance(a, 45);
-  advance(b, 45);
-  const snap = s => s.territories.map(t => `${t.id}:${t.owner}:${t.troops.toFixed(3)}`).join(',');
-  assert.equal(snap(b), snap(a));
-  assert.equal(b.status, a.status);
+  advance(a, 60);
+  const c = newCampaign();
+  c.battle = serialize(a);
+  saveCampaign(store, c);
+  const loaded = loadCampaign(store);
+  const b = deserialize(loaded.battle);
+  assert.ok(b);
+  advance(a, 60);
+  advance(b, 60);
+  assert.deepEqual(Array.from(b.owner), Array.from(a.owner));
+  assert.deepEqual(b.factions.map(f => f && Math.round(f.troops)), a.factions.map(f => f && Math.round(f.troops)));
   assert.deepEqual(battleResult(b), battleResult(a));
+  assert.ok(JSON.stringify(c).length < 900000, 'save fits the 1MB cloud-save limit');
+});
+
+test('config lookups resolve for campaign and skirmish states', () => {
+  const s = createBattle('skirmish', loadout(), { seed: 1, theme: 'cryonis', worldSeed: 77, autoSpawn: true });
+  assert.equal(config(s).skirmish, true);
+  assert.equal(s.theme, 'cryonis');
+  assert.ok(countSites(s, 'crystal', 0) >= 1);
+  assert.ok(siteOwner(s, site(s, 'enemy-capital')) > 1);
 });

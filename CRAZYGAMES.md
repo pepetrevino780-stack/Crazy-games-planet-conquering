@@ -6,7 +6,7 @@
 npm run build
 ```
 
-This writes `dist/alien-worlds.zip` (about 55 KB, with `index.html` at the root) and the unpacked files in `dist/game/`.
+This writes `dist/alien-worlds.zip` (well under 1 MB, with `index.html` at the root) and the unpacked files in `dist/game/`.
 Upload the zip as an **HTML5** game in the CrazyGames developer portal.
 
 ## 2. Submission settings
@@ -19,6 +19,7 @@ Upload the zip as an **HTML5** game in the CrazyGames developer portal.
 | Orientation | Landscape (portrait also works) |
 | Mobile | Supported: touch controls and responsive layout |
 | Cover images | `assets/crazygames/cover-landscape-1920x1080.png`, `cover-portrait-800x1200.png`, `cover-square-800x800.png` |
+| Screenshots | `assets/crazygames/screenshot-*.png` (1920x1080 gameplay) |
 
 ### Listing text (ready to paste)
 
@@ -26,22 +27,20 @@ Upload the zip as an **HTML5** game in the CrazyGames developer portal.
 
 **Short description:** Conquer five alien planets in real time. Expand, defend, disrupt and outplan smarter enemy civilizations, and earn permanent upgrades as you go.
 
-**Description:** Lead your fleet across five strange worlds, each with its own lesson. Seize neutral land on volcanic Vulkara, hold crystal deposits through the storms of Cryonis, and cut the fungal network hubs that shield the Brood Heart on Mycelion. On Xythera you capture energy relays to shut down ancient defenses. On Noctyra you break a coordinated empire and time your assault to the eclipse. Enemies get smarter on every planet, and between battles you spend Stellar Cores on upgrades, special abilities and new alien civilizations.
+**Description:** Land on a strange alien world and grow your empire tile by tile. Push your borders into the wilderness, then go to war with rival civilizations. Capture a capital and that civilization collapses. A five-world campaign teaches a new strategy on each planet: expand on volcanic Vulkara, defend the crystal fields of Cryonis, cut the fungal hubs of Mycelion, disable the ancient defenses of Xythera, and time your assault to the eclipse on Noctyra. Earn Stellar Cores for permanent upgrades, unlock abilities and alien civilizations, or play endless skirmishes on procedurally generated worlds.
 
 **Controls:**
-- Tap or click your territory to select it, then tap a connected territory to attack.
-- Drag between territories to attack or move troops.
-- 1–4: attack ratio (25/50/75/100%)
-- Q / W / E: special abilities
-- Space: pause
-- Esc: clear selection
+- Click or tap land next to your border to attack it with your attack ratio of troops.
+- Drag to pan; mouse wheel or pinch to zoom.
+- 1–5 build, 6 dropship, R research, 7–9 abilities
+- [ / ] attack ratio, L leaderboard, O objectives, C center on capital, Space pause
 
 ## 3. What the SDK integration does
 
 Code: `js/platform.js`, wired up in `js/main.js`. Tests: `tests/platform.test.js`.
 
 - **Init:** `SDK.init()` runs during loading, wrapped in `loadingStart` / `loadingStop`.
-- **Gameplay events:** `gameplayStart` fires while a battle runs. `gameplayStop` fires on pause, help, menus, debriefs, ads and hidden tabs. Repeated calls are filtered out.
+- **Gameplay events:** `gameplayStart` fires while a battle runs (including choosing a landing site). `gameplayStop` fires on pause, help, menus, debriefs, ads and hidden tabs. Repeated calls are filtered out.
 - **Happy time:** `happytime` fires when a planet is conquered.
 - **Midgame ads:** requested only at natural breaks, when starting a battle after a previous one ended (never before the session's first battle). The SDK enforces its own minimum interval. The game pauses while an ad plays.
 - **Rewarded ads:** optional. After a victory the debrief offers "Watch an ad: +50% bonus cores", and the reward is granted only on `adFinished`.
@@ -63,9 +62,9 @@ Code: `js/platform.js`, wired up in `js/main.js`. Tests: `tests/platform.test.js
    - Progress persists after a reload.
 3. Play once on a phone in landscape.
 
-## 5. Known gaps
+## 5. Notes and known gaps
 
-- **Art mismatch:** the covers and title screen use the new pixel-art style, but battles still use the earlier look until the pixel redesign is finished. If a reviewer flags covers that don't match gameplay, swap in a battle screenshot or finish the redesign first.
-- **No audio yet,** so there is nothing to mute during ads. When sound is added, mute it in the ad pause handler (`setAdHandlers` in `js/main.js`).
+- **Gameplay screenshots** for the listing are in `assets/crazygames/` (`screenshot-*.png`).
+- **Sound** is synthesised and muted while ads play (`setAdMute` in the ad pause handler).
 - **No sitelock:** nothing stops other sites from embedding a copy of the build. Add one only if needed.
 - **Requirements not checked directly:** the CrazyGames documentation site could not be reached from the build environment. This integration follows their SDK v3 docs as summarised in search results. Re-check the [technical requirements](https://docs.crazygames.com/requirements/technical) and [ad requirements](https://docs.crazygames.com/requirements/ads/) before submitting.

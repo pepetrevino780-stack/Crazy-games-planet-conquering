@@ -1,142 +1,189 @@
-// UI controller: screens, input, HUD, tips and persistence.
-import { PLANETS, TYPE_INFO, getPlanet } from './campaign.js';
+// Interface controller: screens, map input, HUD, notices, saving and portal hooks.
+import { PLANETS, getPlanet, skirmishConfig, BUILDINGS, RESEARCH, SITE_TYPES } from './campaign.js';
 import {
   newCampaign, loadCampaign, saveCampaign, isUnlocked, UPGRADES, CIVS, ABILITIES, upgradeCost,
   buyUpgrade, unlockCiv, playerLoadout, computeRewards, applyVictory, applyDefeat, assistLevel,
 } from './progression.js';
 import {
-  createBattle, step, playerLaunch, useAbility, abilityReady, currentObjective, battleResult,
-  serialize, deserialize, analyzeDefeat, TICK,
-} from './game.js';
+  createBattle, step, spawnPlayer, canSpawnAt, playerAttack, playerDropship, playerBuild,
+  playerResearch, useAbility, abilityReady, ABILITY_ENERGY, DROPSHIP_COST, canDropship, currentObjective,
+  condProgress, battleResult, serialize, deserialize, analyzeDefeat, TICK, PLAYER,
+} from './sim/engine.js';
 import {
-  terr, eventPhase, isPowered, isShielded, networkStatus, defMult, playerVision, enemyFronts,
-  countOwned, growthRate, supplyCap, totalTroops, empActive,
-} from './rules.js';
-import { makeView, render, hitTest, validTargetsFor } from './render.js';
-import { titleScene } from './art/backdrop.js';
+  config, world, maxTroops, regen, income, buildCost, siteOwner, isShielded, isPowered, countSites,
+  eventPhase, tileDefense, attackFronts, sitesOf,
+} from './sim/core.js';
+import { MapRenderer, fmt } from './render.js';
+import { THEMES, TERRAIN, THEME_IDS, isLand } from './world/themes.js';
+import { iconURL, spriteCanvas } from './art/sprites.js';
+import { titleScene, planetOrb, backdropCanvas } from './art/backdrop.js';
+import { sfx, setSound, setAdMute } from './audio.js';
 import {
   initPlatform, platformActive, platformStorage, setAdHandlers, loadingStart, loadingStop,
   gameplayStart, gameplayStop, happytime, midgameAd, rewardedAd,
 } from './platform.js';
 
 const $ = sel => document.querySelector(sel);
-// Set in init(): the portal's cloud-synced save store, or localStorage.
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtTime = s => { s = Math.max(0, Math.floor(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+
 let storage = null;
 let campaign = null;
 let battle = null;
-let view = null;
-let ratio = 0.5;
+let renderer = null;
+let ratio = 0.2;
 let paused = false;
 let speed = 1;
-let armedAbility = null;
-const ui = { selection: new Set(), hover: null, drag: null, highlights: new Set(), vision: new Set(), validTargets: new Set(), now: 0 };
-let lastFrame = 0;
-let accumulator = 0;
-let lastSave = 0;
-let seenTips = new Set();
-let lastEventWarn = false;
-let inspectedId = null;
 let adPlaying = false;
-let battlesEnded = 0; // ad breaks only come after the player has played
+let battlesEnded = 0;
+let armed = null; // { kind: 'build'|'ability'|'dropship', id }
+let hoverTile = -1;
+let inspectTile = -1;
+let seenTips = new Set();
+let seenAttacks = new Set();
+let lastFrame = 0, accumulator = 0, lastSave = 0, lastHud = 0;
+let endTimer = 0;
+let lastPointerTouch = false;
+let briefingRef = null; // { configId, theme?, worldSeed? }
+let skirmishSeed = 1 + Math.floor(Math.random() * 99999);
 
 const EVENT_TEXT = {
-  eruption: { warn: 'Eruption soon', active: 'Eruption: vents surge', start: 'The vents erupt! Magma vents produce troops much faster for a few seconds.' },
-  storm: { warn: 'Whiteout incoming', active: 'WHITEOUT', start: 'Whiteout! Fleets launched now crawl and lose a quarter of their troops to frostbite.', warnTip: 'A whiteout storm is coming. Launch now or wait until it passes — troops sent during the storm arrive weakened.' },
-  bloom: { warn: 'Spore bloom soon', active: 'Spore bloom', start: 'Spore bloom! Every region nourished by a hub gains 4 troops. Hubs you hold feed you instead.' },
-  surge: { warn: 'Grid surge soon', active: 'GRID SURGE', start: 'Grid surge! Powered defenses fire twice as fast. Hold attacks past turrets until it ends.' },
-  eclipse: { warn: 'Eclipse approaching', active: 'ECLIPSE', start: 'Eclipse! Fortifications and the Citadel lose their defensive bonus. Strike now!', warnTip: 'An eclipse is coming. Gather troops next to fortified regions and strike once it begins.' },
+  eruption: { name: 'Eruption', start: 'Eruption! Every magma vent pays out a burst of minerals to its owner.' },
+  storm: { name: 'Whiteout', start: 'Whiteout! Attacks launched now lose a quarter of their troops to the cold.', warn: 'A whiteout is coming. Launch attacks now or wait until it passes.' },
+  bloom: { name: 'Spore bloom', start: 'Spore bloom! Every hub owner gains a burst of troops.' },
+  surge: { name: 'Grid surge', start: 'Grid surge! Powered defenses are 50% stronger until it ends.' },
+  eclipse: { name: 'Eclipse', start: 'Eclipse! The Citadel and bastions lose most of their defense. Strike now!', warn: 'An eclipse is coming. Build up your army and strike the Citadel when it begins.' },
 };
-
 const PROFILE_TEXT = {
-  passive: 'Relaxed. Expands into empty land and rarely strikes your territory. A safe place to experiment.',
-  cautious: 'Cautious. Reinforces threatened regions, retakes what it loses and avoids attacking into storms.',
-  aggressive: 'Aggressive. Expands fast on two fronts, fed by its network hubs and spore blooms.',
-  tactical: 'Tactical. Guards relays and factories, chooses targets carefully and strikes territories you leave empty.',
-  mastermind: 'Coordinated. Attacks on one front per command node it holds, defends its core and times assaults to the eclipse.',
+  passive: 'Relaxed. Expands slowly and rarely attacks you. A safe place to learn.',
+  cautious: 'Cautious. Keeps a large reserve, builds bastions and strikes back when attacked.',
+  aggressive: 'Aggressive. Expands fast on two fronts and is fed by its network hubs.',
+  tactical: 'Tactical. Guards its relays and factories and strikes whoever empties their army.',
+  mastermind: 'Coordinated. Attacks on one front per command node and times its moves to the eclipse.',
 };
-
-// ---------- Screens ----------
+const REASONS = {
+  notBordering: 'You do not border that land. Expand toward it, or build a Starport and use a dropship (6).',
+  noTroops: 'Not enough troops. Raise the attack ratio or wait for your army to regrow.',
+  fronts: 'Too many attacks at once. Wait for one to finish.',
+  shielded: 'Shielded! Capture the network hubs first.',
+  water: 'Your troops cannot march over water. Use a dropship from a Starport.',
+  own: 'That land is already yours.',
+  minerals: 'Not enough minerals.',
+  energy: 'Not enough energy.',
+  exotic: 'Not enough exotic matter.',
+  cooldown: 'Still recharging.',
+  locked: 'Unlock this ability in Command Upgrades.',
+  terrain: 'Build on your own flat land (not mountains, rivers or volcanoes).',
+  crowded: 'Too close to another structure.',
+  coast: 'Starports must be built within 3 tiles of the coast.',
+  noStarport: 'Build a Starport first.',
+  target: 'Target enemy land.',
+  notStarted: 'Choose your landing site first.',
+  invalid: 'You cannot do that there.',
+};
 
 function show(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + name));
   if (name === 'title') renderTitle();
   if (name === 'campaign') renderCampaign();
   if (name === 'upgrades') renderUpgrades();
+  if (name === 'skirmish') renderSkirmish();
 }
 
-function persist() {
-  if (campaign) saveCampaign(storage, campaign);
-}
-
-function fmtTime(s) {
-  s = Math.max(0, Math.floor(s));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
-
-function esc(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
+const persist = () => { if (campaign) saveCampaign(storage, campaign); };
 
 function confirmBox(text) {
   return new Promise(resolve => {
     $('#confirm-text').textContent = text;
     $('#modal-confirm').classList.remove('hidden');
-    const done = v => {
-      $('#modal-confirm').classList.add('hidden');
-      $('#confirm-yes').onclick = $('#confirm-no').onclick = null;
-      resolve(v);
-    };
+    const done = v => { $('#modal-confirm').classList.add('hidden'); resolve(v); };
     $('#confirm-yes').onclick = () => done(true);
     $('#confirm-no').onclick = () => done(false);
   });
 }
 
+function applyIcons(root = document) {
+  root.querySelectorAll('img[data-icon]').forEach(img => { if (!img.src) img.src = iconURL(img.dataset.icon, 3); });
+}
+
+const spriteIcons = new Map();
+function spriteIcon(type) {
+  if (!spriteIcons.has(type)) {
+    const spr = spriteCanvas(type, '#3fd0ff');
+    const c = document.createElement('canvas');
+    const s = 3;
+    c.width = spr.width * s; c.height = spr.height * s;
+    const x = c.getContext('2d');
+    x.imageSmoothingEnabled = false;
+    x.drawImage(spr, 0, 0, c.width, c.height);
+    spriteIcons.set(type, c.toDataURL());
+  }
+  return spriteIcons.get(type);
+}
+
+function orbCanvas(theme, size = 48) {
+  const src = planetOrb(theme, size);
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  c.getContext('2d').drawImage(src, 0, 0);
+  return c;
+}
+
+// ---------- Menus ----------
+
 let titleArt = null;
 function renderTitle() {
   if (!titleArt) {
     titleArt = titleScene(320, 180).toDataURL();
-    $('#screen-title').style.backgroundImage = `linear-gradient(rgba(5,3,12,0.35), rgba(5,3,12,0.55)), url(${titleArt})`;
+    $('#screen-title').style.backgroundImage = `url(${titleArt})`;
   }
-  const hasSave = !!campaign;
-  $('#btn-continue').textContent = hasSave ? 'Continue campaign' : 'Start campaign';
-  $('#btn-new').classList.toggle('hidden', !hasSave);
+  const has = !!campaign;
+  $('#btn-continue').textContent = has ? 'Continue campaign' : 'Start campaign';
+  $('#btn-new').classList.toggle('hidden', !has);
   const b = campaign?.battle;
   $('#btn-resume').classList.toggle('hidden', !b);
-  if (b) $('#btn-resume').textContent = `Resume battle on ${getPlanet(b.planetId).name} (${fmtTime(b.time)})`;
+  if (b) $('#btn-resume').textContent = `Resume battle (${battleName(b)}, ${fmtTime(b.time)})`;
 }
 
-function planetOrb(p) {
-  return `background: radial-gradient(circle at 35% 30%, ${p.theme.accent}, ${p.theme.bg2} 55%, ${p.theme.bg1});`;
-}
+const battleName = b => (b.configId === 'skirmish' ? `Skirmish: ${THEMES[b.theme].name}` : getPlanet(b.configId).name);
 
 function renderCampaign() {
   $('#cores-campaign').textContent = campaign.cores;
   $('#sel-difficulty').value = campaign.settings.difficulty;
-  $('#chk-tips').checked = campaign.settings.tips;
   const saved = campaign.battle;
   $('#btn-resume-campaign').classList.toggle('hidden', !saved);
-  if (saved) $('#btn-resume-campaign').textContent = `Resume battle on ${getPlanet(saved.planetId).name} (${fmtTime(saved.time)})`;
+  if (saved) $('#btn-resume-campaign').textContent = `Resume ${battleName(saved)} (${fmtTime(saved.time)})`;
   const list = $('#planet-list');
   list.innerHTML = '';
   PLANETS.forEach((p, i) => {
     const rec = campaign.planets[p.id];
     const unlocked = isUnlocked(campaign, i);
     const li = document.createElement('li');
-    li.className = 'planet' + (unlocked ? '' : ' locked') + (rec.completed ? ' done' : '');
+    li.className = 'planet panel' + (unlocked ? '' : ' locked') + (rec.completed ? ' done' : '');
     const objs = `${rec.objectives.length}/${p.objectives.length} objectives`;
     const status = !unlocked ? `Conquer ${PLANETS[i - 1].name} to unlock`
       : rec.completed ? `Conquered · best ${fmtTime(rec.bestTime)}<br>${objs}`
-      : rec.attempts ? `${rec.defeats} defeat${rec.defeats === 1 ? '' : 's'} · ${objs}` : 'Uncharted';
-    li.innerHTML = `
-      <span class="step">${i + 1}/5</span>
-      <div class="orb" style="${planetOrb(p)}"></div>
-      <h3>${esc(p.name)}</h3>
-      <div class="lesson">${esc(p.lesson)}</div>
-      <div class="status">${status}</div>
+      : rec.attempts ? `${rec.defeats} defeat${rec.defeats === 1 ? '' : 's'} · ${objs}` : esc(p.title);
+    li.innerHTML = `<span class="step">${i + 1}/5</span><h3>${esc(p.name)}</h3><div class="lesson">${esc(p.lesson)}</div><div class="status">${status}</div>
       <button class="btn ${unlocked && !rec.completed ? 'primary' : ''}" ${unlocked ? '' : 'disabled'}>${rec.completed ? 'Replay' : 'Invade'}</button>`;
-    li.querySelector('button').onclick = () => openBriefing(p.id);
+    li.insertBefore(orbCanvas(p.theme), li.querySelector('h3'));
+    li.querySelector('button').onclick = () => openBriefing({ configId: p.id });
     list.appendChild(li);
   });
+}
+
+function renderSkirmish() {
+  $('#skirmish-seed').value = skirmishSeed;
+  const list = $('#skirmish-list');
+  list.innerHTML = '';
+  for (const theme of THEME_IDS) {
+    const li = document.createElement('li');
+    li.className = 'planet panel';
+    li.innerHTML = `<h3>${esc(THEMES[theme].name)}</h3><div class="lesson">${esc(getPlanet(theme)?.name || '')} world</div><button class="btn primary">Generate &amp; play</button>`;
+    li.insertBefore(orbCanvas(theme), li.querySelector('h3'));
+    li.querySelector('button').onclick = () => openBriefing({ configId: 'skirmish', theme, worldSeed: Number($('#skirmish-seed').value) || 1 });
+    list.appendChild(li);
+  }
 }
 
 function renderUpgrades() {
@@ -147,14 +194,12 @@ function renderUpgrades() {
     const lvl = campaign.upgrades[u.id];
     const cost = upgradeCost(campaign, u.id);
     const li = document.createElement('li');
-    li.className = 'card';
-    const pips = u.costs.map((_, i) => `<i class="pip ${i < lvl ? 'on' : ''}"></i>`).join('');
-    li.innerHTML = `<h4>${esc(u.name)} <span class="pips">${pips}</span></h4><p>${esc(u.desc)}</p>`;
+    li.className = 'card panel';
+    li.innerHTML = `<h4>${esc(u.name)} <span class="pips">${u.costs.map((_, i) => `<i class="pip ${i < lvl ? 'on' : ''}"></i>`).join('')}</span></h4><p>${esc(u.desc)}</p>`;
     const btn = document.createElement('button');
     btn.className = 'btn small';
-    if (cost === null) { btn.textContent = 'Maxed'; btn.disabled = true; }
-    else { btn.textContent = `${lvl ? 'Upgrade' : 'Acquire'} · ${cost}`; btn.disabled = campaign.cores < cost; }
-    btn.onclick = () => { if (buyUpgrade(campaign, u.id)) { persist(); renderUpgrades(); } };
+    if (cost === null) { btn.textContent = 'Maxed'; btn.disabled = true; } else { btn.textContent = `${lvl ? 'Upgrade' : 'Acquire'} · ${cost}`; btn.disabled = campaign.cores < cost; }
+    btn.onclick = () => { if (buyUpgrade(campaign, u.id)) { sfx.build(); persist(); renderUpgrades(); } };
     li.appendChild(btn);
     ul.appendChild(li);
   }
@@ -163,34 +208,38 @@ function renderUpgrades() {
   for (const c of CIVS) {
     const owned = campaign.civsUnlocked.includes(c.id);
     const li = document.createElement('li');
-    li.className = 'card' + (campaign.civ === c.id ? ' selected' : '');
+    li.className = 'card panel' + (campaign.civ === c.id ? ' selected' : '');
     li.innerHTML = `<h4><span><span class="swatch" style="background:${c.color}"></span>${esc(c.name)}</span></h4><p>${esc(c.desc)}</p>`;
     const btn = document.createElement('button');
     btn.className = 'btn small';
     if (campaign.civ === c.id) { btn.textContent = 'Commanding'; btn.disabled = true; }
     else if (owned) { btn.textContent = 'Command'; btn.onclick = () => { campaign.civ = c.id; persist(); renderUpgrades(); }; }
-    else {
-      btn.textContent = `Contact · ${c.cost}`;
-      btn.disabled = campaign.cores < c.cost;
-      btn.onclick = () => { if (unlockCiv(campaign, c.id)) { campaign.civ = c.id; persist(); renderUpgrades(); } };
-    }
+    else { btn.textContent = `Contact · ${c.cost}`; btn.disabled = campaign.cores < c.cost; btn.onclick = () => { if (unlockCiv(campaign, c.id)) { campaign.civ = c.id; persist(); renderUpgrades(); } }; }
     li.appendChild(btn);
     cl.appendChild(li);
   }
 }
 
-let briefingPlanet = null;
-function openBriefing(planetId) {
-  const p = getPlanet(planetId);
-  briefingPlanet = p.id;
-  $('#brief-title').textContent = p.name;
-  $('#brief-lesson').textContent = `Lesson ${PLANETS.indexOf(p) + 1}: ${p.lesson}`;
+function cfgFor(ref) {
+  return ref.configId === 'skirmish' ? skirmishConfig(ref.theme, ref.worldSeed) : getPlanet(ref.configId);
+}
+
+function openBriefing(ref) {
+  briefingRef = ref;
+  const p = cfgFor(ref);
+  const idx = PLANETS.indexOf(p);
+  $('#brief-title').textContent = ref.configId === 'skirmish' ? `Skirmish — ${THEMES[ref.theme].name}` : `${p.name}: ${p.title}`;
+  $('#brief-back').dataset.nav = ref.configId === 'skirmish' ? 'skirmish' : 'campaign';
+  $('#brief-lesson').textContent = idx >= 0 ? `Lesson ${idx + 1}: ${p.lesson}` : `World seed ${ref.worldSeed}`;
   $('#brief-tagline').textContent = p.tagline;
-  const vic = p.victory.conds.map(c => `<li>${esc(c.label)}</li>`).join('');
-  $('#brief-victory').innerHTML = vic + '<li>Defeat: lose your capital.</li>';
-  $('#brief-enemy').innerHTML = `<b style="color:${p.enemy.color}">${esc(p.enemy.name)}</b> — ${esc(PROFILE_TEXT[p.enemy.profile])}`;
+  const orb = planetOrb(p.theme, 64);
+  const bc = $('#brief-orb');
+  bc.getContext('2d').clearRect(0, 0, 64, 64);
+  bc.getContext('2d').drawImage(orb, 0, 0);
+  $('#brief-victory').innerHTML = p.victory.conds.map(c => `<li>${esc(c.label)}</li>`).join('') + '<li>Defeat: lose your capital or all your land.</li>';
+  $('#brief-enemy').innerHTML = `<b style="color:${p.enemy.color}">${esc(p.enemy.name)}</b> — ${esc(PROFILE_TEXT[p.enemy.profile] || '')} Plus ${p.nations.count} independent nations.`;
   $('#brief-notes').innerHTML = p.briefing.map(b => `<li>${esc(b)}</li>`).join('');
-  const assist = assistLevel(campaign, p.id);
+  const assist = idx >= 0 ? assistLevel(campaign, p.id) : 0;
   $('#brief-assist').classList.toggle('hidden', !assist);
   $('#brief-assist').textContent = assist ? `Adaptive assist ${assist}/3: after your earlier defeats, enemy commanders here react a little slower.` : '';
   show('briefing');
@@ -198,52 +247,48 @@ function openBriefing(planetId) {
 
 // ---------- Battle lifecycle ----------
 
-// Start a battle after a natural break, offering the portal an ad slot first.
-// Never before the session's first battle; the SDK also rate-limits ads.
-async function beginBattle(planetId) {
+async function beginBattle(ref) {
   if (battlesEnded > 0) await midgameAd();
-  startBattle(planetId);
+  startBattle(ref);
 }
 
-function startBattle(planetId) {
-  const rec = campaign.planets[planetId];
-  rec.attempts += 1;
-  battle = createBattle(planetId, playerLoadout(campaign), {
+function startBattle(ref) {
+  const rec = campaign.planets[ref.configId];
+  if (rec) rec.attempts += 1;
+  battle = createBattle(ref.configId, playerLoadout(campaign), {
     difficulty: campaign.settings.difficulty,
-    assist: assistLevel(campaign, planetId),
-    seed: (Date.now() & 0x7fffffff),
+    assist: rec ? assistLevel(campaign, ref.configId) : 0,
+    seed: Date.now() & 0x7fffffff,
+    theme: ref.theme, worldSeed: ref.worldSeed,
   });
   enterBattle();
-  const p = getPlanet(planetId);
-  toast(`<b>${esc(p.name)}</b> — ${esc(p.lesson)}`, 'tip', 5000);
 }
 
 function enterBattle() {
   seenTips = new Set(battle.objectivesDone);
-  ui.selection.clear();
-  armedAbility = null;
-  paused = false;
-  speed = 1;
-  $('#btn-speed').innerHTML = '1&times;';
-  $('#overlay-pause').classList.add('hidden');
-  $('#overlay-help').classList.add('hidden');
+  seenAttacks = new Set(battle.attacks.map(a => a.id));
+  armed = null; hoverTile = -1; inspectTile = -1; paused = false; speed = 1; endTimer = 0;
+  ['#overlay-pause', '#overlay-help', '#overlay-research', '#board', '#objectives'].forEach(s => $(s).classList.add('hidden'));
   $('#toasts').innerHTML = '';
-  lastEventWarn = false;
-  inspectedId = null;
-  const p = getPlanet(battle.planetId);
-  $('#hud-planet').textContent = p.name;
-  $('#hud-lesson').textContent = p.lesson;
-  buildAbilities();
-  objKey = '';
+  const cfg = config(battle);
+  const idx = PLANETS.indexOf(cfg);
+  $('#hud-planet').textContent = cfg.skirmish ? `Skirmish · ${THEMES[battle.theme].name}` : cfg.name;
+  $('#hud-sub').textContent = `${idx >= 0 ? `World ${idx + 1}/5 · ` : ''}${cfg.lesson} · ${battle.difficulty}`;
+  buildToolbar();
   show('battle');
-  $('#objectives').classList.toggle('collapsed', window.innerWidth < 700 || window.innerHeight < 500);
-  updateHud();
+  $('#empire').classList.toggle('collapsed', window.innerWidth < 760 && window.innerHeight > window.innerWidth);
+  $('#empire-toggle').textContent = $('#empire').classList.contains('collapsed') ? '>' : '<';
+  renderer.attach(battle, campaign.settings.simple);
+  renderer.setSimple(campaign.settings.simple);
   resize();
+  renderer.fit();
+  updateHud(true);
   saveBattle();
+  if (battle.status === 'spawn') toast(`<b>${esc(cfg.name)}</b> — choose your landing site.`, 'tip', 5000);
 }
 
 function saveBattle() {
-  if (!battle || battle.status !== 'playing') return;
+  if (!battle || (battle.status !== 'playing' && battle.status !== 'spawn')) return;
   campaign.battle = serialize(battle);
   persist();
   lastSave = performance.now();
@@ -251,12 +296,7 @@ function saveBattle() {
 
 function resumeBattle() {
   const restored = deserialize(campaign.battle);
-  if (!restored) {
-    campaign.battle = null;
-    persist();
-    show('campaign');
-    return;
-  }
+  if (!restored) { campaign.battle = null; persist(); toast('That saved battle could not be restored.', 'bad'); show('campaign'); return; }
   battle = restored;
   enterBattle();
   toast('Battle resumed.', 'good');
@@ -264,60 +304,51 @@ function resumeBattle() {
 
 function endBattle() {
   gameplayStop();
-  const p = getPlanet(battle.planetId);
+  const cfg = config(battle);
   const won = battle.status === 'won';
   const body = $('#debrief-body');
+  $('#debrief-icon').src = iconURL(won ? 'victory' : 'defeat', 4);
   if (won) {
     const result = battleResult(battle);
-    const rewards = computeRewards(campaign, p, result);
-    applyVictory(campaign, p, result, rewards);
+    const rewards = computeRewards(campaign, cfg, result);
+    applyVictory(campaign, cfg, result, rewards);
     persist();
     happytime();
-    const idx = PLANETS.indexOf(p);
-    $('#debrief-title').textContent = `${p.name} conquered`;
-    $('#debrief-sub').textContent = `Lesson learned: ${p.lesson} · ${fmtTime(result.time)}`;
-    const rows = rewards.lines.map(l => `<tr><td>${esc(l.label)}</td><td>+${l.value}</td></tr>`).join('');
-    const next = PLANETS[idx + 1];
-    body.innerHTML = `
-      <table class="reward-table">${rows}<tr class="total"><td>Stellar Cores earned</td><td>+${rewards.total}</td></tr></table>
-      ${platformActive() ? `<p class="reward-ad"><button id="btn-reward-ad" class="btn">Watch an ad: +${Math.ceil(rewards.total / 2)} bonus cores</button></p>` : ''}
-      <h3>Skills proven</h3><ul class="bullets">${p.lessons.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
-      ${next ? `<p class="note">Next: <b>${esc(next.name)}</b> — ${esc(next.lesson)}. Spend your cores on upgrades before you launch.</p>`
-        : '<p class="note">You have mastered all five lessons. The sector is yours, Commander.</p>'}`;
+    const idx = PLANETS.indexOf(cfg);
+    const next = idx >= 0 ? PLANETS[idx + 1] : null;
+    $('#debrief-title').textContent = `${cfg.skirmish ? 'World' : cfg.name} conquered`;
+    $('#debrief-sub').textContent = `${cfg.lesson} · ${fmtTime(result.time)}`;
+    const bonus = Math.ceil(rewards.total / 2);
+    body.innerHTML = `<table class="reward-table">${rewards.lines.map(l => `<tr><td>${esc(l.label)}</td><td>+${l.value}</td></tr>`).join('')}
+      <tr class="total"><td>Stellar Cores earned</td><td>+${rewards.total}</td></tr></table>
+      ${platformActive() ? `<p class="reward-ad"><button id="btn-reward-ad" class="btn">Watch an ad: +${bonus} bonus cores</button></p>` : ''}
+      <h3>Skills proven</h3><ul class="bullets">${cfg.lessons.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
+      ${next ? `<p class="note">Next: <b>${esc(next.name)}</b> — ${esc(next.lesson)}. Spend your cores on upgrades first.</p>` : ''}`;
     const adBtn = $('#btn-reward-ad');
-    if (adBtn) {
-      const bonus = Math.ceil(rewards.total / 2);
-      adBtn.onclick = async () => {
-        adBtn.disabled = true;
-        if (await rewardedAd()) {
-          campaign.cores += bonus;
-          campaign.totalEarned += bonus;
-          persist();
-          adBtn.textContent = `+${bonus} bonus cores added`;
-        } else {
-          adBtn.textContent = 'No ad available right now';
-        }
-      };
-    }
+    if (adBtn) adBtn.onclick = async () => {
+      adBtn.disabled = true;
+      if (await rewardedAd()) { campaign.cores += bonus; campaign.totalEarned += bonus; persist(); adBtn.textContent = `+${bonus} bonus cores added`; }
+      else adBtn.textContent = 'No ad available right now';
+    };
     $('#btn-debrief-primary').textContent = 'Command upgrades';
     $('#btn-debrief-primary').onclick = () => show('upgrades');
-    $('#btn-debrief-secondary').textContent = next ? `Brief ${next.name}` : 'Campaign';
-    $('#btn-debrief-secondary').onclick = () => (next ? openBriefing(next.id) : show('campaign'));
+    $('#btn-debrief-secondary').textContent = next ? `Brief ${next.name}` : cfg.skirmish ? 'New skirmish' : 'Campaign';
+    $('#btn-debrief-secondary').onclick = () => (next ? openBriefing({ configId: next.id }) : show(cfg.skirmish ? 'skirmish' : 'campaign'));
   } else {
     const tips = analyzeDefeat(battle);
-    applyDefeat(campaign, p);
+    applyDefeat(campaign, cfg);
     persist();
-    const assist = assistLevel(campaign, p.id);
-    $('#debrief-title').textContent = 'Capital lost';
-    $('#debrief-sub').textContent = `${p.name} · ${fmtTime(battle.time)} · ${p.lesson}`;
-    body.innerHTML = `
-      <h3>What went wrong</h3><ul class="bullets tips">${tips.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
-      <h3>This planet tests</h3><ul class="bullets">${p.lessons.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
+    const assist = cfg.skirmish ? 0 : assistLevel(campaign, cfg.id);
+    $('#debrief-title').textContent = 'Your civilization has fallen';
+    $('#debrief-sub').textContent = `${cfg.skirmish ? 'Skirmish' : cfg.name} · ${fmtTime(battle.time)} · ${cfg.lesson}`;
+    body.innerHTML = `<h3>What went wrong</h3><ul class="bullets">${tips.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+      <h3>This world tests</h3><ul class="bullets">${cfg.lessons.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
       ${assist ? `<p class="assist">Adaptive assist ${assist}/3 active for your next attempt.</p>` : ''}`;
+    const ref = { configId: battle.configId, theme: battle.theme, worldSeed: battle.seed };
     $('#btn-debrief-primary').textContent = 'Retry';
-    $('#btn-debrief-primary').onclick = () => beginBattle(p.id);
-    $('#btn-debrief-secondary').textContent = 'Campaign';
-    $('#btn-debrief-secondary').onclick = () => show('campaign');
+    $('#btn-debrief-primary').onclick = () => beginBattle(ref);
+    $('#btn-debrief-secondary').textContent = cfg.skirmish ? 'Skirmish menu' : 'Campaign';
+    $('#btn-debrief-secondary').onclick = () => show(cfg.skirmish ? 'skirmish' : 'campaign');
   }
   battle = null;
   battlesEnded++;
@@ -328,13 +359,14 @@ function endBattle() {
 
 function toast(html, kind = '', ms = 4200) {
   const box = $('#toasts');
+  if ([...box.children].some(c => c.innerHTML === html && !c.classList.contains('out'))) return;
   const el = document.createElement('div');
   el.className = 'toast ' + kind;
   el.innerHTML = html;
   box.appendChild(el);
-  const max = window.innerWidth < 700 || window.innerHeight < 500 ? 2 : 4;
+  const max = window.innerWidth < 760 || window.innerHeight < 520 ? 1 : 4;
   while (box.children.length > max) box.firstChild.remove();
-  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 400); }, ms);
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, ms);
 }
 
 function tip(key, text) {
@@ -343,289 +375,350 @@ function tip(key, text) {
   toast(`<b>Tip:</b> ${esc(text)}`, 'tip', 7000);
 }
 
-function buildAbilities() {
-  const box = $('#abilities');
-  box.innerHTML = '';
-  for (const id of battle.factions[1].abilities) {
+function buildToolbar() {
+  const bar = $('#toolbar');
+  const f = battle.factions[PLAYER];
+  const tools = [
+    ...Object.entries(BUILDINGS).map(([id, b]) => ({ kind: 'build', id, key: b.key, label: b.name, icon: spriteIcon(id) })),
+    'sep',
+    { kind: 'dropship', id: 'dropship', key: '6', label: 'Dropship', icon: iconURL('fleet', 3) },
+    { kind: 'research', id: 'research', key: 'R', label: 'Research', icon: iconURL('research', 3) },
+    'sep',
+    ...Object.entries(ABILITIES).map(([id, a]) => ({ kind: 'ability', id, key: a.key, label: a.name.split(' ')[1], icon: iconURL(id, 3), locked: !f.abilities.includes(id) })),
+  ];
+  bar.innerHTML = '';
+  for (const t of tools) {
+    if (t === 'sep') { const s = document.createElement('span'); s.className = 'tool-sep'; bar.appendChild(s); continue; }
     const b = document.createElement('button');
-    b.className = 'btn ability';
-    b.dataset.ability = id;
-    b.innerHTML = `${ABILITIES[id].name} <small>(${ABILITIES[id].key})</small><span class="cd"></span>`;
-    b.onclick = () => armAbility(id);
-    box.appendChild(b);
+    b.className = 'btn tool' + (t.locked ? ' locked' : '');
+    b.dataset.kind = t.kind; b.dataset.id = t.id;
+    b.title = t.kind === 'build' ? `${BUILDINGS[t.id].name}: ${BUILDINGS[t.id].desc}` : t.label;
+    b.innerHTML = `<span class="key">${t.key}</span><img src="${t.icon}" alt=""><span class="label">${esc(t.label)}</span><span class="cost"></span>${t.kind === 'ability' ? '<span class="cd"></span>' : ''}`;
+    b.onclick = () => activateTool(t.kind, t.id);
+    bar.appendChild(b);
   }
 }
 
-function armAbility(id) {
-  if (!battle || !abilityReady(battle, id)) return;
-  armedAbility = armedAbility === id ? null : id;
-  ui.selection.clear();
-  if (armedAbility) {
-    const hint = { strike: 'Tap an enemy or neutral territory to bombard it.', rally: 'Tap one of your territories to muster troops there.', emp: 'Tap a hub, relay, defense, command node or fortress to disable it.' }[id];
-    toast(hint, 'tip', 3000);
-  }
+function activateTool(kind, id) {
+  if (!battle) return;
+  sfx.click();
+  if (kind === 'research') { openResearch(); return; }
+  if (kind === 'ability' && !battle.factions[PLAYER].abilities.includes(id)) { toast(REASONS.locked, 'bad', 2500); return; }
+  if (armed && armed.kind === kind && armed.id === id) { armed = null; return; }
+  armed = { kind, id };
+  const hints = {
+    build: `Click your land to build a ${BUILDINGS[id]?.name}. Right-click or Esc to cancel.`,
+    dropship: canDropship(battle) ? 'Click enemy or unclaimed land anywhere to send a dropship.' : 'Build a Starport near the coast to launch dropships.',
+    ability: { strike: 'Click enemy land to bombard it.', rally: 'Click anywhere to muster troops.', emp: 'Click near enemy hubs, relays, defenses or buildings.' }[id],
+  };
+  toast(hints[kind], 'tip', 2600);
 }
 
-function updateAbilities() {
-  document.querySelectorAll('.ability').forEach(b => {
-    const id = b.dataset.ability;
-    const cdTotal = ABILITIES[id].cooldown * battle.factions[1].cooldown;
-    const left = Math.max(0, battle.cooldowns[id] - battle.time);
-    b.disabled = left > 0;
-    b.classList.toggle('armed', armedAbility === id);
-    b.querySelector('.cd').style.width = `${100 * (1 - left / cdTotal)}%`;
+function updateToolbar() {
+  const f = battle.factions[PLAYER];
+  document.querySelectorAll('.tool').forEach(b => {
+    const { kind, id } = b.dataset;
+    const cost = b.querySelector('.cost');
+    b.classList.toggle('armed', !!armed && armed.kind === kind && armed.id === id);
+    if (kind === 'build') { const c = buildCost(battle, PLAYER, id); cost.textContent = fmt(c); b.disabled = f.minerals < c; }
+    else if (kind === 'dropship') { cost.textContent = DROPSHIP_COST; b.disabled = !canDropship(battle) || f.minerals < DROPSHIP_COST; }
+    else if (kind === 'research') { cost.textContent = fmt(f.exotic); }
+    else if (kind === 'ability') {
+      cost.textContent = `${ABILITY_ENERGY[id]}E`;
+      if (!f.abilities.includes(id)) return;
+      const total = ABILITIES[id].cooldown * (f.cooldown || 1);
+      const left = Math.max(0, battle.cooldowns[id] - battle.time);
+      b.disabled = !abilityReady(battle, id);
+      b.querySelector('.cd').style.width = `${100 * (1 - left / total)}%`;
+    }
   });
 }
 
-function condProgress(c) {
-  const owned = id => terr(battle, id).owner === 1;
-  if (c.type === 'own') return { done: c.ids.every(owned), text: '' };
-  if (c.type === 'ownCount') {
-    const n = c.ids.filter(owned).length;
-    return { done: n >= c.n, text: ` (${Math.min(n, c.n)}/${c.n})` };
+function openResearch() {
+  paused = true;
+  const f = battle.factions[PLAYER];
+  const list = $('#research-list');
+  list.innerHTML = '';
+  for (const [id, r] of Object.entries(RESEARCH)) {
+    const done = f.research.includes(id);
+    const card = document.createElement('div');
+    card.className = 'card panel';
+    card.innerHTML = `<div style="flex:1"><b>${esc(r.name)}</b><p>${esc(r.desc)}</p></div>`;
+    const btn = document.createElement('button');
+    btn.className = 'btn small';
+    btn.textContent = done ? 'Researched' : `${r.cost} exotic`;
+    btn.disabled = done || f.exotic < r.cost;
+    btn.onclick = () => { const res = playerResearch(battle, id); if (res.ok) { sfx.build(); openResearch(); } };
+    card.appendChild(btn);
+    list.appendChild(card);
   }
-  if (c.type === 'hold') {
-    const i = getPlanet(battle.planetId).victory.conds.indexOf(c);
-    const t = battle.hold[i];
-    return { done: t >= c.duration, text: ` (${fmtTime(t)}/${fmtTime(c.duration)})`, frac: t / c.duration, holding: c.ids.every(owned) };
-  }
-  return { done: false, text: '' };
+  $('#overlay-research').classList.remove('hidden');
 }
 
 let objKey = '';
 function updateObjectives() {
-  const p = getPlanet(battle.planetId);
+  const cfg = config(battle);
   const cur = currentObjective(battle);
-  const parts = [];
-  p.victory.conds.forEach(c => {
-    const pr = condProgress(c);
-    const bar = pr.frac !== undefined ? `<div class="progress"><i style="width:${Math.min(100, pr.frac * 100).toFixed(1)}%"></i></div>` : '';
-    parts.push(`<div class="obj ${pr.done ? 'done' : 'current'}"><span class="mark">${pr.done ? '&#10003;' : '&#9733;'}</span><span>${esc(c.label)}${pr.text}${pr.holding ? ' · holding' : ''}${bar}</span></div>`);
-  });
+  const conds = cfg.victory.conds.map((c, i) => ({ c, pr: condProgress(battle, c, i) }));
+  const next = conds.find(x => !x.pr.done);
+  $('#hud-objective').textContent = battle.status === 'spawn' ? 'Choose your landing site' : cur ? cur.label : next ? next.c.label + (next.pr.text || '') : '';
+  $('#obj-count').textContent = `${battle.objectivesDone.length}/${cfg.objectives.length}`;
+  // Victory progress bar: hold timers and land share report real progress.
+  const frac = Math.max(...conds.map(x => (x.pr.done ? 1 : x.pr.frac || 0)), 0);
+  $('#hud-progress').style.width = `${Math.min(100, frac * 100).toFixed(1)}%`;
+  const parts = conds.map(({ c, pr }) => `<div class="obj ${pr.done ? 'done' : ''}"><span class="mark">${pr.done ? '&#10003;' : '&#9733;'}</span><span>${esc(c.label)}${pr.text || ''}${pr.holding ? ' · holding' : ''}</span></div>`);
   parts.push('<div class="obj-sep"></div>');
-  for (const o of p.objectives) {
+  for (const o of cfg.objectives) {
     const done = battle.objectivesDone.includes(o.id);
-    const isCur = cur && cur.id === o.id;
-    parts.push(`<div class="obj ${done ? 'done' : isCur ? 'current' : 'pending'}"><span class="mark">${done ? '&#10003;' : isCur ? '&#9656;' : '&#9675;'}</span><span>${esc(o.label)}</span><span class="rw">+${o.reward}</span><button class="why" data-tip="${o.id}" title="Explain">?</button></div>`);
+    parts.push(`<div class="obj ${done ? 'done' : cur && cur.id === o.id ? '' : 'pending'}"><span class="mark">${done ? '&#10003;' : cur && cur.id === o.id ? '&#9656;' : '&#9675;'}</span><span>${esc(o.label)}<br><small class="note">${esc(o.tip)}</small></span><span class="rw">+${o.reward}</span></div>`);
   }
   const html = parts.join('');
-  if (html !== objKey) {
-    objKey = html;
-    $('#obj-body').innerHTML = html;
-    $('#obj-count').textContent = `${battle.objectivesDone.length}/${p.objectives.length}`;
-  }
-  const next = p.victory.conds.find(c => !condProgress(c).done);
-  const headline = cur ? cur.label : next ? next.label : '';
-  if ($('#obj-current').textContent !== headline) $('#obj-current').textContent = headline;
+  if (html !== objKey) { objKey = html; $('#objectives').innerHTML = html; }
 }
 
-function updateHud() {
-  $('#hud-time').textContent = fmtTime(battle.time);
-  const ev = eventPhase(battle);
-  const chip = $('#hud-event');
-  if (ev.type) {
-    const txt = EVENT_TEXT[ev.type];
-    chip.classList.remove('hidden');
-    chip.classList.toggle('alert', ev.active);
-    chip.classList.toggle('warn', ev.warning);
-    chip.textContent = ev.active ? `${txt.active} ${Math.ceil(ev.remaining)}s`
-      : ev.warning ? `${txt.warn}: ${Math.ceil(ev.remaining)}s` : `${txt.warn.replace(/ (soon|incoming|approaching)$/, '')} in ${Math.ceil(ev.remaining)}s`;
-    if (ev.warning && !lastEventWarn && txt.warnTip) tip('warn-' + ev.type, txt.warnTip);
-    lastEventWarn = ev.warning;
-  }
-  // Planet-specific intel.
-  const intel = $('#hud-intel');
-  const pid = battle.planetId;
-  let text = '';
-  if (pid === 'mycelion') {
-    const held = battle.territories.filter(t => t.type === 'hub' && t.owner === 2).length;
-    text = `Swarm hubs: ${held}/3${isShielded(battle, terr(battle, 'heart')) ? ' · Heart shielded' : ' · Heart EXPOSED'}`;
-  } else if (pid === 'xythera') {
-    const live = battle.territories.filter(t => t.type === 'turret' && t.owner === 2 && isPowered(battle, t)).length;
-    text = `Powered defenses: ${live}`;
-  } else if (pid === 'noctyra') {
-    text = `Enemy fronts: ${enemyFronts(battle, 2)} · Supply ${Math.floor(totalTroops(battle, 1))}/${supplyCap(battle, 1)}`;
-  } else if (pid === 'cryonis') {
-    text = `Crystals held: ${['c1', 'c2', 'c3'].filter(id => terr(battle, id).owner === 1).length}/3`;
-  } else {
-    text = `Territories: ${countOwned(battle, 1)}`;
-  }
-  intel.classList.remove('hidden');
-  intel.textContent = text;
-  updateObjectives();
-  updateAbilities();
-  updateInspector();
-}
-
-function describe(t) {
-  const info = TYPE_INFO[t.type];
-  const owner = t.owner === 0 ? 'Neutral' : t.owner === 1 ? 'Yours' : battle.factions[2].name;
-  const tags = [];
-  const d = defMult(battle, t);
-  if (d > 1.05) tags.push(`Defense ×${d.toFixed(1)}`);
-  if (t.type === 'turret') tags.push(isPowered(battle, t) ? 'Powered: fires on passing fleets' : 'Unpowered');
-  if (t.powers) tags.push(`Powers ${t.powers.length} defense${t.powers.length > 1 ? 's' : ''}`);
-  const ns = networkStatus(battle, t);
-  if (ns === 'nourished') tags.push('Nourished by hub');
-  if (ns === 'withered') tags.push('Cut off: withering');
-  if (t.type === 'hub') tags.push('Feeds linked regions');
-  if (isShielded(battle, t)) tags.push('Shielded while its hubs stand');
-  if (t.type === 'crystal') tags.push('+production for its owner');
-  if (t.type === 'factory') tags.push('+production for its owner');
-  if (t.type === 'command') tags.push('+1 enemy attack front');
-  if (empActive(battle, t)) tags.push('EMP: disabled');
-  const visible = ui.vision.has(t.id);
-  const g = growthRate(battle, t);
-  return `<b>${esc(t.name || info.label)}</b> · ${owner} · ${visible ? Math.floor(t.troops) : '?'} troops${g > 0 && visible ? ` (+${g.toFixed(1)}/s)` : ''}
-    ${t.name ? `<div>${esc(info.label)}</div>` : ''}${tags.length ? `<div class="tags">${esc(tags.join(' · '))}</div>` : ''}`;
+function updateBoard() {
+  if ($('#board').classList.contains('hidden')) return;
+  const land = world(battle).landCount;
+  const rows = battle.factions.filter(f => f && f.alive).sort((a, b) => b.tiles - a.tiles).slice(0, 10);
+  $('#board').innerHTML = `<table><tr><th>#</th><th>Civilization</th><th>Land</th><th>Troops</th></tr>${rows.map((f, i) => `<tr class="${f.id === PLAYER ? 'me' : ''}"><td>${i + 1}</td><td><span class="sw" style="background:${f.color}"></span>${esc(f.id === PLAYER ? 'You' : f.name)}</td><td>${((f.tiles / land) * 100).toFixed(1)}%</td><td>${fmt(f.troops)}</td></tr>`).join('')}</table>`;
 }
 
 function updateInspector() {
-  const id = ui.hover || inspectedId || (ui.selection.size === 1 ? [...ui.selection][0] : null);
   const el = $('#inspector');
-  const html = id ? describe(terr(battle, id)) : '';
-  el.classList.toggle('hidden', !id);
-  if (el.innerHTML !== html) el.innerHTML = html;
-  // In portrait the inspector sits at the top; keep toasts below it.
-  if (el.style.bottom === 'auto') {
-    const base = $('#objectives').getBoundingClientRect().bottom + 6;
-    $('#toasts').style.top = `${id ? el.getBoundingClientRect().bottom + 6 : base}px`;
+  const i = hoverTile >= 0 ? hoverTile : inspectTile;
+  if (!battle || i < 0 || battle.status === 'spawn') { el.classList.add('hidden'); return; }
+  const w = world(battle);
+  const t = w.terrain[i];
+  const x = i % battle.w, y = (i - x) / battle.w;
+  const o = battle.owner[i];
+  const f = o ? battle.factions[o] : null;
+  const me = battle.factions[PLAYER];
+  const scout = me.scouting || 0;
+  const names = THEMES[battle.theme].names;
+  const site = battle.sites.find(s => Math.abs(s.x - x) <= 2 && Math.abs(s.y - y) <= 2);
+  let html = `<h4>${f ? `<span class="sw" style="display:inline-block;width:10px;height:10px;background:${f.color}"></span>${esc(o === PLAYER ? 'Your empire' : f.name)}` : isLand(t) ? 'Unclaimed wilderness' : esc(names[TERRAIN[t].id])}</h4>`;
+  if (f) {
+    const attacking = battle.attacks.filter(a => a.attacker === o).reduce((s, a) => s + a.troops, 0);
+    html += `<div class="row"><span>${o === PLAYER ? 'Civilization' : f.kind === 'enemy' ? 'Hostile civilization' : 'Independent nation'}</span><b>${fmt(f.tiles)} tiles</b></div>`;
+    html += `<div class="row"><span>Troops</span><b>${fmt(f.troops)} / ${fmt(maxTroops(battle, f))}</b></div>`;
+    if (o !== PLAYER && scout >= 1) {
+      html += `<div class="row"><span>Garrison density</span><b>${(f.troops / Math.max(1, f.tiles)).toFixed(1)}/tile</b></div>`;
+      html += `<div class="row"><span>Attacking troops</span><b style="color:#ff6b6b">${fmt(attacking)}</b></div>`;
+    }
   }
+  if (isLand(t)) {
+    const def = tileDefense(battle, i);
+    html += `<div class="row"><span>Terrain</span><b>${esc(names[TERRAIN[t].id])}</b></div>`;
+    html += `<div class="row"><span>Defense here</span><b>×${def.toFixed(2)}</b></div>`;
+  }
+  if (site) {
+    const so = siteOwner(battle, site);
+    const st = SITE_TYPES[site.type];
+    let extra = '';
+    if (site.type === 'turret') extra = isPowered(battle, site) ? ' Powered.' : ' Unpowered.';
+    if ((site.type === 'capital' || site.type === 'citadel') && isShielded(battle, site)) extra = ' SHIELDED.';
+    html += `<div class="tags">${esc(site.name)} — ${esc(st.desc)}${extra}${so ? '' : ' (unclaimed)'}</div>`;
+  }
+  if (o !== PLAYER && isLand(t) && battle.status === 'playing') html += `<div class="tags">Click to attack with ${fmt(me.troops * ratio)} troops.</div>`;
+  if (o === PLAYER) html += '<div class="tags">Your land. Press 1–5 to build here.</div>';
+  el.innerHTML = html;
+  el.classList.remove('hidden');
+}
+
+function updateHud(force = false) {
+  const now = performance.now();
+  if (!force && now - lastHud < 120) return;
+  lastHud = now;
+  const f = battle.factions[PLAYER];
+  const max = maxTroops(battle, f);
+  const inc = income(battle, f);
+  $('#st-troops').textContent = `${fmt(f.troops)} / ${fmt(max)}`;
+  $('#st-troops-sub').textContent = `+${fmt(regen(battle, f))}/s growth`;
+  $('#st-minerals').textContent = fmt(f.minerals);
+  $('#st-minerals-rate').textContent = `+${inc.minerals.toFixed(1)}/s`;
+  $('#st-energy').textContent = fmt(f.energy);
+  $('#st-energy-rate').textContent = `+${inc.energy.toFixed(1)}/s`;
+  $('#st-exotic').textContent = fmt(f.exotic);
+  $('#st-exotic-rate').textContent = `+${inc.exotic.toFixed(1)}/s`;
+  $('#st-land').textContent = fmt(f.tiles);
+  $('#st-land-share').textContent = `${((f.tiles / world(battle).landCount) * 100).toFixed(1)}%`;
+  $('#ratio-label').textContent = `${Math.round(ratio * 100)}% (${fmt(f.troops * ratio)})`;
+  $('#hud-time').textContent = battle.status === 'spawn' ? `Landing ${Math.ceil(battle.spawnLeft)}s` : fmtTime(battle.time);
+  const ev = eventPhase(battle);
+  const chip = $('#hud-event');
+  if (ev.type && battle.status === 'playing') {
+    const tx = EVENT_TEXT[ev.type];
+    chip.classList.remove('hidden');
+    chip.classList.toggle('alert', ev.active);
+    chip.classList.toggle('warn', ev.warning);
+    chip.textContent = ev.active ? `${tx.name.toUpperCase()} ${Math.ceil(ev.remaining)}s` : `${tx.name} in ${Math.ceil(ev.remaining)}s`;
+    if (ev.warning && tx.warn) tip('warn-' + ev.type, tx.warn);
+  } else chip.classList.add('hidden');
+  const intel = $('#hud-intel');
+  const enemy = battle.factions.find(x => x && x.kind === 'enemy');
+  const cfg = config(battle);
+  let text = '';
+  if (cfg.id === 'mycelion') { const cap = battle.sites.find(s => s.id === 'enemy-capital'); text = `Swarm hubs: ${countSites(battle, 'hub', enemy.id)}/3 · Heart ${cap && isShielded(battle, cap) ? 'shielded' : 'EXPOSED'}`; }
+  else if (cfg.id === 'xythera') text = `Powered defenses: ${sitesOf(battle, 'turret').filter(t => isPowered(battle, t) && siteOwner(battle, t) !== PLAYER).length}`;
+  else if (cfg.id === 'noctyra') text = `Enemy fronts: ${enemy.alive ? attackFronts(battle, enemy) : 0}`;
+  else if (cfg.id === 'cryonis') text = `Crystals held: ${countSites(battle, 'crystal', PLAYER)}/${sitesOf(battle, 'crystal').length}`;
+  intel.classList.toggle('hidden', !text);
+  intel.textContent = text;
+  const sb = $('#spawn-banner');
+  sb.classList.toggle('hidden', battle.status !== 'spawn');
+  if (battle.status === 'spawn') sb.innerHTML = `CHOOSE YOUR LANDING SITE<small>Click open land on the main continent · auto-landing in ${Math.ceil(battle.spawnLeft)}s</small>`;
+  updateObjectives();
+  updateBoard();
+  updateToolbar();
+  updateInspector();
 }
 
 function processNotices() {
-  const p = getPlanet(battle.planetId);
+  const cfg = config(battle);
   for (const n of battle.notices.splice(0)) {
-    const t = n.target ? terr(battle, n.target) : null;
-    const name = t ? esc(t.name || TYPE_INFO[t.type].label) : '';
     switch (n.kind) {
-      case 'capture':
-        if (n.owner === 1 && t.type !== 'normal') toast(`${name} captured.`, 'good');
-        if (n.prevOwner === 1) toast(`${name} lost!`, 'bad');
-        if (n.owner === 1 && t.type === 'hub') tip('hub', 'Hub captured: its linked regions stop growing for the Swarm and begin to wither.');
-        if (n.owner === 1 && t.type === 'relay') tip('relay', 'Relay captured: every defense it powered has gone dark.');
-        if (n.owner === 1 && t.type === 'command') tip('command', 'Command node taken: the Dominion loses one attack front.');
-        if (n.owner === 1 && t.type === 'factory') tip('factory', 'Ancient factory secured: all your territories produce faster.');
-        break;
-      case 'repelled':
-        toast(`Attack on ${name} repelled.`, 'good', 2500);
-        break;
-      case 'shieldBlock':
-        if (n.owner === 1) toast(`The shield over ${name} absorbed your attack.`, 'bad');
-        break;
-      case 'objective': {
-        const o = p.objectives.find(x => x.id === n.id);
-        toast(`Objective complete: ${esc(o.label)} <b>+${o.reward}</b>`, 'good');
+      case 'site': {
+        const s = battle.sites.find(x => x.id === n.site);
+        if (!s) break;
+        if (n.owner === PLAYER) {
+          toast(`${esc(s.name)} captured.`, 'good');
+          sfx.capture();
+          renderer.burst(s.x, s.y, '#7ff0c8');
+          if (s.type === 'hub') tip('hub', 'Hub captured: the Swarm land around it is no longer nourished.');
+          if (s.type === 'relay') tip('relay', 'Relay captured: the defenses it powered have gone dark.');
+          if (s.type === 'command') tip('command', 'Command node taken: the Dominion loses an attack front.');
+        } else if (n.prev === PLAYER) { toast(`${esc(s.name)} lost!`, 'bad'); sfx.lost(); }
         break;
       }
-      case 'eventStart':
-        toast(EVENT_TEXT[n.type].start, n.type === 'eclipse' || n.type === 'eruption' ? 'good' : 'bad', 4500);
+      case 'collapse': {
+        const f = battle.factions[n.faction];
+        if (n.faction === PLAYER) break;
+        toast(`${esc(f.name)} has collapsed${n.by === PLAYER ? ' — their capital is yours' : ''}.`, n.by === PLAYER ? 'good' : '');
+        if (n.by === PLAYER) sfx.capture();
+        const cap = battle.sites.find(s => s.faction === n.faction && (s.type === 'capital' || s.type === 'citadel'));
+        if (cap) { renderer.ring(cap.x, cap.y, '#ffd25e', 16); renderer.burst(cap.x, cap.y, '#ffd25e', 24); }
         break;
+      }
+      case 'repelled': toast(`Attack by ${esc(battle.factions[n.attacker].name)} repelled.`, 'good', 2600); break;
+      case 'objective': { const o = cfg.objectives.find(x => x.id === n.id); toast(`Objective complete: ${esc(o.label)} <b>+${o.reward}</b>`, 'good'); sfx.objective(); break; }
+      case 'eventStart': toast(EVENT_TEXT[n.type].start, 'tip', 4500); sfx.alarm(); break;
+      case 'built': sfx.build(); renderer.ring(n.x, n.y, '#3fd0ff', 5); break;
+      case 'research': toast(`Research complete: ${esc(RESEARCH[n.id].name)}.`, 'good'); break;
+      case 'landed': if (n.owner === PLAYER) { toast('Dropship landed. Beachhead established.', 'good'); renderer.burst(n.x, n.y, '#3fd0ff'); } break;
+      case 'dropFailed': if (n.owner === PLAYER) toast('The dropship was shot down on landing. Send more troops.', 'bad'); break;
+      case 'strike': renderer.burst(n.x, n.y, '#ff7a1f', 40); renderer.ring(n.x, n.y, '#ffd25e', 8); sfx.ability(); break;
+      case 'emp': renderer.ring(n.x, n.y, '#7fd8ff', 10); sfx.ability(); break;
+      case 'start': {
+        toast('Landing complete. Expand into the wilderness!', 'good');
+        // Bring the camera in over the landing zone, like a real landing.
+        renderer.zoomBy(1);
+        centerOnCapital();
+        break;
+      }
       default:
     }
   }
+  // Incoming attacks (scouting level 2 warns about every launch).
+  for (const a of battle.attacks) {
+    if (seenAttacks.has(a.id)) continue;
+    seenAttacks.add(a.id);
+    if (a.target === PLAYER) {
+      const f = battle.factions[a.attacker];
+      if ((battle.factions[PLAYER].scouting || 0) >= 2 || f.kind === 'enemy') {
+        toast(`${esc(f.name)} is attacking you with ${fmt(a.troops)} troops!`, 'bad', 3000);
+        sfx.alarm();
+      }
+    }
+  }
   const cur = currentObjective(battle);
-  ui.highlights = new Set(cur?.highlight || []);
-  if (cur) tip(cur.id, cur.tip);
+  if (cur && battle.status === 'playing') tip(cur.id, cur.tip);
 }
 
-// ---------- Input ----------
+// ---------- Map input ----------
 
-function canvasPoint(e) {
+const pointers = new Map();
+let gesture = null;
+
+function canvasXY(e) {
   const r = $('#canvas').getBoundingClientRect();
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 
-const REASONS = {
-  shielded: 'Shielded! Capture the hubs that feed it first.',
-  notAdjacent: 'Target is not connected to the selected territory. Attack along the lanes.',
-  noTroops: 'Not enough troops to send.',
-  notReady: 'Ability still recharging.',
-  ownTarget: 'Choose an enemy or neutral territory.',
-  notOwn: 'Choose one of your own territories.',
-  empTarget: 'EMP works on hubs, relays, defenses, command nodes and fortresses.',
-};
-
-function launchTo(targetId, sources) {
-  const res = playerLaunch(battle, [...sources], targetId, ratio);
-  if (!res.ok) toast(REASONS[res.reason] || 'Cannot send there.', 'bad', 2500);
-  else {
-    const t = terr(battle, targetId);
-    if (t.owner !== 1 && !seenTips.has('ratio') && countOwned(battle, 1) >= 3) {
-      tip('ratio', 'Watch the numbers: an attack succeeds only if the troops arriving (× attack strength) beat the defenders × their defense bonus.');
-    }
-  }
-  return res.ok;
-}
-
-function onPointerDown(e) {
-  if (!battle || paused) return;
-  const pt = canvasPoint(e);
-  const t = hitTest(battle, view, pt.x, pt.y);
-  $('#canvas').setPointerCapture?.(e.pointerId);
-  if (armedAbility) {
-    if (t) {
-      const res = useAbility(battle, armedAbility, t.id);
-      if (!res.ok) toast(REASONS[res.reason] || 'Invalid target.', 'bad', 2500);
-      else armedAbility = null;
-    } else armedAbility = null;
-    return;
-  }
-  if (!t) {
-    ui.selection.clear();
-    inspectedId = null;
-    return;
-  }
-  if (t.owner === 1) {
-    ui.drag = { from: t.id, startX: pt.x, startY: pt.y, x: pt.x, y: pt.y, active: false };
-  } else if (ui.selection.size) {
-    launchTo(t.id, ui.selection);
-    ui.selection.clear();
-  } else {
-    inspectedId = inspectedId === t.id ? null : t.id;
-  }
-}
-
-function onPointerMove(e) {
+function onDown(e) {
   if (!battle) return;
-  const pt = canvasPoint(e);
-  if (ui.drag) {
-    ui.drag.x = pt.x; ui.drag.y = pt.y;
-    if (Math.hypot(pt.x - ui.drag.startX, pt.y - ui.drag.startY) > 12) ui.drag.active = true;
-  }
-  if (e.pointerType === 'mouse' || ui.drag?.active) {
-    const t = hitTest(battle, view, pt.x, pt.y);
-    ui.hover = t ? t.id : null;
+  $('#canvas').setPointerCapture?.(e.pointerId);
+  const p = canvasXY(e);
+  pointers.set(e.pointerId, p);
+  if (e.button === 2) { armed = null; return; }
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    gesture = { pinch: true, dist: Math.hypot(a.x - b.x, a.y - b.y), moved: true };
+  } else {
+    gesture = { x: p.x, y: p.y, lx: p.x, ly: p.y, t: performance.now(), moved: false, pinch: false, type: e.pointerType };
   }
 }
 
-function onPointerUp(e) {
-  if (!battle || !ui.drag) { if (e.pointerType !== 'mouse') ui.hover = null; return; }
-  const pt = canvasPoint(e);
-  const drag = ui.drag;
-  ui.drag = null;
-  if (e.pointerType !== 'mouse') ui.hover = null;
-  if (drag.active) {
-    const t = hitTest(battle, view, pt.x, pt.y);
-    if (t && t.id !== drag.from) {
-      const sources = ui.selection.has(drag.from) ? ui.selection : new Set([drag.from]);
-      launchTo(t.id, sources);
-      ui.selection.clear();
-    }
+function onMove(e) {
+  if (!battle) return;
+  const p = canvasXY(e);
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, p);
+  if (gesture?.pinch && pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    if (d / gesture.dist > 1.3) { renderer.zoomBy(1, mid.x, mid.y); gesture.dist = d; }
+    else if (d / gesture.dist < 0.77) { renderer.zoomBy(-1, mid.x, mid.y); gesture.dist = d; }
     return;
   }
-  // Tap on own territory toggles selection.
-  if (ui.selection.has(drag.from)) ui.selection.delete(drag.from);
-  else {
-    ui.selection.add(drag.from);
-    if (ui.selection.size === 1) tip('select', 'Tap a highlighted target to send troops. Tap more of your territories to attack from several at once, or drag to send reinforcements.');
+  if (gesture && pointers.has(e.pointerId)) {
+    const threshold = gesture.type === 'touch' ? 10 : 5;
+    if (!gesture.moved && Math.hypot(p.x - gesture.x, p.y - gesture.y) > threshold) { gesture.moved = true; $('#canvas').classList.add('panning'); }
+    if (gesture.moved) { renderer.panBy(p.x - gesture.lx, p.y - gesture.ly); gesture.lx = p.x; gesture.ly = p.y; }
+    return;
   }
-  inspectedId = null;
+  if (e.pointerType === 'mouse') hoverTile = renderer.screenToTile(p.x, p.y);
+}
+
+function onUp(e) {
+  if (!battle) return;
+  const p = canvasXY(e);
+  pointers.delete(e.pointerId);
+  $('#canvas').classList.remove('panning');
+  const g = gesture;
+  lastPointerTouch = e.pointerType === 'touch';
+  if (pointers.size === 0) gesture = null;
+  // A tap only counts when the finger did not move and no pinch happened:
+  // panning the map never launches an attack by accident.
+  if (!g || g.pinch || g.moved || e.button === 2 || performance.now() - g.t > 700) return;
+  const i = renderer.screenToTile(p.x, p.y);
+  if (i >= 0) clickTile(i);
+}
+
+function clickTile(i) {
+  const x = i % battle.w, y = (i - x) / battle.w;
+  if (battle.status === 'spawn') {
+    if (spawnPlayer(battle, x, y)) { sfx.capture(); renderer.ring(x, y, '#7ff0c8', 12); toast('Landing site chosen. Click again to move it, or wait for touchdown.', 'good', 2500); }
+    else { sfx.error(); toast('Land on open ground on the main continent, away from other civilizations.', 'bad', 2500); }
+    return;
+  }
+  if (battle.status !== 'playing') return;
+  let res;
+  if (armed?.kind === 'build') res = playerBuild(battle, armed.id, i);
+  else if (armed?.kind === 'ability') res = useAbility(battle, armed.id, i);
+  else if (armed?.kind === 'dropship') { res = playerDropship(battle, i, ratio); if (res.ok) { toast(`Dropship launched with ${fmt(res.sent)} troops.`, 'good', 2000); sfx.attack(); } }
+  else if (battle.owner[i] === PLAYER) { inspectTile = inspectTile === i ? -1 : i; sfx.click(); return; }
+  else {
+    res = playerAttack(battle, i, ratio);
+    if (res.ok) { sfx.attack(); if (!lastPointerTouch) inspectTile = i; tip('ratio', 'Troops regrow fastest when your army is well below its cap. Big attacks are not wasted.'); }
+  }
+  if (res && !res.ok) { sfx.error(); toast(REASONS[res.reason] || 'You cannot do that.', 'bad', 2600); }
+  else if (res && res.ok && armed && armed.kind !== 'dropship') armed = null;
+  else if (res && res.ok && armed?.kind === 'dropship') armed = null;
 }
 
 function setRatio(r) {
-  ratio = r;
-  document.querySelectorAll('.btn.ratio').forEach(b => b.classList.toggle('active', Number(b.dataset.ratio) === r));
+  ratio = Math.max(0.05, Math.min(1, r));
+  $('#ratio').value = Math.round(ratio * 100);
 }
 
 function togglePause(force) {
@@ -635,61 +728,74 @@ function togglePause(force) {
   if (paused) saveBattle();
 }
 
+function centerOnCapital() {
+  const cap = battle.sites.find(s => s.id === 'player-capital');
+  if (cap) renderer.centerOn(cap.x, cap.y);
+}
+
 function openHelp() {
-  if (!battle) return;
-  const p = getPlanet(battle.planetId);
+  const cfg = config(battle);
   paused = true;
-  $('#help-title').textContent = `${p.name}: ${p.lesson}`;
-  const objTips = p.objectives.map(o => `<li><b>${esc(o.label)}.</b> ${esc(o.tip)}</li>`).join('');
+  const names = THEMES[battle.theme].names;
+  const sitesHere = [...new Set(battle.sites.map(s => s.type))];
+  $('#help-title').textContent = cfg.skirmish ? 'Field manual' : `${cfg.name}: ${cfg.lesson}`;
   $('#help-body').innerHTML = `
-    <h4>Field notes</h4><ul>${p.briefing.map(b => `<li>${esc(b)}</li>`).join('')}</ul>
-    <h4>Objectives</h4><ul>${objTips}</ul>
-    <h4>Controls</h4>
-    <ul><li>Tap your territory to select it (tap more to combine), then tap a connected target.</li>
-    <li>Drag from your territory to any connected territory to attack or reinforce.</li>
-    <li>Attack ratio: 25–100% of each source's troops. Keys 1–4.</li>
-    <li>Abilities: Q / W / E, then tap a target. Space pauses.</li>
-    <li>Combat: attackers × attack strength vs defenders × defense bonus. Fortified, nourished, powered and capital territories defend better.</li></ul>`;
+    <h4>Field notes</h4><ul>${cfg.briefing.map(b => `<li>${esc(b)}</li>`).join('')}</ul>
+    <h4>Controls</h4><ul>
+      <li>Click enemy or unclaimed land next to your border to attack it with your attack ratio of troops.</li>
+      <li>Drag to pan the map. Mouse wheel or pinch to zoom. C centers on your capital.</li>
+      <li>1–5 build, 6 dropship, R research, 7–9 abilities, Space pause, L leaderboard, O objectives.</li>
+      <li>On touch screens, a drag never attacks: only a clean tap does.</li></ul>
+    <h4>Terrain (attack cost · defense)</h4><ul>${['plains', 'wild', 'highland', 'mountain', 'river', 'volcano', 'ruins'].map(k => { const t = TERRAIN.find(x => x.id === k); return `<li>${esc(names[k])}: ×${t.cost} · ×${t.defense}</li>`; }).join('')}</ul>
+    <h4>Sites on this world</h4><ul>${sitesHere.map(t => `<li><b>${esc(SITE_TYPES[t].label)}</b>: ${esc(SITE_TYPES[t].desc)}</li>`).join('')}</ul>`;
   $('#overlay-help').classList.remove('hidden');
+}
+
+// ---------- Settings ----------
+
+function openSettings() {
+  const s = campaign ? campaign.settings : newCampaign().settings;
+  $('#set-sound').checked = s.sound; $('#set-tips').checked = s.tips; $('#set-labels').checked = s.labels;
+  $('#set-simple').checked = s.simple; $('#set-motion').checked = s.motion; $('#set-color').value = s.playerColor;
+  if (battle) paused = true;
+  $('#overlay-settings').classList.remove('hidden');
+}
+
+function closeSettings() {
+  if (!campaign) { campaign = newCampaign(); }
+  const s = campaign.settings;
+  s.sound = $('#set-sound').checked; s.tips = $('#set-tips').checked; s.labels = $('#set-labels').checked;
+  s.simple = $('#set-simple').checked; s.motion = $('#set-motion').checked; s.playerColor = $('#set-color').value;
+  setSound(s.sound);
+  persist();
+  if (battle) {
+    renderer.setSimple(s.simple);
+    const col = playerLoadout(campaign).color;
+    if (battle.factions[PLAYER].color !== col) { battle.factions[PLAYER].color = col; renderer.colors.clear(); renderer.attach(battle, s.simple); resize(); }
+    paused = !$('#overlay-pause').classList.contains('hidden');
+  }
+  $('#overlay-settings').classList.add('hidden');
 }
 
 // ---------- Main loop ----------
 
-// Fit the map into the space the HUD leaves free, and stack the overlays
-// under the top bar (its height changes as it wraps on narrow screens).
-function hudInsets(w, h) {
-  const hudTop = $('.hud-top').getBoundingClientRect().bottom;
-  const obj = $('#objectives');
-  obj.style.top = `${hudTop + 6}px`;
-  const objRect = obj.getBoundingClientRect();
-  const portraitPhone = w < 600 && h > w;
-  $('#toasts').style.top = portraitPhone ? `${objRect.bottom + 6}px` : `${hudTop + 6}px`;
-  // In portrait the player's base is at the bottom, so inspect from the top.
-  const insp = $('#inspector');
-  insp.style.top = portraitPhone ? `${objRect.bottom + 6}px` : '';
-  insp.style.bottom = portraitPhone ? 'auto' : '';
-  const bar = $('.hud-bottom').getBoundingClientRect();
-  const side = bar.height > bar.width; // controls stacked in a side column
-  // Keep the map clear of the objectives panel when there is room beside it.
-  let left = !obj.classList.contains('collapsed') && w - objRect.right > 640 ? objRect.right + 4 : 0;
-  if (side) left = Math.max(left, bar.right + 4);
-  return { top: hudTop + 4, bottom: side ? 0 : Math.max(0, h - bar.top + 4), left, right: 0 };
+function hudInsets() {
+  const W = window.innerWidth;
+  const top = $('.hud-top').getBoundingClientRect().bottom + 4;
+  const tb = $('#toolbar').getBoundingClientRect();
+  const emp = $('#empire');
+  const left = W > 1000 && !emp.classList.contains('collapsed') ? emp.getBoundingClientRect().right + 4 : 0;
+  return { top, bottom: Math.max(0, window.innerHeight - tb.top + 4), left, right: 0 };
 }
 
 function resize() {
+  if (!battle) return;
   const c = $('#canvas');
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = c.clientWidth, h = c.clientHeight;
-  if (!w || !h) return;
-  c.width = Math.round(w * dpr);
-  c.height = Math.round(h * dpr);
-  view = makeView(w, h, hudInsets(w, h));
-  view.dpr = dpr;
+  renderer.resize(c.clientWidth, c.clientHeight, Math.min(window.devicePixelRatio || 1, 2), hudInsets());
 }
 
-// Tell the portal when the player is actually playing.
 function syncGameplay() {
-  const playing = !!battle && battle.status === 'playing' && !paused && !adPlaying && !document.hidden;
+  const playing = !!battle && (battle.status === 'playing' || battle.status === 'spawn') && !paused && !adPlaying && !document.hidden;
   if (playing) gameplayStart(); else gameplayStop();
 }
 
@@ -698,30 +804,27 @@ function frame(ts) {
   syncGameplay();
   const dt = Math.min(0.25, (ts - (lastFrame || ts)) / 1000);
   lastFrame = ts;
-  if (!battle || !view) return;
-  if (!paused && !adPlaying) {
+  if (!battle) return;
+  if (!paused && !adPlaying && (battle.status === 'playing' || battle.status === 'spawn')) {
     accumulator += dt * speed;
-    while (accumulator >= TICK) {
-      step(battle, TICK);
-      accumulator -= TICK;
-      if (battle.status !== 'playing') break;
-    }
+    while (accumulator >= TICK) { step(battle, TICK); accumulator -= TICK; }
   }
-  if (battle.status !== 'playing') {
-    processNotices();
-    accumulator = 0;
-    campaign.battle = null;
-    endBattle();
-    return;
-  }
-  for (const id of [...ui.selection]) if (terr(battle, id).owner !== 1) ui.selection.delete(id);
-  ui.vision = playerVision(battle);
-  ui.validTargets = ui.selection.size ? validTargetsFor(battle, ui.selection) : new Set();
-  ui.now = ts;
   processNotices();
-  const ctx = $('#canvas').getContext('2d');
-  ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
-  render(ctx, battle, view, ui);
+  if (battle.status === 'won' || battle.status === 'lost') {
+    if (!endTimer) { endTimer = ts; sfx[battle.status === 'won' ? 'victory' : 'defeat'](); toast(battle.status === 'won' ? '<b>PLANET CONQUERED</b>' : '<b>YOUR CIVILIZATION HAS FALLEN</b>', battle.status === 'won' ? 'good' : 'bad', 2000); }
+    if (battle.status === 'won' && Math.random() < 0.3) { const cap = battle.sites.find(s => s.id === 'enemy-capital'); if (cap) renderer.burst(cap.x + (Math.random() - 0.5) * 30, cap.y + (Math.random() - 0.5) * 20, ['#ffd25e', '#7ff0c8', '#ff6ad2'][Math.floor(Math.random() * 3)], 6); }
+    if (ts - endTimer > 1800) { campaign.battle = null; endBattle(); return; }
+  }
+  const s = campaign.settings;
+  let spawnHover = null;
+  if (battle.status === 'spawn' && hoverTile >= 0) { const x = hoverTile % battle.w, y = (hoverTile - x) / battle.w; spawnHover = { x, y, ok: canSpawnAt(battle, x, y) }; }
+  const cur = currentObjective(battle);
+  renderer.render({
+    now: ts, dt, reducedMotion: s.motion, labels: s.labels, spawnHover,
+    hoverOwner: hoverTile >= 0 ? battle.owner[hoverTile] : 0,
+    inspectOwner: inspectTile >= 0 ? battle.owner[inspectTile] : 0,
+    highlights: new Set(cur?.highlight ? [cur.highlight] : []),
+  });
   updateHud();
   if (ts - lastSave > 5000) saveBattle();
 }
@@ -733,82 +836,94 @@ async function init() {
   loadingStart();
   storage = platformStorage();
   campaign = loadCampaign(storage) || null;
+  const prefersReduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (campaign && prefersReduced && !campaign.settings.motion) campaign.settings.motion = true;
+  setSound(campaign ? campaign.settings.sound : true);
   setAdHandlers({
-    pause: () => { adPlaying = true; },
-    resume: () => { adPlaying = false; lastFrame = 0; },
+    pause: () => { adPlaying = true; setAdMute(true); },
+    resume: () => { adPlaying = false; setAdMute(false); lastFrame = 0; },
   });
-  document.querySelectorAll('[data-nav]').forEach(b => { b.onclick = () => show(b.dataset.nav); });
-  $('#btn-continue').onclick = () => {
-    if (!campaign) { campaign = newCampaign(); persist(); }
-    show('campaign');
-  };
-  $('#btn-new').onclick = async () => {
-    if (await confirmBox('Start a new campaign? All progress, upgrades and cores will be lost.')) {
-      campaign = newCampaign(); persist(); show('campaign');
-    }
-  };
+  renderer = new MapRenderer($('#canvas'));
+  applyIcons();
+  // Menus sit on a dimmed pixel starfield.
+  $('#app').style.backgroundImage = `linear-gradient(rgba(6,5,12,0.55), rgba(6,5,12,0.75)), url(${backdropCanvas('noctyra', 320, 180).toDataURL()})`;
+
+  document.querySelectorAll('[data-nav]').forEach(b => { b.onclick = () => { sfx.click(); show(b.dataset.nav); }; });
+  document.querySelectorAll('[data-open="settings"]').forEach(b => { b.onclick = openSettings; });
+  $('#btn-settings-close').onclick = closeSettings;
+  $('#btn-continue').onclick = () => { if (!campaign) { campaign = newCampaign(); persist(); } show('campaign'); };
+  $('#btn-skirmish').onclick = () => { if (!campaign) { campaign = newCampaign(); persist(); } show('skirmish'); };
+  $('#btn-skirmish-reroll').onclick = () => { skirmishSeed = 1 + Math.floor(Math.random() * 99999); $('#skirmish-seed').value = skirmishSeed; };
+  $('#btn-new').onclick = async () => { if (await confirmBox('Start a new campaign? All progress, upgrades and cores will be lost.')) { campaign = newCampaign(); persist(); show('campaign'); } };
   $('#btn-resume').onclick = resumeBattle;
   $('#btn-resume-campaign').onclick = resumeBattle;
   $('#btn-upgrades').onclick = () => show('upgrades');
   $('#sel-difficulty').onchange = e => { campaign.settings.difficulty = e.target.value; persist(); };
-  $('#chk-tips').onchange = e => { campaign.settings.tips = e.target.checked; persist(); };
-  $('#btn-reset').onclick = async () => {
-    if (await confirmBox('Reset the whole campaign? This cannot be undone.')) {
-      campaign = newCampaign(); persist(); renderCampaign();
-    }
-  };
+  $('#btn-reset').onclick = async () => { if (await confirmBox('Reset the whole campaign? This cannot be undone.')) { campaign = newCampaign(); persist(); renderCampaign(); } };
   $('#btn-launch').onclick = async () => {
     const saved = campaign.battle;
-    if (saved && !(await confirmBox(`Abandon your saved battle on ${getPlanet(saved.planetId).name}?`))) return;
+    if (saved && !(await confirmBox(`Abandon your saved battle (${battleName(saved)})?`))) return;
     campaign.battle = null;
-    beginBattle(briefingPlanet);
+    beginBattle(briefingRef);
   };
   $('#btn-pause').onclick = () => togglePause();
   $('#btn-resume-battle').onclick = () => togglePause(false);
   $('#btn-restart').onclick = async () => {
-    if (await confirmBox('Restart this planet? Current battle progress will be lost.')) {
-      const id = battle.planetId;
+    if (await confirmBox('Restart this world? Current battle progress will be lost.')) {
+      const ref = { configId: battle.configId, theme: battle.theme, worldSeed: battle.seed };
       campaign.battle = null;
-      startBattle(id);
+      startBattle(ref);
     }
   };
-  $('#btn-quit').onclick = () => { saveBattle(); battle = null; show('campaign'); };
+  $('#btn-quit').onclick = () => { saveBattle(); battle = null; show(campaign.battle?.configId === 'skirmish' ? 'title' : 'campaign'); };
   $('#btn-help').onclick = openHelp;
   $('#btn-help-close').onclick = () => { $('#overlay-help').classList.add('hidden'); paused = false; };
-  $('#btn-speed').onclick = () => { speed = speed === 1 ? 2 : 1; $('#btn-speed').innerHTML = `${speed}&times;`; };
-  $('#obj-toggle').onclick = () => { $('#objectives').classList.toggle('collapsed'); resize(); };
-  $('#obj-body').addEventListener('click', e => {
-    const id = e.target.dataset?.tip;
-    if (!id) return;
-    const o = getPlanet(battle.planetId).objectives.find(x => x.id === id);
-    toast(`<b>${esc(o.label)}:</b> ${esc(o.tip)}`, 'tip', 7000);
-  });
-  document.querySelectorAll('.btn.ratio').forEach(b => { b.onclick = () => setRatio(Number(b.dataset.ratio)); });
+  $('#btn-research-close').onclick = () => { $('#overlay-research').classList.add('hidden'); paused = false; };
+  $('#btn-speed').onclick = () => { speed = speed === 1 ? 2 : 1; toast(`Game speed ${speed}×`, '', 1200); };
+  $('#btn-sound').onclick = () => { campaign.settings.sound = !campaign.settings.sound; setSound(campaign.settings.sound); $('#btn-sound img').src = iconURL(campaign.settings.sound ? 'sound' : 'mute', 3); persist(); };
+  $('#btn-board').onclick = () => { $('#board').classList.toggle('hidden'); updateBoard(); };
+  $('#obj-toggle').onclick = () => $('#objectives').classList.toggle('hidden');
+  $('#empire-toggle').onclick = () => { $('#empire').classList.toggle('collapsed'); $('#empire-toggle').textContent = $('#empire').classList.contains('collapsed') ? '>' : '<'; resize(); };
+  $('#ratio').oninput = e => setRatio(Number(e.target.value) / 100);
+  if (campaign && !campaign.settings.sound) $('#btn-sound img').src = iconURL('mute', 3);
 
   const c = $('#canvas');
-  c.addEventListener('pointerdown', onPointerDown);
-  c.addEventListener('pointermove', onPointerMove);
-  c.addEventListener('pointerup', onPointerUp);
-  c.addEventListener('pointercancel', () => { ui.drag = null; });
-  c.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') ui.hover = null; });
+  c.addEventListener('pointerdown', onDown);
+  c.addEventListener('pointermove', onMove);
+  c.addEventListener('pointerup', onUp);
+  c.addEventListener('pointercancel', e => { pointers.delete(e.pointerId); gesture = null; });
+  c.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hoverTile = -1; });
   c.addEventListener('contextmenu', e => e.preventDefault());
+  c.addEventListener('wheel', e => { e.preventDefault(); const p = canvasXY(e); renderer.zoomBy(e.deltaY < 0 ? 1 : -1, p.x, p.y); }, { passive: false });
 
   // Keep the embedding page from scrolling on game keys.
   window.addEventListener('keydown', e => {
     if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) e.preventDefault();
   });
   window.addEventListener('keydown', e => {
-    if (!battle) return;
+    if (!battle || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
     const k = e.key.toLowerCase();
-    if (['1', '2', '3', '4'].includes(k)) setRatio([0.25, 0.5, 0.75, 1][Number(k) - 1]);
+    const b = Object.entries(BUILDINGS).find(([, v]) => v.key === k);
+    const a = Object.entries(ABILITIES).find(([, v]) => v.key === k);
+    if (b) activateTool('build', b[0]);
+    else if (a) activateTool('ability', a[0]);
+    else if (k === '6') activateTool('dropship', 'dropship');
+    else if (k === 'r') openResearch();
     else if (k === ' ') togglePause();
-    else if (k === 'escape') { ui.selection.clear(); armedAbility = null; inspectedId = null; }
-    else if (k === 'q') armAbility('strike');
-    else if (k === 'w') armAbility('rally');
-    else if (k === 'e') armAbility('emp');
+    else if (k === 'escape') { armed = null; inspectTile = -1; }
+    else if (k === 'l') $('#btn-board').click();
+    else if (k === 'o') $('#objectives').classList.toggle('hidden');
+    else if (k === 'c') centerOnCapital();
+    else if (k === '=' || k === '+') renderer.zoomBy(1);
+    else if (k === '-') renderer.zoomBy(-1);
+    else if (k === 'w' || k === 'arrowup') renderer.panBy(0, 60);
+    else if (k === 's' || k === 'arrowdown') renderer.panBy(0, -60);
+    else if (k === 'a' || k === 'arrowleft') renderer.panBy(60, 0);
+    else if (k === 'd' || k === 'arrowright') renderer.panBy(-60, 0);
+    else if (k === '[') setRatio(ratio - 0.05);
+    else if (k === ']') setRatio(ratio + 0.05);
   });
   window.addEventListener('resize', resize);
-  // Save when the page is hidden or closed so nothing is lost.
   document.addEventListener('visibilitychange', () => { if (document.hidden) saveBattle(); });
   window.addEventListener('pagehide', saveBattle);
 
@@ -821,7 +936,9 @@ async function init() {
 window.__planetConquest = {
   battle: () => battle,
   campaign: () => campaign,
-  screenPos: id => { const t = terr(battle, id); return view.toScreen(t.x, t.y); },
+  renderer: () => renderer,
+  tileToCss: (x, y) => renderer.tileToCss(x, y),
+  advance: seconds => { for (let k = 0; k < seconds / TICK && battle?.status === 'playing'; k++) step(battle, TICK); },
 };
 
 init();
