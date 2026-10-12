@@ -11,9 +11,9 @@ export const UPGRADES = [
   { id: 'income', name: 'Resource Extraction', desc: '+25% minerals per level.', costs: [20, 35, 50] },
   { id: 'fortify', name: 'Defensive Doctrine', desc: '+8% defence on all your land per level.', costs: [20, 35, 55] },
   { id: 'scouting', name: 'Scouting & Intelligence', desc: 'L1: see enemy attack sizes and garrison density. L2: warnings when an attack is launched at you. L3: live troop counts on every attack front.', costs: [15, 30, 45] },
-  { id: 'strike', name: 'Orbital Strike', desc: 'Ability: scorch enemy land within 7 tiles back to wilderness and kill its troops there. 40 energy.', costs: [40] },
+  { id: 'strike', name: 'Orbital Strike', desc: 'Ability: scorch a circle of enemy land back to wilderness and kill its troops there. 40 energy.', costs: [40] },
   { id: 'rally', name: 'Rapid Muster', desc: 'Ability: instantly gain 15% of your troop cap. 30 energy.', costs: [30] },
-  { id: 'emp', name: 'EMP Pulse', desc: 'Ability: disable hubs, relays, defenses, command nodes and buildings within 10 tiles for 20s. 35 energy.', costs: [45] },
+  { id: 'emp', name: 'EMP Pulse', desc: 'Ability: disable nearby hubs, relays, defenses, command nodes and buildings for 20s. 35 energy.', costs: [45] },
 ];
 
 export const CIVS = [
@@ -81,7 +81,7 @@ export function normalizeCampaign(raw) {
     if (raw.settings && typeof raw.settings[k] === 'boolean') c.settings[k] = raw.settings[k];
   }
   if (raw.settings && /^(civ|#[0-9a-f]{6})$/i.test(raw.settings.playerColor || '')) c.settings.playerColor = raw.settings.playerColor;
-  if (raw.battle && typeof raw.battle === 'object' && raw.battle.v === 3) c.battle = raw.battle;
+  if (raw.battle && typeof raw.battle === 'object' && raw.battle.v === 4) c.battle = raw.battle;
   return c;
 }
 

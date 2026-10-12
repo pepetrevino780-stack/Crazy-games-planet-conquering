@@ -7,11 +7,11 @@ import { DIFFICULTIES, ABILITIES } from '../progression.js';
 import {
   TICK, PLAYER, world, config, setOwner, launchAttack, notice, siteOwner, isShielded, isPowered,
   maxTroops, regen, income, tileCost, tileLocked, neighbors4, TileHeap, eventPhase, sitesOf, countSites, buildCost,
-  alive, borders, upgradeCost,
+  alive, borders, upgradeCost, mapScale, areaScale,
 } from './core.js';
 import { think } from './ai.js';
 
-export const STATE_VERSION = 3;
+export const STATE_VERSION = 4;
 export { TICK, PLAYER };
 
 function rand(state) {
@@ -51,9 +51,18 @@ function claimBlob(state, x0, y0, radius, owner) {
 }
 
 // Nearest good land tile to (x, y) on the given component.
+// West and east ends of the main continent.
+function mainSpan(state) {
+  const w = world(state);
+  const main = w.compSize.indexOf(Math.max(...w.compSize));
+  let min = state.w, max = 0;
+  for (let i = 0; i < w.comp.length; i++) if (w.comp[i] === main) { const x = i % state.w; if (x < min) min = x; if (x > max) max = x; }
+  return { min, max };
+}
+
 function nearestLand(state, x, y, comp) {
   const w = world(state);
-  for (let r = 0; r < 30; r++) {
+  for (let r = 0; r < 120; r++) {
     for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
       const xx = Math.round(x + dx), yy = Math.round(y + dy);
@@ -108,11 +117,12 @@ export function createBattle(configId, loadout, opts = {}) {
   });
   const w = world(state);
   const main = w.compSize.indexOf(Math.max(...w.compSize));
+  const lin = mapScale(state), k = areaScale(state);
 
   // Player faction (spawns later, during the spawn phase).
   state.factions.push(makeFaction(PLAYER, {
     name: 'You', color: loadout.color, kind: 'player', civ: loadout.civ,
-    troops: 600 + 150 * loadout.reserves, growth: loadout.growth, atk: loadout.atk, def: loadout.def,
+    troops: (600 + 150 * loadout.reserves) * k, growth: loadout.growth, atk: loadout.atk, def: loadout.def,
     speed: loadout.speed, income: loadout.income, cooldown: loadout.cooldown, scouting: loadout.scouting,
     abilities: loadout.abilities, minerals: 150, energy: 30,
     profile: opts.playerProfile ? { ...AI_PROFILES[opts.playerProfile] } : null,
@@ -128,48 +138,50 @@ export function createBattle(configId, loadout, opts = {}) {
   };
   const enemyId = state.factions.length;
   state.factions.push(makeFaction(enemyId, {
-    name: e.name, color: e.color, kind: 'enemy', troops: e.troops, minerals: 200, profile: enemyProfile, persona: e.profile,
+    name: e.name, color: e.color, kind: 'enemy', troops: e.troops * k, minerals: 200, profile: enemyProfile, persona: e.profile,
   }));
-  const capPt = placePoints(w, 1, { rand: R, accept: (x, y, i) => w.comp[i] === main && x > state.w * 0.62, score: x => x * 0.5 })[0]
-    || nearestLand(state, state.w * 0.75, state.h / 2, main);
+  // The enemy capital sits in the east of the main continent, the player lands in the west.
+  const span = mainSpan(state);
+  const capPt = placePoints(w, 1, { rand: R, accept: (x, y, i) => w.comp[i] === main && x > span.min + (span.max - span.min) * 0.72, score: x => x * 0.5 })[0]
+    || nearestLand(state, span.max - (span.max - span.min) * 0.1, state.h / 2, main);
   const capType = e.capitalType || 'capital';
   const enemyCapital = { id: 'enemy-capital', type: capType, x: capPt.x, y: capPt.y, name: e.capitalName, faction: enemyId };
   if (e.shieldedBy) enemyCapital.shieldedBy = e.shieldedBy;
   state.sites.push(enemyCapital);
-  claimBlob(state, capPt.x, capPt.y, e.radius, enemyId);
+  claimBlob(state, capPt.x, capPt.y, e.radius * lin, enemyId);
 
   // Enemy infrastructure in rings around the capital, each with an outpost.
   for (const spec of e.sites || []) {
     for (let k = 0; k < spec.count; k++) {
       const ang = (k / spec.count) * Math.PI * 2 + R() * 0.8 + Math.PI * 0.6;
-      const dist = spec.ring[0] + R() * (spec.ring[1] - spec.ring[0]);
+      const dist = (spec.ring[0] + R() * (spec.ring[1] - spec.ring[0])) * lin;
       const p = nearestLand(state, capPt.x + Math.cos(ang) * dist, capPt.y + Math.sin(ang) * dist * 0.8, main);
       if (!p || state.sites.some(s => Math.hypot(s.x - p.x, s.y - p.y) < 5)) continue;
       state.sites.push({ id: `${spec.type}${k + 1}`, type: spec.type, x: p.x, y: p.y, name: `${spec.name} ${'ABCDEFG'[k]}`, faction: enemyId });
-      claimBlob(state, p.x, p.y, 3, enemyId);
+      claimBlob(state, p.x, p.y, 3 * lin, enemyId);
     }
   }
   state.factions[enemyId].troops = Math.max(state.factions[enemyId].troops, 1);
 
   // Independent nations spread over the land.
-  const avoid = [{ x: capPt.x, y: capPt.y, r: e.radius + 22 }];
-  const natPts = placePoints(w, cfg.nations.count, { rand: R, minDist: 22, avoid });
+  const avoid = [{ x: capPt.x, y: capPt.y, r: (e.radius + 22) * lin }];
+  const natPts = placePoints(w, cfg.nations.count, { rand: R, minDist: 22 * lin, avoid });
   natPts.forEach((p, k) => {
     const id = state.factions.length;
     state.factions.push(makeFaction(id, {
       name: nationName(state.theme, R), color: NATION_COLORS[k % NATION_COLORS.length], kind: 'nation',
-      troops: cfg.nations.troops, minerals: 100, persona: cfg.nations.profile,
+      troops: cfg.nations.troops * k, minerals: 100, persona: cfg.nations.profile,
       profile: { ...AI_PROFILES[cfg.nations.profile], interval: AI_PROFILES[cfg.nations.profile].interval * (0.85 + R() * 0.3) },
     }));
     state.sites.push({ id: `nation${id}`, type: 'capital', x: p.x, y: p.y, name: state.factions[id].name, faction: id });
-    claimBlob(state, p.x, p.y, cfg.nations.radius, id);
+    claimBlob(state, p.x, p.y, cfg.nations.radius * lin, id);
   });
 
   // Contested resource and objective sites.
   for (const spec of cfg.sites || []) {
     const pts = placePoints(w, spec.count, {
-      rand: R, minDist: 14,
-      avoid: state.sites.map(s => ({ x: s.x, y: s.y, r: 10 })),
+      rand: R, minDist: 14 * lin,
+      avoid: state.sites.map(s => ({ x: s.x, y: s.y, r: 10 * lin })),
       accept: (x, y, i) => state.owner[i] === 0 && (spec.where !== 'middle' || (x > state.w * 0.3 && x < state.w * 0.68 && w.comp[i] === main)),
     });
     pts.forEach((p, k) => state.sites.push({ id: `${spec.type}${k + 1}`, type: spec.type, x: p.x, y: p.y, name: `${SITE_TYPES[spec.type].label} ${'ABCDEFG'[k]}` }));
@@ -195,7 +207,7 @@ export function canSpawnAt(state, x, y) {
   if (!isLand(w.terrain[i]) || w.terrain[i] === T.MOUNTAIN || w.terrain[i] === T.VOLCANO) return false;
   if (!config(state).skirmish && w.comp[i] !== main) return false;
   if (state.owner[i] && state.owner[i] !== PLAYER) return false;
-  return state.sites.every(s => s.faction === PLAYER || Math.hypot(s.x - x, s.y - y) >= (s.id === 'enemy-capital' ? 45 : 14));
+  return state.sites.every(s => s.faction === PLAYER || Math.hypot(s.x - x, s.y - y) >= (s.id === 'enemy-capital' ? 45 : 14) * mapScale(state));
 }
 
 export function spawnPlayer(state, x, y) {
@@ -204,14 +216,16 @@ export function spawnPlayer(state, x, y) {
   for (let i = 0; i < state.owner.length; i++) if (state.owner[i] === PLAYER) setOwner(state, i, 0);
   state.sites = state.sites.filter(s => s.id !== 'player-capital');
   state.sites.push({ id: 'player-capital', type: 'capital', x, y, name: 'Landing Zone', faction: PLAYER });
-  claimBlob(state, x, y, 7, PLAYER);
+  claimBlob(state, x, y, 7 * mapScale(state), PLAYER);
   return true;
 }
 
 export function autoSpawn(state) {
   if (!state.sites.some(s => s.id === 'player-capital')) {
     const w = world(state);
-    const pts = placePoints(w, 1, { rand: rng(state.seed + 7), accept: (x, y) => x < state.w * 0.4 && canSpawnAt(state, x, y), score: x => -Math.abs(x - state.w * 0.2) * 0.4 });
+    const span = mainSpan(state), west = span.min + (span.max - span.min) * 0.12;
+    const main = w.compSize.indexOf(Math.max(...w.compSize));
+    const pts = placePoints(w, 1, { rand: rng(state.seed + 7), accept: (x, y, i) => w.comp[i] === main && x < span.min + (span.max - span.min) * 0.4 && canSpawnAt(state, x, y), score: x => -Math.abs(x - west) * 0.4 });
     const p = pts[0] || placePoints(w, 1, { rand: rng(state.seed + 8), accept: (x, y) => canSpawnAt(state, x, y) })[0];
     spawnPlayer(state, p.x, p.y);
   }
@@ -258,7 +272,7 @@ export function playerDropship(state, tileIndex, ratio) {
   const port = ports.reduce((a, b) => (Math.hypot(a.x - tx, a.y - ty) < Math.hypot(b.x - tx, b.y - ty) ? a : b));
   f.minerals -= DROPSHIP_COST;
   f.troops -= troops;
-  state.dropships.push({ id: state.nextId++, owner: PLAYER, troops, x: port.x, y: port.y, tx, ty, speed: 28 * (1 + 0.4 * ((port.level || 1) - 1)) });
+  state.dropships.push({ id: state.nextId++, owner: PLAYER, troops, x: port.x, y: port.y, tx, ty, speed: 28 * mapScale(state) * (1 + 0.4 * ((port.level || 1) - 1)) });
   state.stats.attacks++;
   return { ok: true, sent: troops };
 }
@@ -363,9 +377,10 @@ export function useAbility(state, id, i) {
     const tf = state.factions[target];
     const density = tf.troops / Math.max(1, tf.tiles);
     let n = 0;
-    for (let dy = -7; dy <= 7; dy++) for (let dx = -7; dx <= 7; dx++) {
+    const rs = Math.round(7 * mapScale(state));
+    for (let dy = -rs; dy <= rs; dy++) for (let dx = -rs; dx <= rs; dx++) {
       const xx = x + dx, yy = y + dy;
-      if (dx * dx + dy * dy > 49 || xx < 0 || yy < 0 || xx >= state.w || yy >= state.h) continue;
+      if (dx * dx + dy * dy > rs * rs || xx < 0 || yy < 0 || xx >= state.w || yy >= state.h) continue;
       const j = yy * state.w + xx;
       if (state.owner[j] === target && !tileLocked(state, j) && !state.sites.some(s => s.x === xx && s.y === yy && (s.type === 'capital' || s.type === 'citadel'))) { setOwner(state, j, 0); n++; }
     }
@@ -375,7 +390,7 @@ export function useAbility(state, id, i) {
     f.troops = Math.min(maxTroops(state, f) * 1.1, f.troops + maxTroops(state, f) * 0.15);
   } else if (id === 'emp') {
     for (const s of [...state.sites, ...state.buildings]) {
-      if (Math.hypot(s.x - x, s.y - y) <= 10 && s.type !== 'capital' && s.type !== 'citadel') s.emp = state.time + 20;
+      if (Math.hypot(s.x - x, s.y - y) <= 10 * mapScale(state) && s.type !== 'capital' && s.type !== 'citadel') s.emp = state.time + 20;
     }
     notice(state, 'emp', { x, y });
   }
@@ -390,12 +405,13 @@ function endAttack(state, a, i) {
   state.attacks.splice(i, 1);
   const f = state.factions[a.attacker];
   if (alive(f)) f.troops += a.troops;
-  if (a.target === PLAYER && a.conquered < 12 && a.initial >= 20) {
+  const k = areaScale(state);
+  if (a.target === PLAYER && a.conquered < 12 * k && a.initial >= 20 * k) {
     state.stats.repelled++;
     notice(state, 'repelled', { attacker: a.attacker });
   }
-  if (a.attacker === PLAYER && a.target && a.conquered < 5) state.stats.failedAttacks++;
-  if (a.attacker === PLAYER && a.target && a.conquered >= 5) state.stats.battlesWon = (state.stats.battlesWon || 0) + 1;
+  if (a.attacker === PLAYER && a.target && a.conquered < 5 * k) state.stats.failedAttacks++;
+  if (a.attacker === PLAYER && a.target && a.conquered >= 5 * k) state.stats.battlesWon = (state.stats.battlesWon || 0) + 1;
 }
 
 // Where an attack radiates from: the clicked tile, else the attacker's capital.
@@ -439,7 +455,9 @@ function advanceAttacks(state, dt) {
     const def = a.target ? state.factions[a.target] : null;
     if (!alive(att) || (def && !alive(def))) { endAttack(state, a, k); continue; }
     if (!a.frontier) buildFrontier(state, a);
-    let speed = (7 + Math.sqrt(a.troops) * 0.55) * (a.target ? 1 : 1.6) * (att.speed || 1);
+    // Tiles per second; scaled with the map so attacks take the same time.
+    const ks = areaScale(state);
+    let speed = ks * (7 + Math.sqrt(a.troops / ks) * 0.55) * (a.target ? 1 : 1.6) * (att.speed || 1);
     if (att.research.includes('swift')) speed *= 1.3;
     a.progress += speed * dt;
     let ended = false;
@@ -463,7 +481,7 @@ function advanceAttacks(state, dt) {
         state.stats.spent += cost;
         const ev = eventPhase(state);
         const cit = state.sites.find(s => s.type === 'citadel');
-        if (cit && ev.type === 'eclipse' && ev.active && Math.hypot(cit.x - i % state.w, cit.y - Math.floor(i / state.w)) < 12) state.flags.eclipseStrike = true;
+        if (cit && ev.type === 'eclipse' && ev.active && Math.hypot(cit.x - i % state.w, cit.y - Math.floor(i / state.w)) < 12 * mapScale(state)) state.flags.eclipseStrike = true;
       }
       if (a.target === PLAYER) state.stats.lost++;
       const site = state.sites.find(s => s.y * state.w + s.x === i);
@@ -478,7 +496,7 @@ function advanceDropships(state, dt) {
   for (let k = state.dropships.length - 1; k >= 0; k--) {
     const d = state.dropships[k];
     const dist = Math.hypot(d.tx - d.x, d.ty - d.y);
-    const step = (d.speed || 28) * dt;
+    const step = (d.speed || 28 * mapScale(state)) * dt;
     if (dist > step) { d.x += (d.tx - d.x) / dist * step; d.y += (d.ty - d.y) / dist * step; continue; }
     state.dropships.splice(k, 1);
     const i = d.ty * state.w + d.tx;
@@ -700,17 +718,52 @@ function fromB64(str) {
   return out;
 }
 
+// Ownership is long runs of the same owner: store (owner, run length) pairs,
+// with the length as a little-endian base-128 varint.
+export function rleEncode(bytes) {
+  const out = [];
+  for (let i = 0; i < bytes.length;) {
+    const v = bytes[i];
+    let n = 1;
+    while (i + n < bytes.length && bytes[i + n] === v) n++;
+    out.push(v);
+    let m = n;
+    while (m >= 128) { out.push((m & 127) | 128); m >>>= 7; }
+    out.push(m);
+    i += n;
+  }
+  return Uint8Array.from(out);
+}
+
+export function rleDecode(bytes, length) {
+  const out = new Uint8Array(length);
+  let o = 0;
+  for (let i = 0; i < bytes.length;) {
+    const v = bytes[i++];
+    let n = 0, shift = 0, b;
+    do { b = bytes[i++]; n |= (b & 127) << shift; shift += 7; } while (b & 128);
+    if (o + n > length) throw new Error('bad run');
+    out.fill(v, o, o + n);
+    o += n;
+  }
+  if (o !== length) throw new Error('short owner map');
+  return out;
+}
+
 export function serialize(state) {
   const { owner, notices: _notices, ...rest } = state;
   const copy = JSON.parse(JSON.stringify({ ...rest, attacks: state.attacks.map(a => ({ ...a, frontier: null })) }));
-  copy.owner = toB64(owner);
+  copy.owner = toB64(rleEncode(owner));
+  copy.ownerEnc = 'rle';
   return copy;
 }
 
 export function deserialize(data) {
   if (!data || data.v !== STATE_VERSION || typeof data.owner !== 'string') return null;
   try {
-    const state = { ...data, owner: fromB64(data.owner), notices: [] };
+    const raw = fromB64(data.owner);
+    const state = { ...data, owner: data.ownerEnc === 'rle' ? rleDecode(raw, data.w * data.h) : raw, notices: [] };
+    delete state.ownerEnc;
     if (!Array.isArray(state.history)) { state.history = []; state.historyAt = state.time; }
     if (state.owner.length !== state.w * state.h) return null;
     config(state);
@@ -731,11 +784,12 @@ export function analyzeDefeat(state) {
   if (by) tips.push(`${by.name} captured your capital. Keep a strong border around your landing zone and don't send your whole army away when an enemy is next to it.`);
   if (s.failedAttacks >= 3) tips.push(`${s.failedAttacks} of your attacks stalled almost at once. Attack where the enemy is thin, use a higher ratio, or wait until your army has regrown.`);
   if (s.cappedSeconds > state.time * 0.25) tips.push('Your army sat at its cap for a long time. Troops at the cap stop growing — keep attacking to stay below it.');
-  if (s.stormLoss > 50) tips.push(`Storms froze ${Math.round(s.stormLoss)} of your troops. Launch attacks between whiteouts.`);
+  const k = areaScale(state);
+  if (s.stormLoss > 50 * k) tips.push(`Storms froze ${Math.round(s.stormLoss)} of your troops. Launch attacks between whiteouts.`);
   if (s.shieldBlocked > 0) tips.push('The Brood Heart was shielded. Capture the network hubs first; the shield falls when the Swarm holds none.');
   if (cfg.id === 'xythera' && sitesOf(state, 'turret').some(t => isPowered(state, t))) tips.push('Powered defenses made the Axiom core very costly. Capture an energy relay to switch them off.');
   if (cfg.id === 'noctyra' && s.enemyFrontsPeak >= 4) tips.push('The Dominion kept its command nodes and attacked on many fronts. Every node you take removes a front.');
-  if (s.peakTiles < 400) tips.push('Your empire stayed small. Expand into wilderness early: more land means a higher troop cap and more income.');
+  if (s.peakTiles < 400 * k) tips.push('Your empire stayed small. Expand into wilderness early: more land means a higher troop cap and more income.');
   if (!tips.length) tips.push('The enemy out-grew you. Expand earlier, take resource sites, and build Habitats and Extractors with your minerals.');
   return tips.slice(0, 4);
 }

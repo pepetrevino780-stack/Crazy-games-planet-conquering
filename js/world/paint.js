@@ -25,6 +25,7 @@ export function paintWorld(world, simple = false) {
   const P = palettes(world.theme);
   const out = new Uint8ClampedArray(W * H * 4);
   const s = seed | 0;
+  const far = simple ? null : seaDistance(t, W, H, 24);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const i = y * W + x;
@@ -34,11 +35,44 @@ export function paintWorld(world, simple = false) {
         c = isLand(tt) ? (tt === T.MOUNTAIN || tt === T.VOLCANO ? P.mountain[1] : P.plains[1]) : P.deep[0];
       } else {
         c = tileColor(t, elev, P, tt, x, y, W, H, s);
+        if (tt === T.DEEP) {
+          // Open ocean darkens with distance from the shore.
+          const k = 1 - Math.min(1, far[i] / 24) * 0.45 * (0.85 + bayer(x, y) * 0.3);
+          c = [c[0] * k, c[1] * k, c[2] * k];
+        } else if (isLand(tt) && tt !== T.RIVER && touchesWater(t, W, H, x, y)) {
+          // A dark outline along every coast.
+          c = [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55];
+        }
       }
       out[i * 4] = c[0]; out[i * 4 + 1] = c[1]; out[i * 4 + 2] = c[2]; out[i * 4 + 3] = 255;
     }
   }
   return out;
+}
+
+function touchesWater(t, W, H, x, y) {
+  return !landAt(t, W, H, x + 1, y) || !landAt(t, W, H, x - 1, y) || !landAt(t, W, H, x, y + 1) || !landAt(t, W, H, x, y - 1);
+}
+
+// Distance (capped) from each water tile to the nearest land.
+function seaDistance(t, W, H, cap) {
+  const N = W * H;
+  const d = new Uint8Array(N).fill(cap);
+  let q = [];
+  for (let i = 0; i < N; i++) if (isLand(t[i])) { d[i] = 0; q.push(i); }
+  for (let k = 1; k < cap && q.length; k++) {
+    const next = [];
+    for (const i of q) {
+      const x = i % W;
+      for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) {
+        if (j < 0 || j >= N || d[j] !== cap) continue;
+        d[j] = k;
+        next.push(j);
+      }
+    }
+    q = next;
+  }
+  return d;
 }
 
 function landAt(t, W, H, x, y) {

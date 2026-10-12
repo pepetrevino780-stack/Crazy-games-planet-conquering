@@ -11,58 +11,92 @@ import { T, THEMES, isLand } from './themes.js';
 const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const N8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
-export function generateWorld({ theme, seed, width = 420, height = 260, gen: overrides = {} }) {
+export function generateWorld(opts) {
+  // Earth-like worlds need several real continents: retry a few derived
+  // seeds (deterministically) when one comes out as a single blob.
+  let world = null;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    world = buildWorld(opts, attempt);
+    if (world.continents.length >= 3) break;
+  }
+  return world;
+}
+
+function buildWorld({ theme, seed, width = 420, height = 260, gen: overrides = {} }, attempt) {
   const th = THEMES[theme];
   if (!th) throw new Error(`Unknown theme ${theme}`);
   const g = { ...th.gen, ...overrides };
   const W = width, H = height, N = W * H;
-  const R = rng(seed);
-  const s = seed | 0;
-
-  // 1. Landmass blobs: a few big continents and some islands.
-  const blobs = [];
+  const R = rng(seed + attempt * 7919);
+  const s = (seed + attempt * 7919) | 0;
   const scale = Math.min(W, H);
-  // Each continent is a chain of overlapping blobs, so it comes out long
-  // and irregular rather than round.
+  const lin = scale / 220; // feature counts grow with the map
+
+  // 1. Landmass blobs. Continent 0 is the big main continent, stretched west
+  // to east across the middle; the others are smaller and spread out into the
+  // remaining ocean. Islands are single small blobs. Each continent is a chain
+  // of overlapping blobs, so it comes out long and irregular rather than round.
+  const blobs = [];
   const centres = [];
-  for (let i = 0; i < g.continents; i++) {
+  for (let c = 0; c < g.continents; c++) {
+    const main = c === 0;
     let best = null, bestD = -1;
-    for (let k = 0; k < 20; k++) {
-      const c = { x: W * (0.2 + 0.6 * R()), y: H * (0.22 + 0.56 * R()) };
-      const d = Math.min(...centres.map(b => Math.hypot(b.x - c.x, b.y - c.y)), Infinity);
-      if (d > bestD) { bestD = d; best = c; }
+    if (main) best = { x: W * (0.2 + 0.06 * R()), y: H * (0.42 + 0.16 * R()) };
+    else {
+      for (let k = 0; k < 40; k++) {
+        const p = { x: W * (0.12 + 0.76 * R()), y: H * (0.14 + 0.72 * R()) };
+        // Stay clear of the main continent's spine and of other continents.
+        const d = Math.min(...centres.map(b => Math.hypot(b.x - p.x, (b.y - p.y) * 1.4)), Math.abs(p.y - H / 2) * 1.6 + (p.x > W * 0.15 && p.x < W * 0.85 ? 0 : scale));
+        if (d > bestD) { bestD = d; best = p; }
+      }
     }
-    centres.push(best);
     let { x, y } = best;
-    let ang = R() * Math.PI * 2;
-    const links = 3 + Math.floor(R() * 3);
-    const base = scale * (0.3 - 0.04 * g.continents) * (0.85 + 0.3 * R());
+    let ang = main ? (R() - 0.5) * 0.5 : R() * Math.PI * 2;
+    const links = main ? 5 + Math.floor(R() * 2) : 2 + Math.floor(R() * 3);
+    const base = scale * (main ? 0.125 : 0.095 + 0.035 * R());
     for (let l = 0; l < links; l++) {
-      blobs.push({ x, y, r: base * (0.55 + 0.5 * R()), w: 1 });
-      ang += (R() - 0.5) * 1.6;
-      x = Math.max(W * 0.12, Math.min(W * 0.88, x + Math.cos(ang) * base * 0.75));
-      y = Math.max(H * 0.14, Math.min(H * 0.86, y + Math.sin(ang) * base * 0.75));
+      blobs.push({ x, y, r: base * (0.6 + 0.45 * R()), w: 1, chain: c });
+      centres.push({ x, y });
+      ang += (R() - 0.5) * (main ? 0.7 : 1.6);
+      if (main) ang = Math.max(-0.5, Math.min(0.5, ang));
+      // The main continent spans the map from about 0.2W to 0.78W, so both
+      // the player (west) and the main enemy (east) start on it.
+      const stepX = main ? (W * 0.56) / (links - 1) : Math.cos(ang) * base * 0.75;
+      x = Math.max(W * 0.1, Math.min(W * 0.9, x + stepX));
+      y = Math.max(H * 0.12, Math.min(H * 0.88, y + Math.sin(ang) * base * (main ? 0.6 : 0.75)));
     }
   }
   for (let i = 0; i < g.islands; i++) {
-    blobs.push({ x: W * (0.06 + 0.88 * R()), y: H * (0.08 + 0.84 * R()), r: scale * (0.05 + 0.07 * R()), w: 0.75 });
+    blobs.push({ x: W * (0.06 + 0.88 * R()), y: H * (0.08 + 0.84 * R()), r: scale * (0.018 + 0.03 * R()), w: 0.8, chain: g.continents + i });
   }
 
+  for (const b of blobs) b.inv2 = 1 / (b.r * b.r);
   const h = new Float32Array(N);
+  const chains = g.continents + g.islands;
+  const mass = new Float32Array(chains);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      // Domain warp keeps coastlines from looking like circles.
-      const wx = x + (fbm(x * 0.012, y * 0.012, s + 1, 3) - 0.5) * scale * 0.35;
-      const wy = y + (fbm(x * 0.012, y * 0.012, s + 2, 3) - 0.5) * scale * 0.35;
-      let mass = 0;
+      // Two layers of domain warp: a big low-frequency bend for the overall
+      // shape of each continent and a finer one for bays and peninsulas.
+      const lo = 2.2 / scale, hi = 6 / scale;
+      const wx = x + (fbm(x * lo, y * lo, s + 21, 2) - 0.5) * scale * 0.5 + (fbm(x * hi, y * hi, s + 1, 3) - 0.5) * scale * 0.22;
+      const wy = y + (fbm(x * lo, y * lo, s + 22, 2) - 0.5) * scale * 0.5 + (fbm(x * hi, y * hi, s + 2, 3) - 0.5) * scale * 0.22;
+      mass.fill(0);
       for (const b of blobs) {
-        const d = Math.hypot(wx - b.x, wy - b.y) / b.r;
-        mass = Math.max(mass, b.w * Math.exp(-d * d * 1.6));
+        const dx = wx - b.x, dy = wy - b.y;
+        const d2 = (dx * dx + dy * dy) * b.inv2;
+        if (d2 > 6) continue; // contributes almost nothing
+        const m = b.w * Math.exp(-d2 * 1.6);
+        if (m > mass[b.chain]) mass[b.chain] = m;
       }
+      let m1 = 0, m2 = 0;
+      for (let c = 0; c < chains; c++) { const m = mass[c]; if (m > m1) { m2 = m1; m1 = m; } else if (m > m2) m2 = m; }
+      // Where two continents meet, carve a strait so they stay separate.
+      const strait = m2 > 0.12 && m1 - m2 < 0.22 ? 0.6 * (1 - (m1 - m2) / 0.22) : 0;
       const detail = fbm(x * 0.028, y * 0.028, s + 3, 5);
-      const ex = Math.min(x, W - 1 - x) / (W * 0.1), ey = Math.min(y, H - 1 - y) / (H * 0.1);
+      const ex = Math.min(x, W - 1 - x) / (W * 0.08), ey = Math.min(y, H - 1 - y) / (H * 0.08);
       const edge = Math.min(1, ex, ey);
-      h[y * W + x] = (mass * 0.7 + (detail - 0.5) * 0.65) * (0.2 + 0.8 * edge * edge * (3 - 2 * edge));
+      h[y * W + x] = (m1 * 0.75 + (detail - 0.5) * 0.45 - strait) * (0.2 + 0.8 * edge * edge * (3 - 2 * edge));
     }
   }
   // Sea level by quantile so each theme gets its intended land share.
@@ -97,7 +131,7 @@ export function generateWorld({ theme, seed, width = 420, height = 260, gen: ove
   }
 
   // 3. Inland lakes.
-  for (let k = 0; k < g.lakes; k++) {
+  for (let k = 0; k < Math.round(g.lakes * lin); k++) {
     for (let tries = 0; tries < 30; tries++) {
       const x = Math.floor(W * 0.1 + R() * W * 0.8), y = Math.floor(H * 0.1 + R() * H * 0.8);
       if (t[y * W + x] !== T.PLAINS || coastDistance(t, W, H, x, y, 9) < 9) continue;
@@ -114,7 +148,7 @@ export function generateWorld({ theme, seed, width = 420, height = 260, gen: ove
 
   // 4. Rivers run from high ground to the nearest coast, meandering.
   const toSea = landDistance(t, W, H);
-  for (let k = 0; k < g.rivers; k++) {
+  for (let k = 0; k < Math.round(g.rivers * lin); k++) {
     let x = 0, y = 0, found = false;
     for (let tries = 0; tries < 80 && !found; tries++) {
       x = Math.floor(R() * W); y = Math.floor(R() * H);
@@ -144,7 +178,7 @@ export function generateWorld({ theme, seed, width = 420, height = 260, gen: ove
   }
 
   // 5. Volcano clusters on high ground.
-  for (let k = 0; k < g.volcanoes; k++) {
+  for (let k = 0; k < Math.round(g.volcanoes * lin); k++) {
     for (let tries = 0; tries < 60; tries++) {
       const x = 3 + Math.floor(R() * (W - 6)), y = 3 + Math.floor(R() * (H - 6));
       const tt = t[y * W + x];
@@ -198,10 +232,53 @@ export function generateWorld({ theme, seed, width = 420, height = 260, gen: ove
 
   // 7. Shallow water along coasts.
   const dist = waterDistance(t, W, H, 3);
-  for (let i = 0; i < N; i++) if (t[i] === T.DEEP && dist[i] <= 3) t[i] = T.SHALLOW;
+  for (let i = 0; i < N; i++) {
+    if (t[i] !== T.DEEP || dist[i] > 3) continue;
+    // A 2-3 tile shelf: the third ring only where the noise says so.
+    if (dist[i] <= 2 || fbm((i % W) * 0.08, Math.floor(i / W) * 0.08, s + 17, 2) > 0.5) t[i] = T.SHALLOW;
+  }
 
   const comp = components(t, W, H);
-  return { theme, seed, w: W, h: H, terrain: t, elev, height: h, comp: comp.id, compSize: comp.size, landCount };
+  return {
+    theme, seed, w: W, h: H, terrain: t, elev, height: h, comp: comp.id, compSize: comp.size, landCount,
+    continents: namedContinents(comp, t, W, H, landCount, theme, seed),
+  };
+}
+
+// Continents are land masses with at least 3% of the land. Each gets a name
+// (from the theme's syllables) and a label point near its middle.
+function namedContinents(comp, t, W, H, landCount, theme, seed) {
+  const min = landCount * 0.03;
+  const out = [];
+  const sx = new Float64Array(comp.size.length), sy = new Float64Array(comp.size.length);
+  for (let i = 0; i < W * H; i++) {
+    const c = comp.id[i];
+    if (c < 0 || comp.size[c] < min) continue;
+    sx[c] += i % W; sy[c] += Math.floor(i / W);
+  }
+  const R = rng(seed + 4242);
+  const syl = THEMES[theme].lands || ['ar', 'en', 'os', 'ia'];
+  const used = new Set();
+  comp.size.forEach((n, c) => {
+    if (n < min) return;
+    let x = Math.round(sx[c] / n), y = Math.round(sy[c] / n);
+    // Bent continents can have their centroid in the sea: use the nearest own tile.
+    if (comp.id[y * W + x] !== c) {
+      let best = Infinity;
+      for (let i = 0; i < W * H; i++) {
+        if (comp.id[i] !== c) continue;
+        const d = Math.hypot(i % W - x, Math.floor(i / W) - y);
+        if (d < best) { best = d; x = i % W; y = Math.floor(i / W); }
+      }
+    }
+    let name = '';
+    for (let tries = 0; tries < 10 && (!name || used.has(name)); tries++) {
+      name = (syl[Math.floor(R() * syl.length)] + syl[Math.floor(R() * syl.length)] + (R() < 0.5 ? syl[Math.floor(R() * syl.length)] : '')).replace(/^./, ch => ch.toUpperCase());
+    }
+    used.add(name);
+    out.push({ id: c, x, y, size: n, name });
+  });
+  return out.sort((a, b) => b.size - a.size);
 }
 
 // Distance from each land tile to the nearest water (BFS, uncapped).

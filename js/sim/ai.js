@@ -3,7 +3,7 @@
 // how much to keep home, whether they retaliate, how many fronts they run.
 import { isLand, T } from '../world/themes.js';
 import {
-  maxTroops, borderMap, launchAttack, attackFronts, siteOwner, buildCost, world, PLAYER,
+  maxTroops, borderMap, launchAttack, attackFronts, siteOwner, buildCost, world, PLAYER, mapScale, areaScale,
 } from './core.js';
 import { npcBuild, npcUpgrade } from './engine.js';
 
@@ -38,7 +38,7 @@ export function think(state, fid, rand) {
     if (o === fid || state.attacks.some(a => a.attacker === fid && a.target === o)) continue;
     let score;
     if (o === 0) {
-      score = p.wildBias * Math.min(1, len / 15);
+      score = p.wildBias * Math.min(1, len / (15 * mapScale(state)));
     } else {
       const other = state.factions[o];
       if (!other || !other.alive) continue;
@@ -50,7 +50,7 @@ export function think(state, fid, rand) {
       score += p.objectiveSense * targetValue(state, fid, o) * 0.35;
       if (f.kind === 'player' && other.kind === 'enemy') score += p.objectiveSense * 1.2;
       if (grudge) score += 1.2;
-      score *= Math.min(1, 0.4 + len / 25);
+      score *= Math.min(1, 0.4 + len / (25 * mapScale(state)));
     }
     score *= 1 + p.noise * (rand() - 0.5);
     if (score > bestScore) { bestScore = score; best = o; }
@@ -58,7 +58,7 @@ export function think(state, fid, rand) {
   if (best === null) return;
   const reserve = max * p.reserve * (best === 0 ? 0.5 : 1);
   const send = Math.min(f.troops * p.ratio * (best === 0 ? 0.8 : 1.3), f.troops - reserve);
-  if (send < 10) return;
+  if (send < 10 * areaScale(state)) return;
   launchAttack(state, fid, best, send);
 }
 

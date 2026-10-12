@@ -76,18 +76,26 @@ objectives with bonus rewards, contextual tips (can be turned off), and a field 
 **Saving:**
 - The campaign and the battle in progress autosave every 5 seconds, on pause, and when the tab closes.
 - Saves go to the CrazyGames Data module on CrazyGames, and to `localStorage` elsewhere.
-- A world is regenerated from its seed, so a save is only the ownership map plus a little state (about 150 KB).
+- A world is regenerated from its seed, so a save is only the run-length-encoded ownership map plus a little state (usually under 50 KB).
 
 ## Art direction
 
 Everything is original pixel art, generated or hand-authored in code:
-- **Maps:** each world is generated as a coherent planet.
-  - Continents with domain-warped coastlines, mountain ranges with passes, and rivers that run to the sea.
+- **Maps:** each world is generated as a coherent, Earth-like planet, at 2× the original size.
+  - About a third land: one big main continent where you and the main enemy start, 3–5 smaller named
+    continents separated by straits and open ocean, and island chains. Crossing an ocean needs a dropship.
+  - Two layers of domain warp shape the coastlines; a 2–3 tile shelf and a dark coast outline frame the land,
+    and the open ocean darkens with distance from shore.
+  - Mountain ranges with passes, and rivers that run to the sea.
   - Volcano clusters, inland lakes, biomes and ruins.
   - Painted from the theme's limited palette with ordered dithering.
 - **Sprites:** buildings, capitals (one per civilization), sites, dropships and icons are character grids, tinted with the owner's colour.
 - **Backdrops:** skies, planets, the eclipsed sun and the title landscape are procedural.
-- **Scaling:** pixels stay crisp, because the camera only uses integer zoom.
+- **Scaling:** pixels stay crisp, because the camera only uses integer zoom. Close up, structures switch to
+  double-detail sprites with edge lighting.
+- **Balance on bigger maps:** each planet has a `scale` (tiles per original tile). Troop amounts, regrowth,
+  income per tile and attack speed scale with its area, radii and distances with its length, so a battle
+  plays at the same pace as on the original map.
 - **Fonts:** Pixelify Sans and Silkscreen, bundled locally (SIL OFL).
 
 Readability comes first:

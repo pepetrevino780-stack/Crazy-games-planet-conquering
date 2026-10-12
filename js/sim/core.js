@@ -97,7 +97,13 @@ export function buildingLevels(state, owner, type) {
   return n;
 }
 
-export const bastionRadius = b => BUILDINGS.bastion.radius + 2 * ((b.level || 1) - 1);
+// Planets are drawn at `scale` tiles per base tile. Troop amounts and rates
+// grow with the area (scale²) and distances with the length (scale), so a
+// bigger map plays at the same pace as the base one.
+export const mapScale = state => config(state).scale || 1;
+export const areaScale = state => mapScale(state) ** 2;
+
+export const bastionRadius = (state, b) => (BUILDINGS.bastion.radius + 2 * ((b.level || 1) - 1)) * mapScale(state);
 
 export function upgradeCost(b) {
   return Math.round(BUILDINGS[b.type].cost * Math.pow(UPGRADE_GROWTH, b.level || 1));
@@ -112,7 +118,7 @@ export function buildCost(state, owner, type) {
 export function maxTroops(state, f) {
   const hab = Math.min(5, buildingLevels(state, f.id, 'habitat'));
   const logistics = f.research.includes('logistics') ? 0.1 : 0;
-  return Math.round((400 + f.tiles * 5) * (1 + 0.12 * hab + logistics) * (f.maxMult || 1));
+  return Math.round((400 * areaScale(state) + f.tiles * 5) * (1 + 0.12 * hab + logistics) * (f.maxMult || 1));
 }
 
 export function growthMult(state, f) {
@@ -129,11 +135,12 @@ export function growthMult(state, f) {
 export function regen(state, f) {
   const max = maxTroops(state, f);
   if (f.troops >= max) return 0;
-  return (6 + Math.pow(Math.max(0, f.troops), 0.7) * 0.5) * (1 - f.troops / max) * growthMult(state, f);
+  const k = areaScale(state);
+  return k * (6 + Math.pow(Math.max(0, f.troops) / k, 0.7) * 0.5) * (1 - f.troops / max) * growthMult(state, f);
 }
 
 export function income(state, f) {
-  let minerals = 2 + f.tiles * 0.01, energy = 0.3, exotic = 0;
+  let minerals = 2 + (f.tiles / areaScale(state)) * 0.01, energy = 0.3, exotic = 0;
   for (const s of state.sites) {
     if (siteOwner(state, s) !== f.id || empActive(state, s)) continue;
     const st = SITE_TYPES[s.type];
@@ -172,14 +179,15 @@ export function tileDefense(state, i) {
     if (!st.radius || empActive(state, s)) continue;
     if (siteOwner(state, s) !== o) continue;
     const r2 = (s.x - x) ** 2 + (s.y - y) ** 2;
-    if (r2 > st.radius * st.radius) continue;
+    const rad = st.radius * mapScale(state);
+    if (r2 > rad * rad) continue;
     if (st.nourish) d *= st.nourish;
     if (st.guard && isPowered(state, s)) d *= st.guard * (ev.type === 'surge' && ev.active ? 1.5 : 1);
     if (st.fortress) d *= eclipse && s.type === 'citadel' ? 1.2 : st.fortress;
   }
   for (const b of state.buildings) {
     if (b.type !== 'bastion' || empActive(state, b) || state.owner[b.y * state.w + b.x] !== o) continue;
-    const r = bastionRadius(b);
+    const r = bastionRadius(state, b);
     if ((b.x - x) ** 2 + (b.y - y) ** 2 <= r * r) d *= eclipse ? 1.3 : 1.8;
   }
   return d * (state.factions[o]?.def || 1);
@@ -190,7 +198,7 @@ export function tileLocked(state, i) {
   const x = i % state.w, y = (i - x) / state.w;
   for (const s of state.sites) {
     if ((s.type === 'capital' || s.type === 'citadel') && s.shieldedBy && isShielded(state, s)) {
-      if ((s.x - x) ** 2 + (s.y - y) ** 2 <= 16 && state.owner[i] === siteOwner(state, s)) return true;
+      if ((s.x - x) ** 2 + (s.y - y) ** 2 <= 16 * mapScale(state) ** 2 && state.owner[i] === siteOwner(state, s)) return true;
     }
   }
   return false;

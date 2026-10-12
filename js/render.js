@@ -4,9 +4,9 @@
 import { paintWorld } from './world/paint.js';
 import { isLand } from './world/themes.js';
 import { SITE_TYPES } from './campaign.js';
-import { spriteCanvas, CAPITAL_SPRITE, mixHex } from './art/sprites.js';
+import { spriteCanvas, spriteCanvasHi, CAPITAL_SPRITE, mixHex } from './art/sprites.js';
 import { backdropCanvas } from './art/backdrop.js';
-import { rt, world, siteOwner, isShielded, isPowered, empActive, eventPhase, PLAYER } from './sim/core.js';
+import { rt, world, siteOwner, isShielded, isPowered, empActive, eventPhase, mapScale, PLAYER } from './sim/core.js';
 
 const NEUTRAL = '#8a8478';
 const hexRgb = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -452,8 +452,9 @@ export class MapRenderer {
     // Defense ranges.
     for (const s of st.sites) {
       const so = siteOwner(st, s);
-      if (s.type === 'turret' && isPowered(st, s)) this.dotCircle(T(s.x + 0.5, s.y + 0.5), SITE_TYPES.turret.radius * z, ev.type === 'surge' && ev.active ? '#ff6a4a' : '#ff3b3b', z);
-      if (s.type === 'hub' && so && !empActive(st, s)) this.dotCircle(T(s.x + 0.5, s.y + 0.5), SITE_TYPES.hub.radius * z, '#b8ff5a', z * 3);
+      const lin = mapScale(st);
+      if (s.type === 'turret' && isPowered(st, s)) this.dotCircle(T(s.x + 0.5, s.y + 0.5), SITE_TYPES.turret.radius * lin * z, ev.type === 'surge' && ev.active ? '#ff6a4a' : '#ff3b3b', z);
+      if (s.type === 'hub' && so && !empActive(st, s)) this.dotCircle(T(s.x + 0.5, s.y + 0.5), SITE_TYPES.hub.radius * lin * z, '#b8ff5a', z * 3);
       if ((s.type === 'capital' || s.type === 'citadel') && isShielded(st, s)) {
         const r = (4.5 + (motion ? Math.sin(now * 3) * 0.4 : 0)) * z;
         this.dotCircle(T(s.x + 0.5, s.y + 0.5), r, '#c4ff6a', Math.max(1, z / 2), true);
@@ -483,11 +484,16 @@ export class MapRenderer {
 
     // Structures.
     const sc = Math.max(1, Math.round(z / 2));
+    // Close up, structures use the double-detail sprites (only at even
+    // scales, so every sprite pixel stays a whole number of screen pixels).
+    const hi = sc >= 2 && sc % 2 === 0;
     const drawSprite = (name, x, y, color) => {
-      const spr = spriteCanvas(name, color);
+      const spr = hi ? spriteCanvasHi(name, color) : spriteCanvas(name, color);
+      const ps = hi ? sc / 2 : sc;
       const p = T(x + 0.5, y + 0.5);
-      ctx.drawImage(spr, Math.round(p.x - (spr.width * sc) / 2), Math.round(p.y - spr.height * sc + sc), spr.width * sc, spr.height * sc);
-      return { p, w: spr.width * sc, h: spr.height * sc };
+      const w = spr.width * ps, h = spr.height * ps;
+      ctx.drawImage(spr, Math.round(p.x - w / 2), Math.round(p.y - h + sc), w, h);
+      return { p, w, h };
     };
     for (const b of st.buildings) {
       const bo = st.owner[b.y * st.w + b.x];
@@ -563,7 +569,25 @@ export class MapRenderer {
       }
     }
 
-    if (ui.labels !== false) this.drawLabels(o, z);
+    if (ui.labels !== false) { this.drawContinents(o, z); this.drawLabels(o, z); }
+  }
+
+  // Continent names, large and faint, underneath the nation labels.
+  drawContinents(o, z) {
+    const ctx = this.ctx, d = this.dpr;
+    const list = world(this.state).continents || [];
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const c of list) {
+      const size = Math.round(Math.max(11 * d, Math.min(26 * d, Math.sqrt(c.size) * z * 0.05)));
+      ctx.font = `700 ${size}px "Silkscreen", monospace`;
+      const name = c.name.toUpperCase().split('').join(' ');
+      const x = o.x + (c.x + 0.5) * z, y = o.y + (c.y + 0.5) * z + size * 1.6;
+      ctx.lineWidth = Math.max(2, size / 6);
+      ctx.strokeStyle = 'rgba(5,4,12,0.35)';
+      ctx.strokeText(name, x, y);
+      ctx.fillStyle = 'rgba(255,248,230,0.32)';
+      ctx.fillText(name, x, y);
+    }
   }
 
   dotCircle(c, r, color, step, solid = false) {

@@ -4,7 +4,7 @@ import { PLANETS, AI_PROFILES, skirmishConfig, getPlanet } from '../js/campaign.
 import {
   createBattle, step, advance, spawnPlayer, canSpawnAt, playerAttack, playerBuild, playerDropship,
   playerResearch, useAbility, serialize, deserialize, battleResult, analyzeDefeat, PLAYER,
-  tutorialStep, tutorialUnlocked, skipTutorial,
+  tutorialStep, tutorialUnlocked, skipTutorial, rleEncode, rleDecode,
 } from '../js/sim/engine.js';
 import {
   world, maxTroops, regen, borders, siteOwner, isShielded, isPowered, tileDefense, eventPhase, setOwner,
@@ -33,16 +33,19 @@ function memoryStorage() {
 
 test('worlds are deterministic, varied and geographically coherent', () => {
   for (const theme of THEME_IDS) {
-    const a = generateWorld({ theme, seed: 99, width: 240, height: 150 });
-    const b = generateWorld({ theme, seed: 99, width: 240, height: 150 });
+    const a = generateWorld({ theme, seed: 99, width: 480, height: 300 });
+    const b = generateWorld({ theme, seed: 99, width: 480, height: 300 });
     assert.deepEqual(a.terrain, b.terrain, `${theme}: same seed, same world`);
-    const c = generateWorld({ theme, seed: 100, width: 240, height: 150 });
+    const c = generateWorld({ theme, seed: 100, width: 480, height: 300 });
     assert.notDeepEqual(a.terrain, c.terrain, `${theme}: new seed, new world`);
-    const share = a.landCount / (240 * 150);
-    assert.ok(Math.abs(share - THEMES[theme].gen.land) < 0.12, `${theme}: land share ${share.toFixed(2)}`);
-    // A dominant continent, not a scatter of equal islands.
+    const share = a.landCount / (480 * 300);
+    assert.ok(Math.abs(share - THEMES[theme].gen.land) < 0.08, `${theme}: land share ${share.toFixed(2)}`);
+    // Earth-like: one big main continent, several smaller named ones, islands.
     const sizes = [...a.compSize].sort((x, y) => y - x);
-    assert.ok(sizes[0] > a.landCount * 0.6, `${theme}: main continent holds most land`);
+    assert.ok(sizes[0] > a.landCount * 0.35, `${theme}: a big main continent (${(sizes[0] / a.landCount).toFixed(2)})`);
+    assert.ok(a.continents.length >= 3, `${theme}: ${a.continents.length} continents`);
+    assert.ok(a.continents.every(k => k.name && a.comp[k.y * a.w + k.x] === k.id), `${theme}: named, labelled on land`);
+    assert.ok(sizes.length > a.continents.length + 3, `${theme}: has islands`);
     const kinds = new Set(a.terrain);
     for (const t of [T.DEEP, T.SHALLOW, T.PLAINS, T.MOUNTAIN]) assert.ok(kinds.has(t), `${theme}: has terrain ${t}`);
   }
@@ -292,7 +295,7 @@ test('the tutorial world is winnable without upgrades', () => {
 test('upgrades carry into battles', () => {
   const plain = battle('vulkara');
   const up = createBattle('vulkara', loadout(c => { c.upgrades.reserves = 2; c.upgrades.production = 3; return c; }), { seed: 7, autoSpawn: true });
-  assert.equal(up.factions[PLAYER].troops, plain.factions[PLAYER].troops + 300);
+  assert.equal(up.factions[PLAYER].troops, plain.factions[PLAYER].troops + 300 * config(up).scale ** 2);
   assert.ok(up.factions[PLAYER].growth > plain.factions[PLAYER].growth);
 });
 
@@ -363,7 +366,7 @@ test('a battle saved mid-war resumes exactly where it left off', () => {
   assert.deepEqual(Array.from(b.owner), Array.from(a.owner));
   assert.deepEqual(b.factions.map(f => f && Math.round(f.troops)), a.factions.map(f => f && Math.round(f.troops)));
   assert.deepEqual(battleResult(b), battleResult(a));
-  assert.ok(JSON.stringify(c).length < 900000, 'save fits the 1MB cloud-save limit');
+  assert.ok(JSON.stringify(c).length < 200000, `save is compact (${JSON.stringify(c).length} bytes)`);
 });
 
 test('Vulkara training advances step by step, unlocks tools, and survives a save', () => {
@@ -378,7 +381,7 @@ test('Vulkara training advances step by step, unlocks tools, and survives a save
   advance(s, 0.5);
   assert.equal(tutorialStep(s).id, 'grow');
   advance(s, 30);
-  if (s.factions[PLAYER].tiles >= 250) assert.notEqual(tutorialStep(s).id, 'grow');
+  if (s.factions[PLAYER].tiles >= 1000) assert.notEqual(tutorialStep(s).id, 'grow');
   s.tutorial = 3;
   assert.ok(tutorialUnlocked(s).has('habitat') && !tutorialUnlocked(s).has('energy'));
   const b = deserialize(serialize(s));
@@ -442,6 +445,16 @@ test('results: land history, battle stats and stars', () => {
   assert.equal(normalizeCampaign(JSON.parse(JSON.stringify(c))).planets.vulkara.stars, 2);
   const old = deserialize({ ...serialize(s), history: undefined });
   assert.deepEqual(old.history, [], 'older saves gain an empty history');
+});
+
+test('ownership maps round-trip through run-length encoding', () => {
+  const a = new Uint8Array(100000);
+  for (let i = 0; i < a.length; i++) a[i] = (i % 997 < 300 ? 1 : 0) + (i > 70000 ? 5 : 0);
+  a[5] = 200; a[99999] = 3;
+  const enc = rleEncode(a);
+  assert.ok(enc.length < 2000);
+  assert.deepEqual(rleDecode(enc, a.length), a);
+  assert.throws(() => rleDecode(enc, a.length - 1));
 });
 
 test('config lookups resolve for campaign and skirmish states', () => {

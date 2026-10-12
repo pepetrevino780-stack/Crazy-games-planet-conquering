@@ -26,7 +26,8 @@ export const THEMES = {
   vulkara: {
     name: 'Ashen Cradle',
     names: { deep: 'Magma sea', shallow: 'Lava shallows', plains: 'Ash plains', wild: 'Basalt dunes', highland: 'Cinder highlands', mountain: 'Obsidian peaks', river: 'Lava river', volcano: 'Volcano', ruins: 'Cindari ruins' },
-    gen: { land: 0.5, continents: 2, islands: 5, mountains: 0.6, rivers: 7, volcanoes: 5, wild: 0.35, ruins: 0.03, lakes: 2 },
+    gen: { land: 0.36, continents: 5, islands: 10, mountains: 0.6, rivers: 7, volcanoes: 5, wild: 0.35, ruins: 0.03, lakes: 2 },
+    lands: ['pyr', 'ash', 'cin', 'dra', 'kor', 'vul', 'ign', 'ar', 'os', 'eth'],
     pal: {
       deep: P(['#2a0603', '#3c0904']), shallow: P(['#7a1606', '#a8300a', '#e8601a']), coast: '#ffb02e',
       plains: P(['#2a1d18', '#38261f', '#46302a']), wild: P(['#4d3223', '#5e3c28', '#6a4129']),
@@ -37,7 +38,8 @@ export const THEMES = {
   cryonis: {
     name: 'Frozen Frontier',
     names: { deep: 'Frozen ocean', shallow: 'Ice shelf', plains: 'Snowfield', wild: 'Crystal fields', highland: 'Glacier', mountain: 'Ice ridge', river: 'Meltwater', volcano: 'Cryo-vent', ruins: 'Glacari spires' },
-    gen: { land: 0.52, continents: 2, islands: 7, mountains: 0.5, rivers: 6, volcanoes: 1, wild: 0.22, ruins: 0.02, lakes: 9 },
+    gen: { land: 0.35, continents: 5, islands: 12, mountains: 0.5, rivers: 6, volcanoes: 1, wild: 0.22, ruins: 0.02, lakes: 9 },
+    lands: ['gla', 'cri', 'ys', 'fro', 'hel', 'nor', 'ri', 'ka', 'sel', 'vik'],
     pal: {
       deep: P(['#06112a', '#0a1a3c']), shallow: P(['#123a66', '#1d5486', '#3a78a8']), coast: '#d6efff',
       plains: P(['#a9c3dc', '#bcd3e8', '#cfe1f2']), wild: P(['#8a72d0', '#a487e8', '#c4a8ff']),
@@ -48,7 +50,8 @@ export const THEMES = {
   mycelion: {
     name: 'Living World',
     names: { deep: 'Spore sea', shallow: 'Fungal marsh', plains: 'Moss plain', wild: 'Fungal forest', highland: 'Mycelium ridge', mountain: 'Giant fungi', river: 'Spore stream', volcano: 'Bloom crater', ruins: 'Hollow growths' },
-    gen: { land: 0.58, continents: 3, islands: 6, mountains: 0.4, rivers: 9, volcanoes: 2, wild: 0.55, ruins: 0.02, lakes: 5 },
+    gen: { land: 0.38, continents: 6, islands: 9, mountains: 0.4, rivers: 9, volcanoes: 2, wild: 0.55, ruins: 0.02, lakes: 5 },
+    lands: ['my', 'co', 'spo', 'ra', 'thal', 'lu', 'ven', 'ga', 'mo', 'ri'],
     pal: {
       deep: P(['#12051a', '#1c0828']), shallow: P(['#3a1250', '#55206e', '#7a3090']), coast: '#c4ff6a',
       plains: P(['#2c4a1e', '#365a24', '#40682a']), wild: P(['#3b1c49', '#4d2759', '#62306e']),
@@ -59,7 +62,8 @@ export const THEMES = {
   xythera: {
     name: 'World of Ancient Machines',
     names: { deep: 'Void sea', shallow: 'Oil shallows', plains: 'Rust desert', wild: 'Metal plains', highland: 'Bronze mesa', mountain: 'Machine ridge', river: 'Energy channel', volcano: 'Reactor crater', ruins: 'Axiom ruins' },
-    gen: { land: 0.55, continents: 2, islands: 6, mountains: 0.5, rivers: 5, volcanoes: 2, wild: 0.35, ruins: 0.08, lakes: 3 },
+    gen: { land: 0.36, continents: 4, islands: 10, mountains: 0.5, rivers: 5, volcanoes: 2, wild: 0.35, ruins: 0.08, lakes: 3 },
+    lands: ['ax', 'xy', 'tor', 'qua', 'zen', 'ion', 'cor', 'tek', 'um', 'ra'],
     pal: {
       deep: P(['#05050d', '#0a0a1c']), shallow: P(['#14143a', '#1e1e52', '#2a2a6a']), coast: '#3ad8ff',
       plains: P(['#6a3c1e', '#7a4824', '#8a5428']), wild: P(['#22222c', '#2c2c38', '#383846']),
@@ -70,7 +74,8 @@ export const THEMES = {
   noctyra: {
     name: 'Eternal Eclipse',
     names: { deep: 'Crimson void', shallow: 'Blood shallows', plains: 'Dusk plains', wild: 'Violet wastes', highland: 'Shadow uplands', mountain: 'Obsidian spires', river: 'Crimson river', volcano: 'Rift', ruins: 'Umbral megastructure' },
-    gen: { land: 0.6, continents: 3, islands: 5, mountains: 0.55, rivers: 8, volcanoes: 3, wild: 0.4, ruins: 0.06, lakes: 3 },
+    gen: { land: 0.38, continents: 5, islands: 8, mountains: 0.55, rivers: 8, volcanoes: 3, wild: 0.4, ruins: 0.06, lakes: 3 },
+    lands: ['noc', 'um', 'bra', 'sha', 'vel', 'mor', 'eth', 'ny', 'xa', 'dus'],
     pal: {
       deep: P(['#070106', '#10020a']), shallow: P(['#2a0412', '#45081c', '#6a0a24']), coast: '#ff3a4a',
       plains: P(['#1d1628', '#241b31', '#2b2039']), wild: P(['#33234a', '#3e2a58', '#4b3268']),

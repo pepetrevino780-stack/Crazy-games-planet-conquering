@@ -336,6 +336,41 @@ export function spriteCanvas(name, ownerColor) {
   return c;
 }
 
+// A twice-as-detailed version of a sprite for close zoom: each pixel becomes
+// 2x2, edges facing the top-left light are brightened, edges facing away are
+// shaded, and flat areas get a fine dither so structures read as built objects.
+const hiCache = new Map();
+export function spriteCanvasHi(name, ownerColor) {
+  const key = name + ownerColor;
+  if (hiCache.has(key)) return hiCache.get(key);
+  const base = spriteCanvas(name, ownerColor);
+  const w = base.width, h = base.height;
+  const src = base.getContext('2d').getImageData(0, 0, w, h).data;
+  const c = document.createElement('canvas');
+  c.width = w * 2; c.height = h * 2;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(w * 2, h * 2);
+  const W2 = w * 2;
+  const alpha = (x, y) => (x < 0 || y < 0 || x >= w || y >= h ? 0 : src[(y * w + x) * 4 + 3]);
+  for (let y = 0; y < h * 2; y++) {
+    for (let x = 0; x < W2; x++) {
+      const sx = x >> 1, sy = y >> 1, si = (sy * w + sx) * 4;
+      if (!src[si + 3]) continue;
+      let f = 1;
+      const left = (x & 1) === 0, top = (y & 1) === 0;
+      if ((top && !alpha(sx, sy - 1)) || (left && !alpha(sx - 1, sy))) f = 1.3;
+      else if ((!top && !alpha(sx, sy + 1)) || (!left && !alpha(sx + 1, sy))) f = 0.62;
+      else if ((x + y) % 4 === 0) f = 0.9;
+      const o = (y * W2 + x) * 4;
+      img.data[o] = Math.min(255, src[si] * f); img.data[o + 1] = Math.min(255, src[si + 1] * f); img.data[o + 2] = Math.min(255, src[si + 2] * f);
+      img.data[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  hiCache.set(key, c);
+  return c;
+}
+
 const iconCache = new Map();
 
 // PNG data URL for an icon at an integer scale (for <img> in the HUD).

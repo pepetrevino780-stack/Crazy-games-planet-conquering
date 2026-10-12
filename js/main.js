@@ -12,7 +12,7 @@ import {
 } from './sim/engine.js';
 import {
   config, world, maxTroops, regen, income, buildCost, siteOwner, isShielded, isPowered, countSites,
-  eventPhase, tileDefense, attackFronts, sitesOf, borders, upgradeCost as levelUpCost,
+  eventPhase, tileDefense, attackFronts, sitesOf, borders, upgradeCost as levelUpCost, mapScale,
 } from './sim/core.js';
 import { MapRenderer, fmt } from './render.js';
 import { THEMES, TERRAIN, THEME_IDS, isLand } from './world/themes.js';
@@ -654,7 +654,10 @@ function tileTip(i) {
     parts.push(`<b style="color:${f.color}">${esc(o === PLAYER ? 'Your empire' : f.name)}</b>${p ? ` · ${esc(p.name)}` : ''}<br>${fmt(f.tiles)} tiles · ${fmt(f.troops)} troops`);
     if (p) parts.push(`<span class="dim">${esc(p.desc)}</span>`);
   } else if (isLand(t)) parts.push('<b>Unclaimed wilderness</b>');
-  if (isLand(t)) parts.push(`${esc(names[ter.id])}: attack cost ×${ter.cost} · defence ×${tileDefense(battle, i).toFixed(2)}`);
+  if (isLand(t)) {
+    const cont = (w.continents || []).find(c => c.id === w.comp[i]);
+    parts.push(`${esc(names[ter.id])}${cont ? ` on ${esc(cont.name)}` : ''}: attack cost ×${ter.cost} · defence ×${tileDefense(battle, i).toFixed(2)}`);
+  }
   else parts.push(`<b>${esc(names[ter.id])}</b><br>Water. Cross it with a dropship from a Starport.`);
   const site = battle.sites.find(s => Math.abs(s.x - x) <= 2 && Math.abs(s.y - y) <= 2);
   if (site) parts.push(`<b>${esc(site.name)}</b>: ${esc(SITE_TYPES[site.type].desc)}`);
@@ -774,12 +777,12 @@ function updateIntents() {
     const x1 = sx / n, y1 = sy / n;
     let x0 = a.ox ?? f.sx / Math.max(1, f.tiles), y0 = a.oy ?? f.sy / Math.max(1, f.tiles);
     // Keep arrows short: they start a little way back inside the attacker's land.
-    const len = Math.hypot(x1 - x0, y1 - y0), max = 24;
+    const len = Math.hypot(x1 - x0, y1 - y0), max = 24 * mapScale(battle);
     if (len > max) { x0 = x1 + ((x0 - x1) / len) * max; y0 = y1 + ((y0 - y1) / len) * max; }
     const troops = scout >= 3 ? a.troops : a.initial;
     intents.push({
       x0, y0, x1, y1, color: f.kind === 'enemy' ? '#ff4b3e' : mixHex(f.color, '#ff4b3e', 0.4),
-      weight: Math.min(1.6, 0.7 + troops / 1500), label: scout >= 1 ? fmt(troops) : '',
+      weight: Math.min(1.6, 0.7 + troops / (1500 * mapScale(battle) ** 2)), label: scout >= 1 ? fmt(troops) : '',
     });
   }
   // Massing warnings: a neighbour near its troop cap is about to strike.
@@ -1179,7 +1182,8 @@ function openHelp() {
       <li>Click enemy or unclaimed land next to your border to attack it with your attack ratio of troops.</li>
       <li>Drag to pan the map. Mouse wheel or pinch to zoom. C centers on your capital.</li>
       <li>1–5 build, 6 dropship, R research, 7–9 abilities, Space pause, L leaderboard, O objectives.</li>
-      <li>On touch screens, a drag never attacks: only a clean tap does.</li></ul>
+      <li>On touch screens, a drag never attacks: only a clean tap does.</li>
+      <li>Oceans separate the continents. Build a Starport on a coast to send dropships across.</li></ul>
     <h4>Terrain (attack cost · defense)</h4><ul>${['plains', 'wild', 'highland', 'mountain', 'river', 'volcano', 'ruins'].map(k => { const t = TERRAIN.find(x => x.id === k); return `<li>${esc(names[k])}: ×${t.cost} · ×${t.defense}</li>`; }).join('')}</ul>
     <h4>Sites on this world</h4><ul>${sitesHere.map(t => `<li><b>${esc(SITE_TYPES[t].label)}</b>: ${esc(SITE_TYPES[t].desc)}</li>`).join('')}</ul>`;
   $('#overlay-help').classList.remove('hidden');
