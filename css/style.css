@@ -217,6 +217,14 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .inspector .tags { color: var(--cyan); font-size: 12px; margin-top: 4px; overflow-wrap: anywhere; }
 .inspector .close { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; padding: 0; background: transparent; border: 0; color: var(--muted); cursor: pointer; font-family: var(--font-head); }
 
+/* Tooltip that follows the pointer. */
+.tooltip { position: fixed; z-index: 50; max-width: min(300px, calc(100vw - 8px)); padding: 6px 8px; background: rgba(9, 7, 18, 0.95); border: var(--px) solid var(--line); font-size: 13px; line-height: 1.4; pointer-events: none; overflow-wrap: anywhere; }
+.tooltip b { font-family: var(--font-head); font-size: 12px; }
+.tooltip kbd { font-family: var(--font-head); font-size: 10px; padding: 0 4px; border: 1px solid var(--muted); color: var(--gold); }
+.tooltip .ok { color: var(--good); }
+.tooltip .no { color: var(--bad); }
+.tooltip .dim { color: var(--muted); font-size: 12px; }
+
 /* Training card: one short instruction at a time, top centre. */
 .tutorial { position: absolute; left: 50%; transform: translateX(-50%); top: var(--hud-top); width: min(400px, calc(100vw - 12px)); z-index: 1; border-color: var(--gold); font-size: 14px; line-height: 1.4; }
 .tutorial p { margin: 4px 0 0; }

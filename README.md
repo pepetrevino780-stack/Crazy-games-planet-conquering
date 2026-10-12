@@ -38,6 +38,8 @@ npm start            # http://localhost:8080
 | Abilities | `7` `8` `9` | Build bar |
 | Leaderboard / Objectives | `L` / `O` | Top bar |
 | Center on capital / Pause | `C` / `Space` | Top bar |
+| Explain anything | Hover it (map tiles, tools, resources, buttons) | Long-press |
+| Pin a tile's details | Click it | Tap |
 
 ## The campaign
 

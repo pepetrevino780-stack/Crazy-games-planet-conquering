@@ -131,7 +131,7 @@
         <div class="hud-box hud-status">
           <button id="obj-toggle" class="obj-line" title="Objectives (O)"><span id="hud-objective"></span><span id="obj-count"></span></button>
           <div class="progress"><i id="hud-progress"></i></div>
-          <div class="status-row"><span id="hud-time" class="chip">0:00</span><span id="hud-event" class="chip hidden"></span><span id="hud-intel" class="chip hidden"></span></div>
+          <div class="status-row"><span id="hud-time" class="chip" data-tip="Battle time. Beat the par time for a third star.">0:00</span><span id="hud-event" class="chip hidden" data-tip-fn="event"></span><span id="hud-intel" class="chip hidden" data-tip="Progress toward this world's main strategic goal."></span></div>
         </div>
         <div class="hud-box hud-controls">
           <button id="btn-pause" class="btn icon" title="Pause (Space)"><img data-icon="pause" alt=""></button>
@@ -147,13 +147,13 @@
 
       <div id="empire" class="hud-box empire">
         <button id="empire-toggle" class="drawer-tab" title="Empire">&lt;</button>
-        <div class="stat big"><img data-icon="troops" alt=""><span>Troops</span><b id="st-troops">0</b></div>
+        <div class="stat big" data-tip-fn="stat" data-stat="troops"><img data-icon="troops" alt=""><span>Troops</span><b id="st-troops">0</b></div>
         <div class="stat sub"><span></span><small id="st-troops-sub"></small></div>
-        <div class="stat"><img data-icon="minerals" alt=""><span>Minerals</span><b id="st-minerals">0</b><small id="st-minerals-rate"></small></div>
-        <div class="stat"><img data-icon="energy" alt=""><span>Energy</span><b id="st-energy">0</b><small id="st-energy-rate"></small></div>
-        <div class="stat"><img data-icon="exotic" alt=""><span>Exotic</span><b id="st-exotic">0</b><small id="st-exotic-rate"></small></div>
-        <div class="stat"><img data-icon="territory" alt=""><span>Land</span><b id="st-land">0</b><small id="st-land-share"></small></div>
-        <label class="ratio">
+        <div class="stat" data-tip-fn="stat" data-stat="minerals"><img data-icon="minerals" alt=""><span>Minerals</span><b id="st-minerals">0</b><small id="st-minerals-rate"></small></div>
+        <div class="stat" data-tip-fn="stat" data-stat="energy"><img data-icon="energy" alt=""><span>Energy</span><b id="st-energy">0</b><small id="st-energy-rate"></small></div>
+        <div class="stat" data-tip-fn="stat" data-stat="exotic"><img data-icon="exotic" alt=""><span>Exotic</span><b id="st-exotic">0</b><small id="st-exotic-rate"></small></div>
+        <div class="stat" data-tip-fn="stat" data-stat="land"><img data-icon="territory" alt=""><span>Land</span><b id="st-land">0</b><small id="st-land-share"></small></div>
+        <label class="ratio" data-tip-fn="stat" data-stat="ratio">
           <span>Attack ratio <b id="ratio-label">20% (0)</b></span>
           <input id="ratio" type="range" min="5" max="100" step="5" value="20">
         </label>
@@ -230,6 +230,7 @@
       </div>
     </div>
 
+    <div id="tooltip" class="tooltip hidden" role="tooltip"></div>
     <div id="modal-confirm" class="overlay hidden">
       <div class="panel dialog">
         <p id="confirm-text"></p>

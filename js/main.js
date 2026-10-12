@@ -488,7 +488,8 @@ function buildToolbar() {
     const b = document.createElement('button');
     b.className = 'btn tool' + (t.locked ? ' locked' : '');
     b.dataset.kind = t.kind; b.dataset.id = t.id;
-    b.title = t.kind === 'build' ? `${BUILDINGS[t.id].name}: ${BUILDINGS[t.id].desc}` : t.label;
+    b.dataset.tipFn = 'tool';
+    b.setAttribute('aria-label', t.kind === 'build' ? `${BUILDINGS[t.id].name}: ${BUILDINGS[t.id].desc}` : t.label);
     b.innerHTML = `<span class="key">${t.key}</span><img src="${t.icon}" alt=""><span class="label">${esc(t.label)}</span><span class="cost"></span>${t.kind === 'ability' ? '<span class="cd"></span>' : ''}`;
     b.onclick = () => activateTool(t.kind, t.id);
     bar.appendChild(b);
@@ -591,6 +592,153 @@ function updateObjectives() {
   if (html !== objKey) { objKey = html; $('#objectives').innerHTML = html; }
 }
 
+// ---------- Tooltips ----------
+// Anything with data-tip (static text) or data-tip-fn (live content) gets a
+// tooltip that follows the pointer. Map tiles get one too. On touch screens a
+// long press (450 ms) shows it and swallows the tap.
+
+let tipSource = null;       // the element (or 'map') the tooltip describes
+let tipXY = { x: 0, y: 0 };
+let swallowClick = false;
+let pressTimer = 0;
+const LONG_PRESS = 450;
+
+const STAT_TIPS = {
+  troops: f => `<b>Troops</b><br>Your army: one pool for attacks and defence. The cap (${fmt(maxTroops(battle, f))}) grows with land and Habitats. Regrows +${fmt(regen(battle, f))}/s, fastest when well below the cap.`,
+  minerals: f => `<b>Minerals</b><br>Spend on buildings and dropships. +${income(battle, f).minerals.toFixed(1)}/s from your land, Extractors and vents.`,
+  energy: f => `<b>Energy</b><br>Powers abilities (7, 8, 9). +${income(battle, f).energy.toFixed(1)}/s from vents and other sites.`,
+  exotic: f => `<b>Exotic matter</b><br>Spend on research (R). +${income(battle, f).exotic.toFixed(1)}/s from Research Spires.`,
+  land: f => `<b>Land</b><br>${fmt(f.tiles)} tiles, ${((f.tiles / world(battle).landCount) * 100).toFixed(1)}% of the planet. More land means a higher troop cap and more minerals.`,
+  ratio: f => `<b>Attack ratio</b><br>Share of your army sent with each attack: now ${fmt(f.troops * ratio)} troops. <kbd>[</kbd> <kbd>]</kbd> adjust it.`,
+};
+
+const TIP_FNS = {
+  tool(el) {
+    const { kind, id } = el.dataset;
+    const f = battle.factions[PLAYER];
+    if (kind === 'build') {
+      const b = BUILDINGS[id], c = buildCost(battle, PLAYER, id);
+      return `<b>${esc(b.name)}</b> <kbd>${b.key}</kbd><br>${esc(b.desc)}<br><span class="${f.minerals >= c ? 'ok' : 'no'}">Cost ${fmt(c)} minerals</span> (you have ${fmt(f.minerals)}). Each one you own costs more.`;
+    }
+    if (kind === 'dropship') return `<b>Dropship</b> <kbd>6</kbd><br>Send your attack ratio of troops to land anywhere, even across the sea. Needs a Starport.${canDropship(battle) ? '' : ' <span class="no">You have no Starport.</span>'}<br>Cost ${DROPSHIP_COST} minerals.`;
+    if (kind === 'research') return `<b>Research</b> <kbd>R</kbd><br>Spend exotic matter on upgrades that last this battle. You have ${fmt(f.exotic)} exotic.`;
+    const a = ABILITIES[id], u = UPGRADES.find(x => x.id === id);
+    const owned = f.abilities.includes(id);
+    return `<b>${esc(a.name)}</b> <kbd>${a.key}</kbd><br>${esc(u.desc.replace(/^Ability: (.)/, (_, c) => c.toUpperCase()))}<br>Cooldown ${Math.round(a.cooldown * (f.cooldown || 1))}s.${owned ? '' : ' <span class="no">Unlock it in Command upgrades.</span>'}`;
+  },
+  stat(el) { return STAT_TIPS[el.dataset.stat](battle.factions[PLAYER]); },
+  event() {
+    const ev = eventPhase(battle);
+    return ev.type ? `<b>${esc(EVENT_TEXT[ev.type].name)}</b><br>${esc(EVENT_TEXT[ev.type].start)}` : '';
+  },
+};
+
+function tipHtml(el) {
+  if (el.dataset.tipFn) return battle && TIP_FNS[el.dataset.tipFn] ? TIP_FNS[el.dataset.tipFn](el) : '';
+  return esc(el.dataset.tip || '');
+}
+
+// What a map tile is: owner and personality, terrain cost and defence, nearby site or building.
+function tileTip(i) {
+  const w = world(battle);
+  const t = w.terrain[i];
+  const x = i % battle.w, y = (i - x) / battle.w;
+  const o = battle.owner[i];
+  const f = o ? battle.factions[o] : null;
+  const names = THEMES[battle.theme].names;
+  const ter = TERRAIN[t];
+  const parts = [];
+  if (f) {
+    const p = persona(f);
+    parts.push(`<b style="color:${f.color}">${esc(o === PLAYER ? 'Your empire' : f.name)}</b>${p ? ` · ${esc(p.name)}` : ''}<br>${fmt(f.tiles)} tiles · ${fmt(f.troops)} troops`);
+    if (p) parts.push(`<span class="dim">${esc(p.desc)}</span>`);
+  } else if (isLand(t)) parts.push('<b>Unclaimed wilderness</b>');
+  if (isLand(t)) parts.push(`${esc(names[ter.id])}: attack cost ×${ter.cost} · defence ×${tileDefense(battle, i).toFixed(2)}`);
+  else parts.push(`<b>${esc(names[ter.id])}</b><br>Water. Cross it with a dropship from a Starport.`);
+  const site = battle.sites.find(s => Math.abs(s.x - x) <= 2 && Math.abs(s.y - y) <= 2);
+  if (site) parts.push(`<b>${esc(site.name)}</b>: ${esc(SITE_TYPES[site.type].desc)}`);
+  const bld = battle.buildings.find(b => Math.abs(b.x - x) <= 2 && Math.abs(b.y - y) <= 2);
+  if (bld) parts.push(`<b>${esc(BUILDINGS[bld.type].name)}</b>${bld.level > 1 ? ` (level ${bld.level})` : ''}: ${esc(BUILDINGS[bld.type].desc)}`);
+  if (battle.status === 'playing' && isLand(t) && o !== PLAYER && !armed) parts.push(`<span class="ok">Click to attack with ${fmt(battle.factions[PLAYER].troops * ratio)} troops.</span>`);
+  return parts.join('<br>');
+}
+
+function showTooltip(html, x, y) {
+  const el = $('#tooltip');
+  if (!html) { hideTooltip(); return; }
+  if (el.innerHTML !== html) el.innerHTML = html;
+  el.classList.remove('hidden');
+  placeTooltip(x, y);
+}
+
+function placeTooltip(x, y) {
+  tipXY = { x, y };
+  const el = $('#tooltip');
+  const r = el.getBoundingClientRect();
+  let left = x + 12, top = y + 12;
+  if (left + r.width > window.innerWidth - 4) left = x - 12 - r.width;
+  if (top + r.height > window.innerHeight - 4) top = y - 12 - r.height;
+  el.style.left = `${Math.max(4, Math.round(left))}px`;
+  el.style.top = `${Math.max(4, Math.round(top))}px`;
+}
+
+function hideTooltip() {
+  $('#tooltip').classList.add('hidden');
+  tipSource = null;
+}
+
+// Called with the HUD refresh so costs, rates and the hovered tile stay live.
+function refreshTooltip() {
+  if (tipSource && tipSource !== 'map') {
+    if (!tipSource.isConnected || tipSource.closest('.hidden')) hideTooltip();
+    else showTooltip(tipHtml(tipSource), tipXY.x, tipXY.y);
+  } else if (tipSource === 'map') {
+    if (hoverTile >= 0 && battle && battle.status !== 'spawn' && !gesture?.moved) showTooltip(tileTip(hoverTile), tipXY.x, tipXY.y);
+    else hideTooltip();
+  }
+}
+
+function initTooltips() {
+  // Native title tooltips would double up with ours.
+  document.querySelectorAll('[title]').forEach(el => {
+    el.dataset.tip = el.title;
+    if (!el.getAttribute('aria-label')) el.setAttribute('aria-label', el.title);
+    el.removeAttribute('title');
+  });
+  const tipTarget = e => e.target.closest?.('[data-tip], [data-tip-fn]');
+  document.addEventListener('pointerover', e => {
+    if (e.pointerType === 'touch') return;
+    const el = tipTarget(e);
+    if (el) { tipSource = el; showTooltip(tipHtml(el), e.clientX, e.clientY); }
+    else if (e.target.id === 'canvas' && battle) tipSource = 'map';
+    else if (tipSource) hideTooltip();
+  });
+  document.addEventListener('pointermove', e => {
+    if (e.pointerType === 'touch') return;
+    if (tipSource === 'map') { tipXY = { x: e.clientX, y: e.clientY }; refreshTooltip(); }
+    else if (tipSource) placeTooltip(e.clientX, e.clientY);
+  });
+  document.documentElement.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') hideTooltip(); });
+  // Touch: long press shows the tooltip and swallows the tap that follows.
+  document.addEventListener('pointerdown', e => {
+    if (!$('#tooltip').classList.contains('hidden') && e.pointerType === 'touch') hideTooltip();
+    if (e.pointerType !== 'touch') return;
+    const el = tipTarget(e);
+    if (!el) return;
+    const { clientX: x, clientY: y } = e;
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => { tipSource = el; swallowClick = true; showTooltip(tipHtml(el), x, y - 40); }, LONG_PRESS);
+  }, true);
+  const cancelPress = () => clearTimeout(pressTimer);
+  document.addEventListener('pointerup', cancelPress, true);
+  document.addEventListener('pointercancel', cancelPress, true);
+  document.addEventListener('click', e => {
+    if (!swallowClick) return;
+    swallowClick = false;
+    e.preventDefault(); e.stopPropagation();
+  }, true);
+}
+
 // ---------- Enemy intent ----------
 // Scouting decides how much you see: the main enemy's attacks on you are
 // always marked; independent nations' need scouting level 1. Level 1 adds
@@ -682,7 +830,7 @@ function updateTutorial() {
   const key = `${battle.tutorial}`;
   if (key !== tutKey) {
     tutKey = key;
-    card.innerHTML = `<div class="tut-head"><span>TRAINING ${battle.tutorial + 1}/${steps.length}</span><button class="btn small ghost" id="btn-tut-skip" title="Unlock everything and stop the training">Skip</button></div><p>${esc(step.text)}</p>`;
+    card.innerHTML = `<div class="tut-head"><span>TRAINING ${battle.tutorial + 1}/${steps.length}</span><button class="btn small ghost" id="btn-tut-skip" data-tip="Unlock every tool and stop the training.">Skip</button></div><p>${esc(step.text)}</p>`;
     $('#btn-tut-skip').onclick = () => { skipTutorial(battle); sfx.click(); toast('Training skipped. Everything is unlocked; the field manual (?) has the details.', 'tip', 4000); updateHud(true); };
     card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash');
     tutPointer = null; tutPointerAt = 0;
@@ -702,13 +850,14 @@ function updateBoard() {
   if ($('#board').classList.contains('hidden')) return;
   const land = world(battle).landCount;
   const rows = battle.factions.filter(f => f && f.alive).sort((a, b) => b.tiles - a.tiles).slice(0, 10);
-  $('#board').innerHTML = `<table><tr><th>#</th><th>Civilization</th><th>Land</th><th>Troops</th></tr>${rows.map((f, i) => `<tr class="${f.id === PLAYER ? 'me' : ''}"><td>${i + 1}</td><td><span class="sw" style="background:${f.color}"></span>${esc(f.id === PLAYER ? 'You' : f.name)}${persona(f) ? `<small class="persona" title="${esc(persona(f).desc)}">${esc(persona(f).name)}</small>` : ''}</td><td>${((f.tiles / land) * 100).toFixed(1)}%</td><td>${fmt(f.troops)}</td></tr>`).join('')}</table>`;
+  $('#board').innerHTML = `<table><tr><th>#</th><th>Civilization</th><th>Land</th><th>Troops</th></tr>${rows.map((f, i) => `<tr class="${f.id === PLAYER ? 'me' : ''}"><td>${i + 1}</td><td><span class="sw" style="background:${f.color}"></span>${esc(f.id === PLAYER ? 'You' : f.name)}${persona(f) ? `<small class="persona" data-tip="${esc(persona(f).desc)}">${esc(persona(f).name)}</small>` : ''}</td><td>${((f.tiles / land) * 100).toFixed(1)}%</td><td>${fmt(f.troops)}</td></tr>`).join('')}</table>`;
 }
 
 function updateInspector() {
   const el = $('#inspector');
-  const i = hoverTile >= 0 ? hoverTile : inspectTile;
-  if (!battle || i < 0 || battle.status === 'spawn' || (inspectorClosed && hoverTile < 0)) { el.classList.add('hidden'); return; }
+  // Hovering shows a tooltip; the inspector is the pinned card for a clicked tile.
+  const i = inspectTile;
+  if (!battle || i < 0 || battle.status === 'spawn' || inspectorClosed) { el.classList.add('hidden'); return; }
   const w = world(battle);
   const t = w.terrain[i];
   const x = i % battle.w, y = (i - x) / battle.w;
@@ -744,7 +893,7 @@ function updateInspector() {
   }
   if (o !== PLAYER && isLand(t) && battle.status === 'playing') html += `<div class="tags">Click to attack with ${fmt(me.troops * ratio)} troops.</div>`;
   if (o === PLAYER) html += '<div class="tags">Your land. Press 1–5 to build here.</div>';
-  el.innerHTML = '<button class="close" title="Close" aria-label="Close">x</button>' + html;
+  el.innerHTML = '<button class="close" aria-label="Close">x</button>' + html;
   el.querySelector('.close').onclick = () => { inspectTile = -1; inspectorClosed = true; el.classList.add('hidden'); };
   el.classList.remove('hidden');
 }
@@ -794,6 +943,7 @@ function updateHud(force = false) {
   if (battle.status === 'spawn') sb.innerHTML = `CHOOSE YOUR LANDING SITE<small>Click open land on the main continent · auto-landing in ${Math.ceil(battle.spawnLeft)}s</small>`;
   if (battle.status === 'playing') updateIntents(); else intents = [];
   updateTutorial();
+  refreshTooltip();
   updateObjectives();
   updateBoard();
   updateToolbar();
@@ -910,6 +1060,18 @@ function onDown(e) {
     gesture = { pinch: true, dist: Math.hypot(a.x - b.x, a.y - b.y), moved: true };
   } else {
     gesture = { x: p.x, y: p.y, lx: p.x, ly: p.y, t: performance.now(), moved: false, pinch: false, type: e.pointerType };
+    if (e.pointerType === 'touch') {
+      const g = gesture, cx = e.clientX, cy = e.clientY;
+      // Long press on the map: describe the tile instead of acting on it.
+      setTimeout(() => {
+        if (gesture !== g || g.moved || pointers.size !== 1 || !battle || battle.status === 'spawn') return;
+        const i = renderer.screenToTile(g.x, g.y);
+        if (i < 0) return;
+        g.longPress = true;
+        tipSource = null;
+        showTooltip(tileTip(i), cx, cy - 60);
+      }, LONG_PRESS);
+    }
   }
 }
 
@@ -944,7 +1106,7 @@ function onUp(e) {
   if (pointers.size === 0) gesture = null;
   // A tap only counts when the finger did not move and no pinch happened:
   // panning the map never launches an attack by accident.
-  if (!g || g.pinch || g.moved || e.button === 2 || performance.now() - g.t > 700) return;
+  if (!g || g.pinch || g.moved || g.longPress || e.button === 2 || performance.now() - g.t > 700) return;
   const i = renderer.screenToTile(p.x, p.y);
   if (i >= 0) clickTile(i);
 }
@@ -965,7 +1127,8 @@ function clickTile(i) {
   else if (battle.owner[i] === PLAYER) { inspectTile = inspectTile === i ? -1 : i; sfx.click(); return; }
   else {
     res = playerAttack(battle, i, ratio);
-    if (res.ok) { sfx.attack(); renderer.pop(x, y, `-${fmt(res.sent)}`, '#ffe9a8'); if (!lastPointerTouch) inspectTile = i; tip('ratio', 'Troops regrow fastest when your army is well below its cap. Big attacks are not wasted.'); }
+    if (!lastPointerTouch) inspectTile = i; // pin the clicked tile's card
+    if (res.ok) { sfx.attack(); renderer.pop(x, y, `-${fmt(res.sent)}`, '#ffe9a8'); tip('ratio', 'Troops regrow fastest when your army is well below its cap. Big attacks are not wasted.'); }
   }
   if (res && !res.ok) { sfx.error(); toast(REASONS[res.reason] || 'You cannot do that.', 'bad', 2600); }
   else if (res && res.ok && armed && armed.kind !== 'dropship') armed = null;
@@ -1118,6 +1281,7 @@ async function init() {
   renderer = new MapRenderer($('#canvas'));
   renderer.onImpact = small => (small ? sfx.thud() : sfx.crash());
   applyIcons();
+  initTooltips();
   // Menus sit on a dimmed pixel starfield.
   $('#app').style.backgroundImage = `linear-gradient(rgba(6,5,12,0.55), rgba(6,5,12,0.75)), url(${backdropCanvas('noctyra', 320, 180).toDataURL()})`;
 
@@ -1179,7 +1343,7 @@ async function init() {
   c.addEventListener('pointermove', onMove);
   c.addEventListener('pointerup', onUp);
   c.addEventListener('pointercancel', e => { pointers.delete(e.pointerId); gesture = null; });
-  c.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hoverTile = -1; });
+  c.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { hoverTile = -1; if (tipSource === 'map') hideTooltip(); } });
   c.addEventListener('contextmenu', e => e.preventDefault());
   c.addEventListener('wheel', e => { e.preventDefault(); const p = canvasXY(e); renderer.zoomBy(e.deltaY < 0 ? 1 : -1, p.x, p.y); }, { passive: false });
 
