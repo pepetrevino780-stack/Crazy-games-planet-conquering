@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#07060f">
+  <title>Planet Conquest</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Title -->
+    <section id="screen-title" class="screen active">
+      <div class="title-wrap">
+        <h1>PLANET<br><span>CONQUEST</span></h1>
+        <p class="subtitle">Five worlds. Five lessons. Become a commander.</p>
+        <div class="menu">
+          <button id="btn-resume" class="btn primary hidden">Resume battle</button>
+          <button id="btn-continue" class="btn primary">Start campaign</button>
+          <button id="btn-new" class="btn ghost hidden">New campaign</button>
+        </div>
+        <p class="hint">Progress is saved automatically in this browser.</p>
+      </div>
+    </section>
+
+    <!-- Campaign map -->
+    <section id="screen-campaign" class="screen">
+      <header class="bar">
+        <button class="btn small ghost" data-nav="title">&larr; Menu</button>
+        <h2>Campaign</h2>
+        <div class="cores" title="Stellar Cores: spend them on permanent upgrades"><span class="core-icon"></span><b id="cores-campaign">0</b></div>
+      </header>
+      <div class="campaign-body">
+        <ol id="planet-list" class="planet-list"></ol>
+        <div class="campaign-side">
+          <button id="btn-resume-campaign" class="btn primary wide hidden">Resume battle</button>
+          <button id="btn-upgrades" class="btn primary wide">Command upgrades</button>
+          <label class="field">Difficulty
+            <select id="sel-difficulty">
+              <option value="cadet">Cadet (slower enemies)</option>
+              <option value="commander">Commander</option>
+              <option value="warlord">Warlord (sharper enemies)</option>
+            </select>
+          </label>
+          <label class="field check"><input type="checkbox" id="chk-tips"> Show contextual tips</label>
+          <button id="btn-reset" class="btn small danger">Reset campaign</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Upgrades -->
+    <section id="screen-upgrades" class="screen">
+      <header class="bar">
+        <button class="btn small ghost" data-nav="campaign">&larr; Campaign</button>
+        <h2>Command Upgrades</h2>
+        <div class="cores"><span class="core-icon"></span><b id="cores-upgrades">0</b></div>
+      </header>
+      <div class="scroll">
+        <p class="note">Upgrades are permanent and carry into every planet. They give an edge, not a win: each world still demands its own strategy.</p>
+        <h3>Doctrine</h3>
+        <ul id="upgrade-list" class="card-list"></ul>
+        <h3>Alien civilizations</h3>
+        <ul id="civ-list" class="card-list"></ul>
+      </div>
+    </section>
+
+    <!-- Briefing -->
+    <section id="screen-briefing" class="screen">
+      <header class="bar">
+        <button class="btn small ghost" data-nav="campaign">&larr; Campaign</button>
+        <h2 id="brief-title">Planet</h2>
+        <span></span>
+      </header>
+      <div class="scroll brief">
+        <p class="lesson-tag" id="brief-lesson"></p>
+        <p class="tagline" id="brief-tagline"></p>
+        <div class="brief-grid">
+          <div>
+            <h3>Victory</h3>
+            <ul id="brief-victory" class="bullets"></ul>
+            <h3>Enemy</h3>
+            <p id="brief-enemy"></p>
+            <p id="brief-assist" class="assist hidden"></p>
+          </div>
+          <div>
+            <h3>Field notes</h3>
+            <ul id="brief-notes" class="bullets"></ul>
+          </div>
+        </div>
+        <button id="btn-launch" class="btn primary wide">Begin invasion</button>
+      </div>
+    </section>
+
+    <!-- Battle -->
+    <section id="screen-battle" class="screen">
+      <canvas id="canvas"></canvas>
+      <div class="hud-top">
+        <div class="hud-title">
+          <b id="hud-planet"></b>
+          <span id="hud-lesson"></span>
+        </div>
+        <div id="hud-event" class="chip hidden"></div>
+        <div id="hud-intel" class="chip hidden"></div>
+        <div class="hud-buttons">
+          <span id="hud-time" class="chip">0:00</span>
+          <button id="btn-speed" class="btn icon" title="Game speed">1&times;</button>
+          <button id="btn-help" class="btn icon" title="Planet mechanics">?</button>
+          <button id="btn-pause" class="btn icon" title="Pause (Space)">&#10073;&#10073;</button>
+        </div>
+      </div>
+      <div id="objectives" class="objectives">
+        <button id="obj-toggle" class="obj-head"><span>Objectives <span id="obj-count"></span></span><span id="obj-current" class="obj-current"></span></button>
+        <div id="obj-body"></div>
+      </div>
+      <div id="inspector" class="inspector hidden"></div>
+      <div id="toasts" class="toasts"></div>
+      <div class="hud-bottom">
+        <div class="ratios" role="group" aria-label="Attack ratio">
+          <span class="lbl">Send</span>
+          <button class="btn ratio" data-ratio="0.25">25%</button>
+          <button class="btn ratio active" data-ratio="0.5">50%</button>
+          <button class="btn ratio" data-ratio="0.75">75%</button>
+          <button class="btn ratio" data-ratio="1">100%</button>
+        </div>
+        <div id="abilities" class="abilities"></div>
+      </div>
+
+      <div id="overlay-pause" class="overlay hidden">
+        <div class="panel">
+          <h2>Paused</h2>
+          <p class="note">Your battle is saved. You can close the game and resume later.</p>
+          <button id="btn-resume-battle" class="btn primary wide">Resume</button>
+          <button id="btn-restart" class="btn wide">Restart planet</button>
+          <button id="btn-quit" class="btn ghost wide">Save &amp; exit to campaign</button>
+        </div>
+      </div>
+      <div id="overlay-help" class="overlay hidden">
+        <div class="panel">
+          <h2 id="help-title">Mechanics</h2>
+          <div id="help-body" class="help-body"></div>
+          <button id="btn-help-close" class="btn primary wide">Back to battle</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Debrief -->
+    <section id="screen-debrief" class="screen">
+      <div class="scroll debrief">
+        <h2 id="debrief-title"></h2>
+        <p id="debrief-sub" class="tagline"></p>
+        <div id="debrief-body"></div>
+        <div class="menu row">
+          <button id="btn-debrief-primary" class="btn primary"></button>
+          <button id="btn-debrief-secondary" class="btn"></button>
+        </div>
+      </div>
+    </section>
+
+    <div id="modal-confirm" class="overlay hidden">
+      <div class="panel">
+        <p id="confirm-text"></p>
+        <div class="menu row">
+          <button id="confirm-yes" class="btn danger">Confirm</button>
+          <button id="confirm-no" class="btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
