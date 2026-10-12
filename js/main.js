@@ -13,11 +13,16 @@ import {
   countOwned, growthRate, supplyCap, totalTroops, empActive,
 } from './rules.js';
 import { makeView, render, hitTest, validTargetsFor } from './render.js';
+import { titleScene } from './art/backdrop.js';
+import {
+  initPlatform, platformActive, platformStorage, setAdHandlers, loadingStart, loadingStop,
+  gameplayStart, gameplayStop, happytime, midgameAd, rewardedAd,
+} from './platform.js';
 
 const $ = sel => document.querySelector(sel);
-const storage = (() => { try { return window.localStorage; } catch { return null; } })();
-
-let campaign = loadCampaign(storage) || null;
+// Set in init(): the portal's cloud-synced save store, or localStorage.
+let storage = null;
+let campaign = null;
 let battle = null;
 let view = null;
 let ratio = 0.5;
@@ -31,6 +36,8 @@ let lastSave = 0;
 let seenTips = new Set();
 let lastEventWarn = false;
 let inspectedId = null;
+let adPlaying = false;
+let battlesEnded = 0; // ad breaks only come after the player has played
 
 const EVENT_TEXT = {
   eruption: { warn: 'Eruption soon', active: 'Eruption: vents surge', start: 'The vents erupt! Magma vents produce troops much faster for a few seconds.' },
@@ -84,7 +91,12 @@ function confirmBox(text) {
   });
 }
 
+let titleArt = null;
 function renderTitle() {
+  if (!titleArt) {
+    titleArt = titleScene(320, 180).toDataURL();
+    $('#screen-title').style.backgroundImage = `linear-gradient(rgba(5,3,12,0.35), rgba(5,3,12,0.55)), url(${titleArt})`;
+  }
   const hasSave = !!campaign;
   $('#btn-continue').textContent = hasSave ? 'Continue campaign' : 'Start campaign';
   $('#btn-new').classList.toggle('hidden', !hasSave);
@@ -186,6 +198,13 @@ function openBriefing(planetId) {
 
 // ---------- Battle lifecycle ----------
 
+// Start a battle after a natural break, offering the portal an ad slot first.
+// Never before the session's first battle; the SDK also rate-limits ads.
+async function beginBattle(planetId) {
+  if (battlesEnded > 0) await midgameAd();
+  startBattle(planetId);
+}
+
 function startBattle(planetId) {
   const rec = campaign.planets[planetId];
   rec.attempts += 1;
@@ -244,6 +263,7 @@ function resumeBattle() {
 }
 
 function endBattle() {
+  gameplayStop();
   const p = getPlanet(battle.planetId);
   const won = battle.status === 'won';
   const body = $('#debrief-body');
@@ -252,6 +272,7 @@ function endBattle() {
     const rewards = computeRewards(campaign, p, result);
     applyVictory(campaign, p, result, rewards);
     persist();
+    happytime();
     const idx = PLANETS.indexOf(p);
     $('#debrief-title').textContent = `${p.name} conquered`;
     $('#debrief-sub').textContent = `Lesson learned: ${p.lesson} · ${fmtTime(result.time)}`;
@@ -259,9 +280,25 @@ function endBattle() {
     const next = PLANETS[idx + 1];
     body.innerHTML = `
       <table class="reward-table">${rows}<tr class="total"><td>Stellar Cores earned</td><td>+${rewards.total}</td></tr></table>
+      ${platformActive() ? `<p class="reward-ad"><button id="btn-reward-ad" class="btn">Watch an ad: +${Math.ceil(rewards.total / 2)} bonus cores</button></p>` : ''}
       <h3>Skills proven</h3><ul class="bullets">${p.lessons.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
       ${next ? `<p class="note">Next: <b>${esc(next.name)}</b> — ${esc(next.lesson)}. Spend your cores on upgrades before you launch.</p>`
         : '<p class="note">You have mastered all five lessons. The sector is yours, Commander.</p>'}`;
+    const adBtn = $('#btn-reward-ad');
+    if (adBtn) {
+      const bonus = Math.ceil(rewards.total / 2);
+      adBtn.onclick = async () => {
+        adBtn.disabled = true;
+        if (await rewardedAd()) {
+          campaign.cores += bonus;
+          campaign.totalEarned += bonus;
+          persist();
+          adBtn.textContent = `+${bonus} bonus cores added`;
+        } else {
+          adBtn.textContent = 'No ad available right now';
+        }
+      };
+    }
     $('#btn-debrief-primary').textContent = 'Command upgrades';
     $('#btn-debrief-primary').onclick = () => show('upgrades');
     $('#btn-debrief-secondary').textContent = next ? `Brief ${next.name}` : 'Campaign';
@@ -278,11 +315,12 @@ function endBattle() {
       <h3>This planet tests</h3><ul class="bullets">${p.lessons.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
       ${assist ? `<p class="assist">Adaptive assist ${assist}/3 active for your next attempt.</p>` : ''}`;
     $('#btn-debrief-primary').textContent = 'Retry';
-    $('#btn-debrief-primary').onclick = () => startBattle(p.id);
+    $('#btn-debrief-primary').onclick = () => beginBattle(p.id);
     $('#btn-debrief-secondary').textContent = 'Campaign';
     $('#btn-debrief-secondary').onclick = () => show('campaign');
   }
   battle = null;
+  battlesEnded++;
   show('debrief');
 }
 
@@ -649,12 +687,19 @@ function resize() {
   view.dpr = dpr;
 }
 
+// Tell the portal when the player is actually playing.
+function syncGameplay() {
+  const playing = !!battle && battle.status === 'playing' && !paused && !adPlaying && !document.hidden;
+  if (playing) gameplayStart(); else gameplayStop();
+}
+
 function frame(ts) {
   requestAnimationFrame(frame);
+  syncGameplay();
   const dt = Math.min(0.25, (ts - (lastFrame || ts)) / 1000);
   lastFrame = ts;
   if (!battle || !view) return;
-  if (!paused) {
+  if (!paused && !adPlaying) {
     accumulator += dt * speed;
     while (accumulator >= TICK) {
       step(battle, TICK);
@@ -683,7 +728,15 @@ function frame(ts) {
 
 // ---------- Wiring ----------
 
-function init() {
+async function init() {
+  await initPlatform();
+  loadingStart();
+  storage = platformStorage();
+  campaign = loadCampaign(storage) || null;
+  setAdHandlers({
+    pause: () => { adPlaying = true; },
+    resume: () => { adPlaying = false; lastFrame = 0; },
+  });
   document.querySelectorAll('[data-nav]').forEach(b => { b.onclick = () => show(b.dataset.nav); });
   $('#btn-continue').onclick = () => {
     if (!campaign) { campaign = newCampaign(); persist(); }
@@ -708,7 +761,7 @@ function init() {
     const saved = campaign.battle;
     if (saved && !(await confirmBox(`Abandon your saved battle on ${getPlanet(saved.planetId).name}?`))) return;
     campaign.battle = null;
-    startBattle(briefingPlanet);
+    beginBattle(briefingPlanet);
   };
   $('#btn-pause').onclick = () => togglePause();
   $('#btn-resume-battle').onclick = () => togglePause(false);
@@ -740,11 +793,15 @@ function init() {
   c.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') ui.hover = null; });
   c.addEventListener('contextmenu', e => e.preventDefault());
 
+  // Keep the embedding page from scrolling on game keys.
+  window.addEventListener('keydown', e => {
+    if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) e.preventDefault();
+  });
   window.addEventListener('keydown', e => {
     if (!battle) return;
     const k = e.key.toLowerCase();
     if (['1', '2', '3', '4'].includes(k)) setRatio([0.25, 0.5, 0.75, 1][Number(k) - 1]);
-    else if (k === ' ') { e.preventDefault(); togglePause(); }
+    else if (k === ' ') togglePause();
     else if (k === 'escape') { ui.selection.clear(); armedAbility = null; inspectedId = null; }
     else if (k === 'q') armAbility('strike');
     else if (k === 'w') armAbility('rally');
@@ -757,6 +814,7 @@ function init() {
 
   show('title');
   requestAnimationFrame(frame);
+  loadingStop();
 }
 
 // Hook for automated browser tests.

@@ -1,4 +1,4 @@
-# Planet Conquest
+# Alien Worlds: Planetary Conquest
 
 A real-time territory-conquest strategy game for desktop and mobile browsers.
 The campaign is five connected planets. Each one teaches a new strategy, and the last one tests them all.
@@ -14,6 +14,8 @@ No build step and no dependencies. Serve the folder over HTTP (ES modules don't 
 npm start            # npx http-server on http://localhost:8080
 # or: python3 -m http.server 8080
 ```
+
+**Publishing on CrazyGames:** `npm run build` creates `dist/alien-worlds.zip`. See [CRAZYGAMES.md](CRAZYGAMES.md) for the SDK integration, submission settings, listing text and cover art.
 
 **Controls**
 
@@ -69,7 +71,7 @@ The cores you can earn are well short of buying everything, so you have to choos
 
 ### Saving
 
-The campaign autosaves to `localStorage`, including the battle in progress (every 5 seconds, on
+The campaign autosaves (to the CrazyGames Data module on CrazyGames, otherwise to `localStorage`), including the battle in progress (every 5 seconds, on
 pause, and when the tab is hidden or closed). Close the browser mid-battle and **Resume battle**
 continues from the same moment. The simulation is deterministic, so a resumed battle plays out
 exactly as it would have. Corrupt or outdated saves fall back to a fresh campaign without breaking the game.
@@ -85,6 +87,10 @@ js/ai.js                    NPC commander brain
 js/progression.js           rewards, upgrades, civilizations, save file
 js/render.js                canvas renderer (rotates the map on portrait screens)
 js/main.js                  screens, input, HUD, tips, autosave
+js/platform.js              CrazyGames SDK v3 wrapper (no-op elsewhere)
+js/art/                     pixel-art terrain, sprites and backdrops (redesign in progress)
+tools/build.js              builds dist/game and the upload zip
+assets/crazygames/          store cover images
 tests/campaign.test.js      automated checks for the campaign success criteria
 tools/balance.js            bot-vs-bot balance probe
 tools/production.js         production balance per map
