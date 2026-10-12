@@ -49,8 +49,10 @@ npm start            # http://localhost:8080
 | 4 | **Xythera**: Ancient Machines | Plan | Relays power automated defences; ancient factories; scarce growth | Core Foundry plus 2 factories | Axiom Directorate: tactical |
 | 5 | **Noctyra**: Eternal Eclipse | Mastery | Command nodes add enemy attack fronts; the eclipse strips the Citadel; everything returns | Conquer the Eclipse Citadel | Umbral Dominion: coordinated |
 
-Each world also has independent nations, short tutorial objectives with bonus rewards, contextual
-tips (can be turned off), and a field manual (`?`).
+On the first visit to Vulkara, a step-by-step training card teaches by doing: attack, expand, use the attack
+ratio, build, seize a vent. An arrow on the map or a glowing button shows where to act, and tools and resources
+unlock as each step introduces them (Skip unlocks everything). Each world also has independent nations, short
+objectives with bonus rewards, contextual tips (can be turned off), and a field manual (`?`) that pauses the game.
 
 **Fair difficulty:**
 - Rival civilizations start with footprints comparable to yours.

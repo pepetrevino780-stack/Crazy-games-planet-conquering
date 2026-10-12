@@ -97,6 +97,7 @@ export function createBattle(configId, loadout, opts = {}) {
     factions: [null], sites: [], buildings: [], attacks: [], dropships: [], nextId: 1,
     cooldowns: { strike: 0, rally: 0, emp: 0 }, hold: cfg.victory.conds.map(() => 0),
     objectivesDone: [], flags: {}, notices: [], ai: {}, eventWasActive: false,
+    tutorial: cfg.tutorial && opts.tutorial !== false ? 0 : -1,
     stats: {
       attacks: 0, conquered: 0, spent: 0, failedAttacks: 0, repelled: 0, lost: 0, peakTiles: 0,
       stormLoss: 0, guardedTiles: 0, shieldBlocked: 0, cappedSeconds: 0, enemyFrontsPeak: 0, lostTo: null,
@@ -228,6 +229,7 @@ export function playerAttack(state, tileIndex, ratio) {
   const res = launchAttack(state, PLAYER, target, f.troops * ratio, tileIndex);
   if (res.ok) {
     state.stats.attacks++;
+    state.flags.attacked = true;
     if (ratio >= 0.5) state.flags.ratioAttack = true;
   }
   return res;
@@ -494,6 +496,7 @@ function checkObjective(state, obj) {
   const p = state.factions[PLAYER];
   switch (obj.type) {
     case 'tiles': return p.tiles >= obj.n;
+    case 'attack': return !!state.flags.attacked;
     case 'ratioAttack': return !!state.flags.ratioAttack;
     case 'ownType': return countSites(state, obj.site, PLAYER) >= obj.n;
     case 'build': return !!state.flags['built_' + obj.building];
@@ -586,8 +589,43 @@ export function step(state, dt = TICK) {
         notice(state, 'objective', { id: obj.id });
       }
     }
+    advanceTutorial(state);
     updateVictory(state, dt * 3);
   }
+}
+
+// ---------- Tutorial ----------
+// A planet can carry a step-by-step tutorial. Each step waits for an action
+// (checked like an objective) and can unlock toolbar tools and resources.
+
+export function tutorialSteps(state) {
+  return state.tutorial >= 0 ? config(state).tutorial || [] : [];
+}
+
+export function tutorialStep(state) {
+  return tutorialSteps(state)[state.tutorial] || null;
+}
+
+function advanceTutorial(state) {
+  let step = tutorialStep(state);
+  while (step && step.waitFor && checkObjective(state, step.waitFor)) {
+    state.tutorial++;
+    notice(state, 'tutorial', { index: state.tutorial });
+    step = tutorialStep(state);
+  }
+}
+
+export function skipTutorial(state) {
+  if (state.tutorial >= 0) state.tutorial = tutorialSteps(state).length;
+}
+
+// Features the player may use right now; null means everything.
+export function tutorialUnlocked(state) {
+  const steps = tutorialSteps(state);
+  if (!(state.tutorial >= 0) || state.tutorial >= steps.length) return null;
+  const set = new Set();
+  for (let k = 0; k <= state.tutorial; k++) for (const u of steps[k].unlock || []) set.add(u);
+  return set;
 }
 
 export function advance(state, seconds) {

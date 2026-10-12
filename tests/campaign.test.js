@@ -4,6 +4,7 @@ import { PLANETS, AI_PROFILES, skirmishConfig, getPlanet } from '../js/campaign.
 import {
   createBattle, step, advance, spawnPlayer, canSpawnAt, playerAttack, playerBuild, playerDropship,
   playerResearch, useAbility, serialize, deserialize, battleResult, analyzeDefeat, PLAYER,
+  tutorialStep, tutorialUnlocked, skipTutorial,
 } from '../js/sim/engine.js';
 import {
   world, maxTroops, regen, borders, siteOwner, isShielded, isPowered, tileDefense, eventPhase, setOwner,
@@ -363,6 +364,31 @@ test('a battle saved mid-war resumes exactly where it left off', () => {
   assert.deepEqual(b.factions.map(f => f && Math.round(f.troops)), a.factions.map(f => f && Math.round(f.troops)));
   assert.deepEqual(battleResult(b), battleResult(a));
   assert.ok(JSON.stringify(c).length < 900000, 'save fits the 1MB cloud-save limit');
+});
+
+test('Vulkara training advances step by step, unlocks tools, and survives a save', () => {
+  const s = battle('vulkara');
+  freezeAI(s);
+  advance(s, 0.5);
+  assert.equal(tutorialStep(s).id, 'expand');
+  assert.equal(tutorialUnlocked(s).size, 0, 'nothing unlocked at first');
+  let target = -1;
+  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === 0 && isLand(world(s).terrain[i]) && [i - 1, i + 1, i - s.w, i + s.w].some(j => s.owner[j] === PLAYER)) { target = i; break; }
+  assert.ok(playerAttack(s, target, 0.2).ok);
+  advance(s, 0.5);
+  assert.equal(tutorialStep(s).id, 'grow');
+  advance(s, 30);
+  if (s.factions[PLAYER].tiles >= 250) assert.notEqual(tutorialStep(s).id, 'grow');
+  s.tutorial = 3;
+  assert.ok(tutorialUnlocked(s).has('habitat') && !tutorialUnlocked(s).has('energy'));
+  const b = deserialize(serialize(s));
+  assert.equal(tutorialStep(b).id, 'habitat', 'resuming continues the training');
+  skipTutorial(b);
+  assert.equal(tutorialStep(b), null);
+  assert.equal(tutorialUnlocked(b), null, 'skipping unlocks everything');
+  // Replays and other worlds have no training.
+  assert.equal(tutorialStep(battle('vulkara', { tutorial: false })), null);
+  assert.equal(tutorialStep(battle('cryonis')), null);
 });
 
 test('config lookups resolve for campaign and skirmish states', () => {

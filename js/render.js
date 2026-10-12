@@ -255,6 +255,21 @@ export class MapRenderer {
     }
   }
 
+  drawPointer(p, now, motion) {
+    const ctx = this.ctx, d = this.dpr;
+    const u = Math.max(3, Math.round(3 * d));
+    const bob = motion ? Math.round(Math.abs(Math.sin(now * 4)) * 4) * u : 0;
+    const r = (6 + (motion ? (now * 1.5) % 1 * 6 : 3)) * u;
+    this.dotCircle(p, r, '#ffe066', u, true);
+    // Pixel arrow pointing down at the target.
+    const rows = ['0111110', '0111110', '0111110', '1111111', '0111110', '0011100', '0001000'];
+    const x0 = Math.round(p.x - 3.5 * u), y0 = Math.round(p.y - (rows.length + 4) * u - bob);
+    ctx.fillStyle = '#1a1020';
+    for (let y = 0; y < rows.length; y++) for (let x = 0; x < 7; x++) if (rows[y][x] === '1') ctx.fillRect(x0 + x * u - u, y0 + y * u, u * 3, u + u);
+    ctx.fillStyle = '#ffe066';
+    for (let y = 0; y < rows.length; y++) for (let x = 0; x < 7; x++) if (rows[y][x] === '1') ctx.fillRect(x0 + x * u, y0 + y * u, u, u);
+  }
+
   ring(x, y, color, r = 10) {
     this.particles.push({ ring: true, x, y, r0: 1, r, life: 0.9, max: 0.9, color });
   }
@@ -347,6 +362,9 @@ export class MapRenderer {
         ctx.strokeRect(r.p.x - r.w / 2 - pad, r.p.y - r.h - pad, r.w + pad * 2, r.h + pad * 2);
       }
     }
+
+    // Tutorial pointer: a bouncing arrow over the tile the current step is about.
+    if (ui.pointer) this.drawPointer(T(ui.pointer.x + 0.5, ui.pointer.y + 0.5), now, motion);
 
     // Dropships.
     for (const ds of st.dropships) drawSprite('fleet', ds.x, ds.y, st.factions[ds.owner].color);

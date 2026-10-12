@@ -8,6 +8,7 @@ import {
   createBattle, step, spawnPlayer, canSpawnAt, playerAttack, playerDropship, playerBuild,
   playerResearch, useAbility, abilityReady, ABILITY_ENERGY, DROPSHIP_COST, canDropship, currentObjective,
   condProgress, battleResult, serialize, deserialize, analyzeDefeat, TICK, PLAYER,
+  tutorialStep, tutorialSteps, tutorialUnlocked, skipTutorial,
 } from './sim/engine.js';
 import {
   config, world, maxTroops, regen, income, buildCost, siteOwner, isShielded, isPowered, countSites,
@@ -261,6 +262,8 @@ function startBattle(ref) {
     assist: rec ? assistLevel(campaign, ref.configId) : 0,
     seed: Date.now() & 0x7fffffff,
     theme: ref.theme, worldSeed: ref.worldSeed,
+    // The training steps run until the planet has been cleared once.
+    tutorial: !rec?.completed,
   });
   enterBattle();
 }
@@ -372,6 +375,8 @@ function toast(html, kind = '', ms = 4200) {
 
 function tip(key, text) {
   if (!campaign.settings.tips || seenTips.has(key)) return;
+  // The training card already explains things step by step.
+  if (battle && tutorialStep(battle) && !key.startsWith('warn-')) return;
   seenTips.add(key);
   toast(`<b>Tip:</b> ${esc(text)}`, 'tip', 7000);
 }
@@ -400,8 +405,16 @@ function buildToolbar() {
   }
 }
 
+function toolUnlocked(kind, id) {
+  const open = tutorialUnlocked(battle);
+  if (!open) return true;
+  if (kind === 'ability' && !battle.factions[PLAYER].abilities.includes(id)) return false;
+  return open.has(kind === 'build' ? id : kind === 'ability' ? 'abilities' : kind);
+}
+
 function activateTool(kind, id) {
   if (!battle) return;
+  if (!toolUnlocked(kind, id)) { sfx.error(); toast('That unlocks later in your training.', 'bad', 2000); return; }
   sfx.click();
   if (kind === 'research') { openResearch(); return; }
   if (kind === 'ability' && !battle.factions[PLAYER].abilities.includes(id)) { toast(REASONS.locked, 'bad', 2500); return; }
@@ -417,6 +430,16 @@ function activateTool(kind, id) {
 
 function updateToolbar() {
   const f = battle.factions[PLAYER];
+  const open = tutorialUnlocked(battle);
+  // During training, tools and resources appear only once a step introduces them.
+  const seps = document.querySelectorAll('#toolbar .tool-sep');
+  if (seps[0]) seps[0].classList.toggle('hidden', !!open && !open.has('dropship'));
+  if (seps[1]) seps[1].classList.toggle('hidden', !!open && !open.has('abilities'));
+  $('#st-energy').closest('.stat').classList.toggle('hidden', !!open && !open.has('energy'));
+  $('#st-exotic').closest('.stat').classList.toggle('hidden', !!open && !open.has('exotic'));
+  let shown = 0;
+  document.querySelectorAll('.tool').forEach(b => { const v = toolUnlocked(b.dataset.kind, b.dataset.id); b.classList.toggle('hidden', !v); shown += v; });
+  $('#toolbar').classList.toggle('hidden', !shown);
   document.querySelectorAll('.tool').forEach(b => {
     const { kind, id } = b.dataset;
     const cost = b.querySelector('.cost');
@@ -462,7 +485,8 @@ function updateObjectives() {
   const cur = currentObjective(battle);
   const conds = cfg.victory.conds.map((c, i) => ({ c, pr: condProgress(battle, c, i) }));
   const next = conds.find(x => !x.pr.done);
-  $('#hud-objective').textContent = battle.status === 'spawn' ? 'Choose your landing site' : cur ? cur.label : next ? next.c.label + (next.pr.text || '') : '';
+  const tut = battle.status === 'playing' ? tutorialStep(battle) : null;
+  $('#hud-objective').textContent = battle.status === 'spawn' ? 'Choose your landing site' : tut ? tut.label : cur ? cur.label : next ? next.c.label + (next.pr.text || '') : '';
   $('#obj-count').textContent = `${battle.objectivesDone.length}/${cfg.objectives.length}`;
   // Victory progress bar: hold timers and land share report real progress.
   const frac = Math.max(...conds.map(x => (x.pr.done ? 1 : x.pr.frac || 0)), 0);
@@ -475,6 +499,63 @@ function updateObjectives() {
   }
   const html = parts.join('');
   if (html !== objKey) { objKey = html; $('#objectives').innerHTML = html; }
+}
+
+// ---------- Training ----------
+
+let tutPointer = null, tutPointerAt = 0, tutKey = '';
+
+function findPointer(step) {
+  const st = battle, W = st.w;
+  const cap = st.sites.find(s => s.id === 'player-capital');
+  if (!step.point || !cap) return null;
+  if (step.point.startsWith('site:')) {
+    const what = step.point.slice(5);
+    const list = st.sites.filter(s => (s.id === what || s.type === what) && siteOwner(st, s) !== PLAYER);
+    list.sort((a, b) => Math.hypot(a.x - cap.x, a.y - cap.y) - Math.hypot(b.x - cap.x, b.y - cap.y));
+    return list[0] ? { x: list[0].x, y: list[0].y } : null;
+  }
+  if (step.point !== 'frontier') return null;
+  // Keep pointing at the same tile while it is still a valid target.
+  const touches = i => st.owner[i - 1] === PLAYER || st.owner[i + 1] === PLAYER || st.owner[i - W] === PLAYER || st.owner[i + W] === PLAYER;
+  const terrain = world(st).terrain;
+  if (tutPointer) { const i = tutPointer.y * W + tutPointer.x; if (st.owner[i] === 0 && touches(i)) return tutPointer; }
+  // Otherwise the nearest unclaimed land on the border, preferring land away from the map edge.
+  let best = -1, bd = Infinity;
+  for (let y = 1; y < st.h - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      if (st.owner[i] !== 0 || !isLand(terrain[i]) || !touches(i)) continue;
+      const dd = Math.hypot(x - cap.x, y - cap.y) + (TERRAIN[terrain[i]].cost - 1) * 6;
+      if (dd < bd) { bd = dd; best = i; }
+    }
+  }
+  return best < 0 ? null : { x: best % W, y: Math.floor(best / W) };
+}
+
+function updateTutorial() {
+  const card = $('#tutorial');
+  const step = battle.status === 'playing' ? tutorialStep(battle) : null;
+  document.querySelectorAll('.glow').forEach(el => el.classList.remove('glow'));
+  if (!step) { card.classList.add('hidden'); tutPointer = null; return; }
+  const steps = tutorialSteps(battle);
+  const key = `${battle.tutorial}`;
+  if (key !== tutKey) {
+    tutKey = key;
+    card.innerHTML = `<div class="tut-head"><span>TRAINING ${battle.tutorial + 1}/${steps.length}</span><button class="btn small ghost" id="btn-tut-skip" title="Unlock everything and stop the training">Skip</button></div><p>${esc(step.text)}</p>`;
+    $('#btn-tut-skip').onclick = () => { skipTutorial(battle); sfx.click(); toast('Training skipped. Everything is unlocked; the field manual (?) has the details.', 'tip', 4000); updateHud(true); };
+    card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash');
+    tutPointer = null; tutPointerAt = 0;
+  }
+  card.classList.remove('hidden');
+  const now = performance.now();
+  if (now - tutPointerAt > 1000) { tutPointerAt = now; tutPointer = findPointer(step); }
+  const p = step.point || '';
+  if (p.startsWith('tool:')) document.querySelector(`.tool[data-id="${p.slice(5)}"]`)?.classList.add('glow');
+  if (p === 'ratio') {
+    $('#empire .ratio').classList.add('glow');
+    if ($('#empire').classList.contains('collapsed')) $('#empire-toggle').classList.add('glow');
+  }
 }
 
 function updateBoard() {
@@ -570,6 +651,7 @@ function updateHud(force = false) {
   const sb = $('#spawn-banner');
   sb.classList.toggle('hidden', battle.status !== 'spawn');
   if (battle.status === 'spawn') sb.innerHTML = `CHOOSE YOUR LANDING SITE<small>Click open land on the main continent · auto-landing in ${Math.ceil(battle.spawnLeft)}s</small>`;
+  updateTutorial();
   updateObjectives();
   updateBoard();
   updateToolbar();
@@ -606,6 +688,7 @@ function processNotices() {
       case 'objective': { const o = cfg.objectives.find(x => x.id === n.id); toast(`Objective complete: ${esc(o.label)} <b>+${o.reward}</b>`, 'good'); sfx.objective(); break; }
       case 'eventStart': toast(EVENT_TEXT[n.type].start, 'tip', 4500); sfx.alarm(); break;
       case 'built': sfx.build(); renderer.ring(n.x, n.y, '#3fd0ff', 5); break;
+      case 'tutorial': sfx.objective(); break;
       case 'research': toast(`Research complete: ${esc(RESEARCH[n.id].name)}.`, 'good'); break;
       case 'landed': if (n.owner === PLAYER) { toast('Dropship landed. Beachhead established.', 'good'); renderer.burst(n.x, n.y, '#3fd0ff'); } break;
       case 'dropFailed': if (n.owner === PLAYER) toast('The dropship was shot down on landing. Send more troops.', 'bad'); break;
@@ -789,8 +872,8 @@ function layoutHud() {
   const scr = $('#screen-battle');
   const H = window.innerHeight;
   const top = Math.round($('.hud-top').getBoundingClientRect().bottom + 6);
-  const tb = $('#toolbar').getBoundingClientRect();
-  const bottom = Math.round(H - tb.top + 6);
+  const bar = $('#toolbar');
+  const bottom = bar.classList.contains('hidden') ? 8 : Math.round(H - bar.getBoundingClientRect().top + 6);
   scr.style.setProperty('--hud-top', `${top}px`);
   scr.style.setProperty('--hud-bottom', `${bottom}px`);
   const emp = $('#empire');
@@ -839,6 +922,7 @@ function frame(ts) {
     hoverOwner: hoverTile >= 0 ? battle.owner[hoverTile] : 0,
     inspectOwner: inspectTile >= 0 ? battle.owner[inspectTile] : 0,
     highlights: new Set(cur?.highlight ? [cur.highlight] : []),
+    pointer: battle.status === 'playing' && tutorialStep(battle) ? tutPointer : null,
   });
   updateHud();
   if (ts - lastSave > 5000) saveBattle();
@@ -892,8 +976,10 @@ async function init() {
   };
   $('#btn-quit').onclick = () => { saveBattle(); battle = null; show(campaign.battle?.configId === 'skirmish' ? 'title' : 'campaign'); };
   $('#btn-help').onclick = openHelp;
-  $('#btn-help-close').onclick = () => { $('#overlay-help').classList.add('hidden'); paused = false; };
-  $('#btn-research-close').onclick = () => { $('#overlay-research').classList.add('hidden'); paused = false; };
+  // Closing an overlay resumes the game, unless the pause menu is still open.
+  const resumeUnlessPaused = () => { paused = !$('#overlay-pause').classList.contains('hidden'); };
+  $('#btn-help-close').onclick = () => { $('#overlay-help').classList.add('hidden'); resumeUnlessPaused(); };
+  $('#btn-research-close').onclick = () => { $('#overlay-research').classList.add('hidden'); resumeUnlessPaused(); };
   $('#btn-speed').onclick = () => { speed = speed === 1 ? 2 : 1; toast(`Game speed ${speed}×`, '', 1200); };
   $('#btn-sound').onclick = () => { campaign.settings.sound = !campaign.settings.sound; setSound(campaign.settings.sound); $('#btn-sound img').src = iconURL(campaign.settings.sound ? 'sound' : 'mute', 3); persist(); };
   $('#btn-board').onclick = () => { $('#board').classList.toggle('hidden'); updateBoard(); };
@@ -923,7 +1009,7 @@ async function init() {
     if (b) activateTool('build', b[0]);
     else if (a) activateTool('ability', a[0]);
     else if (k === '6') activateTool('dropship', 'dropship');
-    else if (k === 'r') openResearch();
+    else if (k === 'r') activateTool('research', 'research');
     else if (k === ' ') togglePause();
     else if (k === 'escape') { armed = null; inspectTile = -1; }
     else if (k === 'l') $('#btn-board').click();
@@ -953,6 +1039,7 @@ window.__planetConquest = {
   campaign: () => campaign,
   renderer: () => renderer,
   tileToCss: (x, y) => renderer.tileToCss(x, y),
+  pointer: () => tutPointer,
   advance: seconds => { for (let k = 0; k < seconds / TICK && battle?.status === 'playing'; k++) step(battle, TICK); },
 };
 
