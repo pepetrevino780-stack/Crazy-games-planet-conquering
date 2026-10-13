@@ -698,6 +698,19 @@ export class MapRenderer {
       }
     }
 
+    // Route preview: where a click would march (dotted, marching ants).
+    if (ui.route && ui.route.length) {
+      const step = Math.max(2, Math.round(6 / Math.max(0.5, z / d)));
+      const off = motion ? Math.floor(now * 8) % step : 0;
+      const u = Math.max(2, Math.round(2 * d));
+      for (let k = off; k < ui.route.length; k += step) {
+        const i = ui.route[k];
+        const p = T((i % st.w) + 0.5, Math.floor(i / st.w) + 0.5);
+        ctx.fillStyle = '#0a0a14'; ctx.fillRect(Math.round(p.x) - u, Math.round(p.y) - u, u * 2 + 1, u * 2 + 1);
+        ctx.fillStyle = '#fff2a8'; ctx.fillRect(Math.round(p.x) - u + 1, Math.round(p.y) - u + 1, u * 2 - 1, u * 2 - 1);
+      }
+    }
+
     // The player's own aim arrow, fading out.
     this.aims = this.aims.filter(a => (a.life -= ui.dt || 0.016) > 0);
     for (const a of this.aims) {

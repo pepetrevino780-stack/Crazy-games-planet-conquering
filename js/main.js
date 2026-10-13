@@ -15,6 +15,7 @@ import {
   eventPhase, tileDefense, attackFronts, sitesOf, borders, graceLeft, upgradeCost as levelUpCost, mapScale,
 } from './sim/core.js';
 import { isAllied, attitude, requestAlliance, gift, betray, isTraitor } from './sim/diplomacy.js';
+import { planRoute } from './sim/path.js';
 import { MapRenderer, fmt } from './render.js';
 import { THEMES, TERRAIN, THEME_IDS, isLand } from './world/themes.js';
 import { iconURL, spriteCanvas, mixHex } from './art/sprites.js';
@@ -65,6 +66,8 @@ const PROFILE_TEXT = {
   mastermind: 'Coordinated. Attacks on one front per command node and times its moves to the eclipse.',
 };
 const REASONS = {
+  noPath: 'There is no way through: allied or shielded land blocks every route.',
+  water: 'That land is across the sea. Send an expedition from a coastal border tile.',
   allied: 'You are allied with them. Break the alliance first (right-click or long-press their land).',
   enemyRefuses: 'They are at war with you and will not deal.',
   traitor: 'Nobody trusts a traitor. Wait until your traitor mark fades.',
@@ -750,7 +753,10 @@ function tileTip(i) {
       parts.push(lvl >= 3 ? '<span class="no">Already at the highest level.</span>' : `<span class="ok">Click to upgrade to level ${lvl + 1} for ${fmt(levelUpCost(bld, battle))} minerals.</span>`);
     }
   }
-  if (battle.status === 'playing' && isLand(t) && o !== PLAYER && !armed) parts.push(`<span class="ok">Click to attack with ${fmt(battle.factions[PLAYER].troops * ratio)} troops.</span>`);
+  if (battle.status === 'playing' && isLand(t) && o !== PLAYER && !armed) {
+    const near = borders(battle, PLAYER, o);
+    parts.push(`<span class="ok">Click to ${near ? 'attack' : 'march there'} with ${fmt(battle.factions[PLAYER].troops * ratio)} troops.</span>${near ? '' : '<br><span class="dim">The dotted line shows the route.</span>'}`);
+  }
   return parts.join('<br>');
 }
 
@@ -830,6 +836,20 @@ function initTooltips() {
     swallowClick = false;
     e.preventDefault(); e.stopPropagation();
   }, true);
+}
+
+// ---------- Route preview ----------
+// Hovering land you don't border shows the route a click would march along.
+let routeTile = -1, routeAt = 0, routePath = null;
+function updateRoutePreview() {
+  if (!battle || battle.status !== 'playing' || armed || hoverTile < 0 || tipSource !== 'map') { routePath = null; return; }
+  const i = hoverTile, o = battle.owner[i];
+  if (o === PLAYER || !isLand(world(battle).terrain[i]) || borders(battle, PLAYER, o)) { routePath = null; routeTile = -1; return; }
+  const now = performance.now();
+  if (i === routeTile || now - routeAt < 250) return;
+  routeTile = i; routeAt = now;
+  const r = planRoute(battle, PLAYER, i);
+  routePath = r && r.kind === 'land' ? r.path : null;
 }
 
 // ---------- Radial menu ----------
@@ -1566,6 +1586,7 @@ function frame(ts) {
     inspectOwner: inspectTile >= 0 ? battle.owner[inspectTile] : 0,
     highlights: new Set(cur?.highlight ? [cur.highlight] : []),
     intents,
+    route: (updateRoutePreview(), routePath),
     pointer: battle.status === 'playing' && !renderer.holdOwner && tutorialStep(battle) ? tutPointer : null,
   });
   updateHud();

@@ -7,9 +7,10 @@ import { DIFFICULTIES, ABILITIES } from '../progression.js';
 import {
   TICK, PLAYER, world, config, setOwner, launchAttack, notice, siteOwner, isShielded, isPowered,
   maxTroops, regen, income, tileCost, tileLocked, neighbors4, TileHeap, eventPhase, sitesOf, countSites, buildCost,
-  alive, borders, upgradeCost, mapScale, areaScale,
+  alive, borders, upgradeCost, mapScale, areaScale, attackFronts,
 } from './core.js';
 import { isAllied, relation, onPlayerAttack, driftTrust } from './diplomacy.js';
+import { planRoute } from './path.js';
 import { think } from './ai.js';
 
 export const STATE_VERSION = 4;
@@ -263,6 +264,8 @@ export function playerAttack(state, tileIndex, ratio) {
   if (tileLocked(state, tileIndex)) { state.stats.shieldBlocked++; return { ok: false, reason: 'shielded' }; }
   if (target && isAllied(state, PLAYER, target)) return { ok: false, reason: 'allied' };
   const f = state.factions[PLAYER];
+  // Land we don't border: march there along the cheapest route.
+  if (!borders(state, PLAYER, target)) return playerRouteAttack(state, tileIndex, ratio);
   const res = launchAttack(state, PLAYER, target, f.troops * ratio, tileIndex);
   if (res.ok) {
     onPlayerAttack(state, target);
@@ -275,6 +278,31 @@ export function playerAttack(state, tileIndex, ratio) {
     if (ratio >= 0.5) state.flags.ratioAttack = true;
   }
   return res;
+}
+
+// Attack land we don't border: the spearhead follows an A* route across the
+// continent, taking a corridor as it goes, then pushes on around the click.
+export function playerRouteAttack(state, tileIndex, ratio) {
+  const route = planRoute(state, PLAYER, tileIndex);
+  if (!route) return { ok: false, reason: 'noPath' };
+  if (route.kind === 'sea') return { ok: false, reason: 'water' };
+  const f = state.factions[PLAYER];
+  const troops = Math.floor(f.troops * ratio);
+  if (troops < 1) return { ok: false, reason: 'noTroops' };
+  if (state.attacks.filter(a => a.attacker === PLAYER).length >= attackFronts(state, f) + 2) return { ok: false, reason: 'fronts' };
+  const target = state.owner[tileIndex];
+  f.troops -= troops;
+  const sx = route.start % state.w, sy = Math.floor(route.start / state.w);
+  state.attacks.push({
+    id: state.nextId++, attacker: PLAYER, target, troops, initial: troops, conquered: 0, focus: tileIndex,
+    frontier: null, progress: 0, path: route.path, pathPos: 0, ox: sx, oy: sy,
+  });
+  if (target) { state.factions[target].attackedBy[PLAYER] = state.time; onPlayerAttack(state, target); }
+  state.stats.attacks++;
+  state.flags.attacked = true;
+  state.flags.routeAttack = true;
+  if (ratio >= 0.5) state.flags.ratioAttack = true;
+  return { ok: true, sent: troops, route: route.path, aim: { x0: sx, y0: sy, x1: tileIndex % state.w, y1: Math.floor(tileIndex / state.w) } };
 }
 
 // Recall the player's attacks on one target: survivors come home minus 25%.
@@ -535,13 +563,70 @@ function adjacentTo(state, i, owner) {
   return neighbors4(state, i).some(j => state.owner[j] === owner);
 }
 
+// Take tile i for attack a (whoever owns it). Returns false if unaffordable.
+function captureTile(state, a, att, i) {
+  const cost = tileCost(state, att, i);
+  if (a.troops < cost) return false;
+  const prev = state.owner[i];
+  const def = prev ? state.factions[prev] : null;
+  a.troops -= cost;
+  if (def) {
+    const density = def.troops / Math.max(1, def.tiles);
+    def.troops = Math.max(0, def.troops - Math.min(def.troops, density * 0.9));
+    def.attackedBy[a.attacker] = state.time;
+  }
+  setOwner(state, i, a.attacker);
+  a.lx = i % state.w; a.ly = (i - a.lx) / state.w;
+  a.conquered++;
+  if (a.attacker === PLAYER) { state.stats.conquered++; state.stats.spent += cost; }
+  if (prev === PLAYER) state.stats.lost++;
+  const site = state.sites.find(s => s.y * state.w + s.x === i);
+  if (site) notice(state, 'site', { site: site.id, owner: a.attacker, prev });
+  return true;
+}
+
+// One step of a route attack. Returns 'ok', 'arrived' or 'stop'.
+function stepRoute(state, a, att) {
+  const terrain = world(state).terrain;
+  while (a.pathPos < a.path.length && state.owner[a.path[a.pathPos]] === a.attacker) a.pathPos++;
+  if (a.pathPos >= a.path.length) return 'arrived';
+  const i = a.path[a.pathPos];
+  const o = state.owner[i];
+  // Cut off, or blocked by an ally / a shield: the march stops here.
+  if (!adjacentTo(state, i, a.attacker) || (o && isAllied(state, a.attacker, o)) || tileLocked(state, i)) return 'stop';
+  if (!captureTile(state, a, att, i)) return 'stop';
+  a.pathPos++;
+  // Widen the corridor a little: the neighbours of the tile just taken.
+  for (const j of neighbors4(state, i)) {
+    const oj = state.owner[j];
+    if (oj === a.attacker || !isLand(terrain[j]) || (oj && isAllied(state, a.attacker, oj)) || tileLocked(state, j)) continue;
+    if (a.troops < tileCost(state, att, j) * 3) break;
+    captureTile(state, a, att, j);
+  }
+  return 'ok';
+}
+
 function advanceAttacks(state, dt) {
   const terrain = world(state).terrain;
   for (let k = state.attacks.length - 1; k >= 0; k--) {
     const a = state.attacks[k];
     const att = state.factions[a.attacker];
     const def = a.target ? state.factions[a.target] : null;
-    if (!alive(att) || (def && !alive(def))) { endAttack(state, a, k); continue; }
+    if (!alive(att) || (def && !alive(def) && !a.path)) { endAttack(state, a, k); continue; }
+    if (a.path) {
+      const ks0 = areaScale(state);
+      a.progress += ks0 * (7 + Math.sqrt(a.troops / ks0) * 0.55) * (att.speed || 1) * (att.research.includes('swift') ? 1.3 : 1) * dt;
+      let res = 'ok';
+      while (a.progress >= 1 && res === 'ok') { res = stepRoute(state, a, att); a.progress -= 1; }
+      if (res === 'stop') { endAttack(state, a, k); continue; }
+      if (res === 'arrived') {
+        // At the click: carry on as a normal spearhead against whoever holds the land there.
+        a.path = null;
+        a.frontier = null;
+        if (a.target && !alive(state.factions[a.target])) a.target = 0;
+      }
+      continue;
+    }
     if (!a.frontier) buildFrontier(state, a);
     // Tiles per second; scaled with the map so attacks take the same time.
     const ks = areaScale(state);

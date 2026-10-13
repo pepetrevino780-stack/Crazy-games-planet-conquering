@@ -12,6 +12,7 @@ import {
 } from '../js/sim/core.js';
 import { generateWorld, components } from '../js/world/generate.js';
 import { requestAlliance, gift, betray, isAllied, relation, isTraitor } from '../js/sim/diplomacy.js';
+import { planRoute } from '../js/sim/path.js';
 import { THEMES, THEME_IDS, isLand, T } from '../js/world/themes.js';
 import {
   newCampaign, normalizeCampaign, loadCampaign, saveCampaign, playerLoadout, computeRewards,
@@ -694,6 +695,39 @@ test('Vulkara training is shorter after the standalone tutorial', () => {
   assert.deepEqual(TUTORIAL_LESSONS.length, 7);
   assert.equal(tutorialStep(s).id, 'expand');
   assert.equal(tutorialUnlocked(s), null, 'nothing locked in the short version');
+});
+
+test('attack any land you click: the spearhead marches along a route to it', () => {
+  const s = battle('vulkara', { tutorial: false });
+  freezeAI(s);
+  advance(s, 0.5);
+  const me = s.factions[PLAYER];
+  const w = world(s);
+  const cap = site(s, 'player-capital');
+  const mainComp = w.comp[cap.y * s.w + cap.x];
+  // A nation on our continent that we don't border.
+  const nation = s.factions.find(f => f && f.kind === 'nation' && !borders(s, PLAYER, f.id) && (() => { const c = s.sites.find(x => x.faction === f.id); return c && w.comp[c.y * s.w + c.x] === mainComp; })());
+  assert.ok(nation, 'found a distant nation');
+  const c = s.sites.find(x => x.faction === nation.id);
+  const goal = c.y * s.w + c.x;
+  const route = planRoute(s, PLAYER, goal);
+  assert.equal(route.kind, 'land');
+  assert.equal(route.path[route.path.length - 1], goal, 'the route ends at the click');
+  me.troops = 60000 * config(s).scale ** 2;
+  const res = playerAttack(s, goal, 0.8);
+  assert.ok(res.ok && res.route, `route attack launched (${res.reason})`);
+  const a = s.attacks.find(x => x.attacker === PLAYER);
+  assert.ok(a.path && a.path.length > 10, 'follows a path');
+  const startTiles = me.tiles;
+  advance(s, 20);
+  assert.ok(me.tiles > startTiles + 30, 'took a corridor of land');
+  // Progress along the route: the first stretch of it is ours now.
+  const firstHalf = route.path.slice(0, Math.floor(route.path.length / 3));
+  assert.ok(firstHalf.filter(i => s.owner[i] === PLAYER).length > firstHalf.length * 0.8, 'the first third of the route is ours');
+  // Another continent: no land route.
+  let island = -1;
+  for (let i = 0; i < s.owner.length; i++) if (isLand(w.terrain[i]) && w.comp[i] !== mainComp && w.compSize[w.comp[i]] > 50) { island = i; break; }
+  assert.equal(planRoute(s, PLAYER, island).kind, 'sea');
 });
 
 test('ownership maps round-trip through run-length encoding', () => {
