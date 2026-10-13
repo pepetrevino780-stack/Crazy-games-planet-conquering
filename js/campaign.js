@@ -23,7 +23,7 @@ export const AI_PROFILES = {
   // Waits for neighbours to get into wars, then strikes whoever is weakest or busy.
   opportunist: {
     interval: 2.2, attackAt: 0.5, ratio: 0.38, wildBias: 1.0, playerBias: 1.0, nationBias: 1.1,
-    objectiveSense: 0.3, retaliate: true, fronts: 2, reserve: 0.3, build: 0.5, noise: 0.3, prey: 1.2,
+    objectiveSense: 0.3, retaliate: true, fronts: 2, reserve: 0.3, build: 0.5, noise: 0.3, prey: 1.2, ignorePlayer: 240,
   },
   aggressive: {
     interval: 2.0, attackAt: 0.42, ratio: 0.4, wildBias: 1.1, playerBias: 1.2, nationBias: 1.0,
@@ -93,7 +93,7 @@ export const PLANETS = [
     tagline: 'A volcanic world of ash plains and magma seas. Expand fast and break the Cindari.',
     theme: 'vulkara', seed: 4101, size: [900, 570], scale: 3,
     enemy: { name: 'Cindari Clans', color: '#ff4b3e', profile: 'passive', radius: 8, troops: 900, capitalName: 'Ember Throne', startDelay: 12 },
-    nations: { count: 10, radius: 5, troops: 400, profiles: ['passive', 'tribe', 'passive'] },
+    nations: { count: 10, radius: 5, troops: 400, profiles: ['passive'] },
     sites: [{ type: 'vent', count: 4, where: 'middle' }, { type: 'ruin', count: 2, where: 'any' }],
     events: { type: 'eruption', period: 45, duration: 8, warn: 5 },
     victory: { mode: 'all', conds: [{ type: 'capture', site: 'enemy-capital', label: 'Capture the Ember Throne' }] },
@@ -171,7 +171,7 @@ export const PLANETS = [
     lesson: 'Learn to Disrupt',
     tagline: 'A fungal world wired together by living hubs. The Mycelials spread without pause.',
     theme: 'mycelion', seed: 6311, size: [1080, 660], scale: 3,
-    enemy: { name: 'Mycelial Swarm', color: '#c6ff3d', profile: 'aggressive', radius: 9, troops: 1000, capitalName: 'Brood Heart', startDelay: 8,
+    enemy: { name: 'Mycelial Swarm', color: '#c6ff3d', profile: 'aggressive', radius: 9, troops: 800, capitalName: 'Brood Heart', startDelay: 16,
       sites: [{ type: 'hub', count: 3, ring: [16, 26], name: 'Hub' }], shieldedBy: 'hub' },
     nations: { count: 14, radius: 5, troops: 450, profiles: ['tribe', 'opportunist', 'aggressive'] },
     sites: [{ type: 'ruin', count: 2, where: 'any' }],

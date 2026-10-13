@@ -12,7 +12,7 @@ import {
 } from './sim/engine.js';
 import {
   config, world, maxTroops, regen, income, buildCost, siteOwner, isShielded, isPowered, countSites,
-  eventPhase, tileDefense, attackFronts, sitesOf, borders, upgradeCost as levelUpCost, mapScale,
+  eventPhase, tileDefense, attackFronts, sitesOf, borders, graceLeft, upgradeCost as levelUpCost, mapScale,
 } from './sim/core.js';
 import { MapRenderer, fmt } from './render.js';
 import { THEMES, TERRAIN, THEME_IDS, isLand } from './world/themes.js';
@@ -932,6 +932,9 @@ function updateHud(force = false) {
   $('#st-land-share').textContent = `${((f.tiles / world(battle).landCount) * 100).toFixed(1)}%`;
   $('#ratio-label').textContent = `${Math.round(ratio * 100)}% (${fmt(f.troops * ratio)})`;
   $('#hud-time').textContent = battle.status === 'spawn' ? `Landing ${Math.ceil(battle.spawnLeft)}s` : fmtTime(battle.time);
+  const grace = battle.status === 'playing' ? graceLeft(battle) : 0;
+  $('#hud-grace').classList.toggle('hidden', !grace);
+  if (grace) $('#hud-grace').textContent = `Ceasefire ${fmtTime(Math.ceil(grace))}`;
   const ev = eventPhase(battle);
   const chip = $('#hud-event');
   if (ev.type && battle.status === 'playing') {

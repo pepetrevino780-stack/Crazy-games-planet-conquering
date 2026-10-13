@@ -239,6 +239,7 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .toasts { position: absolute; right: 6px; bottom: var(--hud-bottom); width: min(300px, 62vw); max-height: var(--toast-max, 40vh); overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; pointer-events: none; }
 .toast { background: rgba(21, 18, 42, 0.92); border: var(--px) solid var(--line); border-left: 4px solid var(--cyan); padding: 5px 8px; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; animation: tin .2s steps(3); }
 .toast.good { border-left-color: var(--good); }
+.chip.good { color: var(--good); border-color: var(--good); }
 .toast.bad { border-left-color: var(--bad); }
 .toast.tip { border-left-color: var(--gold); }
 .toast.out { opacity: 0; transition: opacity .3s steps(3); }

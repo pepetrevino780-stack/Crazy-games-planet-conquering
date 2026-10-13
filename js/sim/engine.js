@@ -189,7 +189,7 @@ export function createBattle(configId, loadout, opts = {}) {
     pts.forEach((p, k) => state.sites.push({ id: `${spec.type}${k + 1}`, type: spec.type, x: p.x, y: p.y, name: `${SITE_TYPES[spec.type].label} ${'ABCDEFG'[k]}` }));
   }
 
-  for (const f of state.factions) if (f && f.profile) state.ai[f.id] = { next: (f.kind === 'enemy' ? e.startDelay : 2) + f.profile.interval * R(), lastTarget: null };
+  for (const f of state.factions) if (f && f.profile) state.ai[f.id] = { next: (f.kind === 'enemy' ? e.startDelay * lin : 2) + f.profile.interval * R(), lastTarget: null };
   if (state.factions[PLAYER].profile) state.ai[PLAYER] = { next: 0.5, lastTarget: null };
   if (opts.autoSpawn) autoSpawn(state);
   return state;
@@ -209,7 +209,8 @@ export function canSpawnAt(state, x, y) {
   if (!isLand(w.terrain[i]) || w.terrain[i] === T.MOUNTAIN || w.terrain[i] === T.VOLCANO) return false;
   if (!config(state).skirmish && w.comp[i] !== main) return false;
   if (state.owner[i] && state.owner[i] !== PLAYER) return false;
-  return state.sites.every(s => s.faction === PLAYER || Math.hypot(s.x - x, s.y - y) >= (s.id === 'enemy-capital' ? 45 : 14) * mapScale(state));
+  // Land well clear of every other civilization: nations by 24 base tiles, the main enemy by 45.
+  return state.sites.every(s => s.faction === PLAYER || Math.hypot(s.x - x, s.y - y) >= (s.id === 'enemy-capital' ? 45 : s.faction ? 24 : 14) * mapScale(state));
 }
 
 export function spawnPlayer(state, x, y) {

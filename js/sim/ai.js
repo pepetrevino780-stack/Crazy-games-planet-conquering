@@ -3,7 +3,7 @@
 // how much to keep home, whether they retaliate, how many fronts they run.
 import { isLand, T } from '../world/themes.js';
 import {
-  maxTroops, borderMap, launchAttack, attackFronts, siteOwner, buildCost, world, PLAYER, mapScale, areaScale,
+  maxTroops, borderMap, launchAttack, attackFronts, siteOwner, buildCost, world, PLAYER, mapScale, areaScale, graceLeft,
 } from './core.js';
 import { npcBuild, npcUpgrade } from './engine.js';
 
@@ -42,11 +42,17 @@ export function think(state, fid, rand) {
     } else {
       const other = state.factions[o];
       if (!other || !other.alive) continue;
+      // Nobody starts a war with a fresh landing (unless the player struck first),
+      // and opportunists leave the player alone for longer still.
+      const provoked = other.id in f.attackedBy;
+      if (o === PLAYER && !provoked && (graceLeft(state) > 0 || state.time < (p.ignorePlayer || 0))) continue;
       const ratio = f.troops / Math.max(1, other.troops);
       const grudge = p.retaliate && other.id in f.attackedBy && state.time - f.attackedBy[other.id] < 30;
       // Opportunists pounce on neighbours already fighting someone else.
       const busy = p.prey ? state.attacks.some(a => a.target === o && a.attacker !== fid) : false;
-      if (ratio < (busy ? 0.6 : 0.9) && !grudge) continue;
+      // A grudge lowers the bar but never makes a much weaker civilization charge in.
+      const bar = busy && o !== PLAYER ? 0.6 : 0.9;
+      if (ratio < (grudge ? Math.min(bar, 0.75) : bar)) continue;
       const bias = other.kind === 'player' ? p.playerBias : p.nationBias;
       score = bias * Math.min(3, ratio) * 0.6;
       score += p.objectiveSense * targetValue(state, fid, o) * 0.35;

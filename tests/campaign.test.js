@@ -111,12 +111,13 @@ test('attacks advance the border tile by tile and spend troops', () => {
   assert.ok(borders(s, PLAYER, 0));
   let target = -1;
   for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === 0 && isLand(world(s).terrain[i]) && [i - 1, i + 1, i - s.w, i + s.w].some(j => s.owner[j] === PLAYER)) { target = i; break; }
-  me.troops = 600;
+  const k = config(s).scale ** 2;
+  me.troops = 600 * k;
   const res = playerAttack(s, target, 0.5);
   assert.ok(res.ok);
-  assert.ok(me.troops < 400, 'troops left the pool');
+  assert.ok(me.troops < 400 * k, 'troops left the pool');
   advance(s, 15);
-  assert.ok(me.tiles > before + 100, `expanded from ${before} to ${me.tiles}`);
+  assert.ok(me.tiles > before + 100 * k, `expanded from ${before} to ${me.tiles}`);
   assert.equal(s.attacks.length, 0, 'attack ended when its troops ran out');
 });
 
@@ -451,7 +452,7 @@ test('results: land history, battle stats and stars', () => {
 });
 
 test('planets field many nations with mixed personalities', () => {
-  for (const id of ['vulkara', 'noctyra']) {
+  for (const id of ['cryonis', 'noctyra']) {
     const s = battle(id);
     const nations = s.factions.filter(f => f && f.kind === 'nation');
     assert.equal(nations.length, getPlanet(id).nations.count, `${id}: every nation placed`);

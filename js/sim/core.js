@@ -103,6 +103,9 @@ export function buildingLevels(state, owner, type) {
 export const mapScale = state => config(state).scale || 1;
 export const areaScale = state => mapScale(state) ** 2;
 
+// Seconds left in the no-attack grace period after landing.
+export const graceLeft = state => Math.max(0, (config(state).grace ?? 75) - state.time);
+
 export const bastionRadius = (state, b) => (BUILDINGS.bastion.radius + 2 * ((b.level || 1) - 1)) * mapScale(state);
 
 export function upgradeCost(b) {
