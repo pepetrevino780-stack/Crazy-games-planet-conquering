@@ -31,6 +31,7 @@ export class MapRenderer {
     this.fx = [];       // timed effects: crash landings
     this.pops = [];     // floating numbers
     this.marches = [];  // survivors walking home
+    this.aims = [];     // short-lived arrows showing where a push is headed
     this.shakeT = 0; this.shakeAmp = 0;
     this.holdOwner = 0; // territory hidden until a landing ship touches down...
     this.landing = 0;   // ...and its capital and label until the impact
@@ -462,6 +463,11 @@ export class MapRenderer {
     this.shakeAmp = Math.max(this.shakeT > seconds ? this.shakeAmp : 0, amp);
   }
 
+  // Show for a second which way a new (or re-aimed) attack will push.
+  aim(x0, y0, x1, y1, color) {
+    this.aims = [{ x0, y0, x1, y1, color, life: 1.2 }];
+  }
+
   // A small column of survivors walking from a front back to the capital.
   march(x0, y0, x1, y1, color) {
     const dur = Math.min(1.8, 0.6 + Math.hypot(x1 - x0, y1 - y0) / (60 * mapScale(this.state)));
@@ -690,6 +696,14 @@ export class MapRenderer {
         const px = Math.floor(o.x + x * z), py = Math.floor(o.y + y * z);
         ctx.fillRect(px, py, Math.floor(o.x + (x + 1) * z) - px, Math.floor(o.y + (y + 1) * z) - py);
       }
+    }
+
+    // The player's own aim arrow, fading out.
+    this.aims = this.aims.filter(a => (a.life -= ui.dt || 0.016) > 0);
+    for (const a of this.aims) {
+      ctx.globalAlpha = Math.min(1, a.life / 0.4);
+      this.drawIntent(T(a.x0 + 0.5, a.y0 + 0.5), T(a.x1 + 0.5, a.y1 + 0.5), { color: a.color, weight: 1, label: '' }, z, now, motion);
+      ctx.globalAlpha = 1;
     }
 
     // Enemy intent: arrows from attacking empires to where they are pushing into you.

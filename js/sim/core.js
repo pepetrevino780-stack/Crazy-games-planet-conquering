@@ -347,7 +347,8 @@ export function launchAttack(state, attacker, target, troops, focus = null) {
   const existing = state.attacks.find(a => a.attacker === attacker && a.target === target);
   if (existing) {
     existing.troops += sent;
-    if (focus !== null) existing.focus = focus;
+    // A new click on the same front re-aims the push toward it.
+    if (focus !== null) { existing.focus = focus; existing.frontier = null; }
   } else {
     state.attacks.push({ id: state.nextId++, attacker, target, troops: sent, initial: sent, conquered: 0, focus, frontier: null, progress: 0 });
   }

@@ -1266,7 +1266,7 @@ function clickTile(i) {
   else if (battle.owner[i] === PLAYER) { inspectTile = inspectTile === i ? -1 : i; sfx.click(); return; }
   else {
     res = playerAttack(battle, i, ratio);
-    if (res.ok) { sfx.attack(); renderer.pop(x, y, `-${fmt(res.sent)}`, '#ffe9a8'); tip('ratio', 'Troops regrow fastest when your army is well below its cap. Big attacks are not wasted.'); }
+    if (res.ok) { sfx.attack(); renderer.pop(x, y, `-${fmt(res.sent)}`, '#ffe9a8'); if (res.aim) renderer.aim(res.aim.x0, res.aim.y0, res.aim.x1, res.aim.y1, '#fff2a8'); tip('ratio', 'Troops regrow fastest when your army is well below its cap. Big attacks are not wasted.'); }
   }
   if (res && !res.ok) { sfx.error(); toast(REASONS[res.reason] || 'You cannot do that.', 'bad', 2600); }
   else if (res && res.ok && armed && armed.kind !== 'dropship') armed = null;

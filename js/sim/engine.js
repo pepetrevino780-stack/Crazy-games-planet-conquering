@@ -248,6 +248,9 @@ export function playerAttack(state, tileIndex, ratio) {
   const f = state.factions[PLAYER];
   const res = launchAttack(state, PLAYER, target, f.troops * ratio, tileIndex);
   if (res.ok) {
+    // Aim now, so the HUD can show the push direction straight away.
+    const a = state.attacks.find(x => x.attacker === PLAYER && x.target === target);
+    if (a) { buildFrontier(state, a); res.aim = { x0: a.ox, y0: a.oy, x1: a.fx ?? a.ox, y1: a.fy ?? a.oy }; }
     state.stats.attacks++;
     state.flags.attacked = true;
     if (ratio >= 0.5) state.flags.ratioAttack = true;
@@ -454,23 +457,51 @@ function attackOrigin(state, a) {
   return { x: f.sx / Math.max(1, f.tiles), y: f.sy / Math.max(1, f.tiles) };
 }
 
+// Which tile an attack takes next: the lowest key first.
+// A clicked attack is a spearhead: it pushes from the attacker's border tile
+// nearest the click along a line toward it (distance along the line plus 3x
+// the sideways distance, so it only widens a little), then spreads out around
+// the click once it gets there. Other attacks grow outward from their origin.
 function frontKey(state, a, i) {
   const x = i % state.w, y = (i - x) / state.w;
   const jitter = (((i * 2654435761) >>> 0) % 1000) / 1000;
+  if (a.fx !== undefined && a.fx !== null) {
+    const vx = a.fx - a.ox, vy = a.fy - a.oy, L = Math.hypot(vx, vy);
+    if (L >= 1) {
+      const ux = vx / L, uy = vy / L, rx = x - a.ox, ry = y - a.oy;
+      const along = rx * ux + ry * uy, side = Math.abs(rx * uy - ry * ux);
+      if (along < 0) return -along * 2 + side * 3 + jitter;
+      if (along <= L) return along + side * 3 + jitter;
+      return L + Math.hypot(x - a.fx, y - a.fy) * 1.5 + jitter;
+    }
+  }
   return Math.hypot(x - a.ox, y - a.oy) + jitter * 2.5;
 }
 
 function buildFrontier(state, a) {
   const { owner, w: W } = state;
   const terrain = world(state).terrain;
-  const o = attackOrigin(state, a);
-  a.ox = o.x; a.oy = o.y;
-  a.frontier = new TileHeap();
+  const cands = [];
   for (let i = 0; i < owner.length; i++) {
     if (owner[i] !== a.target || !isLand(terrain[i])) continue;
     const x = i % W;
-    if ((x > 0 && owner[i - 1] === a.attacker) || (x < W - 1 && owner[i + 1] === a.attacker) || (i >= W && owner[i - W] === a.attacker) || (i + W < owner.length && owner[i + W] === a.attacker)) a.frontier.push(frontKey(state, a, i), i);
+    if ((x > 0 && owner[i - 1] === a.attacker) || (x < W - 1 && owner[i + 1] === a.attacker) || (i >= W && owner[i - W] === a.attacker) || (i + W < owner.length && owner[i + W] === a.attacker)) cands.push(i);
   }
+  if (a.focus !== null && a.focus !== undefined && a.attacker === PLAYER && cands.length) {
+    // Spearhead: start from the border tile closest to the click.
+    const fx = a.focus % W, fy = Math.floor(a.focus / W);
+    let best = cands[0], bd = Infinity;
+    for (const i of cands) {
+      const d = (i % W - fx) ** 2 + (Math.floor(i / W) - fy) ** 2;
+      if (d < bd) { bd = d; best = i; }
+    }
+    a.ox = best % W; a.oy = Math.floor(best / W); a.fx = fx; a.fy = fy;
+  } else {
+    const o = attackOrigin(state, a);
+    a.ox = o.x; a.oy = o.y; a.fx = null; a.fy = null;
+  }
+  a.frontier = new TileHeap();
+  for (const i of cands) a.frontier.push(frontKey(state, a, i), i);
 }
 
 function adjacentTo(state, i, owner) {

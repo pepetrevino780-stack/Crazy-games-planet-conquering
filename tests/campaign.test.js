@@ -488,6 +488,45 @@ test('survivors come home, retreat costs a quarter, and over-cap troops linger',
   assert.ok(me.troops > maxTroops(s, me) * 1.4, 'over-cap troops linger');
 });
 
+test('a clicked attack pushes a spearhead toward the click and can be re-aimed', () => {
+  const s = battle('vulkara', { tutorial: false });
+  freezeAI(s);
+  advance(s, 0.5);
+  const me = s.factions[PLAYER];
+  const k = config(s).scale ** 2;
+  const before = new Uint8Array(s.owner);
+  // Click a wilderness tile next to our border, far to one side of the capital.
+  const cap = site(s, 'player-capital');
+  let click = -1, bd = -1;
+  for (let i = 0; i < s.owner.length; i++) {
+    if (s.owner[i] !== 0 || !isLand(world(s).terrain[i]) || ![i - 1, i + 1, i - s.w, i + s.w].some(j => s.owner[j] === PLAYER)) continue;
+    const d = Math.hypot(i % s.w - cap.x, Math.floor(i / s.w) - cap.y);
+    if (d > bd) { bd = d; click = i; }
+  }
+  me.troops = 3000 * k;
+  const res = playerAttack(s, click, 0.5);
+  assert.ok(res.ok && res.aim, 'aim reported for the HUD');
+  const a = s.attacks.find(x => x.attacker === PLAYER);
+  assert.ok(Math.hypot(a.ox - click % s.w, a.oy - Math.floor(click / s.w)) <= 2, 'starts at the border tile nearest the click');
+  advance(s, 2);
+  // The new land hugs the line from the start point onward (a push, not a ring around the capital).
+  const ux = a.fx - a.ox, uy = a.fy - a.oy;
+  let n = 0, sideSum = 0;
+  for (let i = 0; i < s.owner.length; i++) {
+    if (before[i] === PLAYER || s.owner[i] !== PLAYER) continue;
+    n++;
+    const L = Math.hypot(ux, uy) || 1;
+    sideSum += Math.abs((i % s.w - a.ox) * uy / L - (Math.floor(i / s.w) - a.oy) * ux / L);
+  }
+  assert.ok(n > 20, `took ground (${n})`);
+  assert.ok(sideSum / n < 12 * config(s).scale, `stays narrow (mean side ${(sideSum / n).toFixed(1)})`);
+  // Clicking elsewhere on the same front re-aims the same attack.
+  const other = [...Array(s.owner.length).keys()].find(i => s.owner[i] === 0 && isLand(world(s).terrain[i]) && [i - 1, i + 1, i - s.w, i + s.w].some(j => s.owner[j] === PLAYER) && Math.hypot(i % s.w - a.fx, Math.floor(i / s.w) - a.fy) > 20);
+  assert.ok(playerAttack(s, other, 0.2).ok);
+  assert.equal(s.attacks.filter(x => x.attacker === PLAYER).length, 1, 'still one attack');
+  assert.equal(a.fx, other % s.w, 're-aimed at the new click');
+});
+
 test('ownership maps round-trip through run-length encoding', () => {
   const a = new Uint8Array(100000);
   for (let i = 0; i < a.length; i++) a[i] = (i % 997 < 300 ? 1 : 0) + (i > 70000 ? 5 : 0);
