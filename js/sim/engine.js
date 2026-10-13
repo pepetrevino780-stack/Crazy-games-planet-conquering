@@ -88,10 +88,11 @@ export function createBattle(configId, loadout, opts = {}) {
     configId: base ? configId : 'skirmish',
     theme: null, seed: 0, w: 0, h: 0,
   };
+  if (configId === 'tutorial') state.lesson = opts.lesson || 1;
   const cfgSeed = opts.worldSeed;
   // Resolve the config (skirmish worlds are defined by theme + seed).
   if (!base) { state.theme = opts.theme || 'noctyra'; state.seed = cfgSeed ?? 1; state.mode = opts.mode || 'classic'; }
-  const cfg0 = base ? configFor(configId) : null;
+  const cfg0 = base ? config(state) : null;
   if (cfg0) { state.theme = cfg0.theme; state.seed = cfgSeed ?? cfg0.seed; }
   const cfg = config(state);
   [state.w, state.h] = cfg.size;
@@ -108,6 +109,7 @@ export function createBattle(configId, loadout, opts = {}) {
     cooldowns: { strike: 0, rally: 0, emp: 0 }, hold: cfg.victory.conds.map(() => 0),
     objectivesDone: [], flags: {}, notices: [], ai: {}, eventWasActive: false,
     tutorial: cfg.tutorial && opts.tutorial !== false ? 0 : -1,
+    tutorialShort: opts.tutorial === 'short' && !!cfg.tutorialShort,
     stats: {
       attacks: 0, conquered: 0, spent: 0, failedAttacks: 0, repelled: 0, lost: 0, peakTiles: 0,
       stormLoss: 0, guardedTiles: 0, shieldBlocked: 0, cappedSeconds: 0, enemyFrontsPeak: 0, lostTo: null,
@@ -166,7 +168,7 @@ export function createBattle(configId, loadout, opts = {}) {
 
   // Independent nations spread over the land.
   const avoid = [{ x: capPt.x, y: capPt.y, r: (e.radius + 22) * lin }];
-  const natPts = placePoints(w, cfg.nations.count, { rand: R, minDist: 22 * lin, avoid });
+  const natPts = placePoints(w, cfg.nations.count, { rand: R, minDist: 22 * lin, avoid, accept: cfg.nations.mainOnly ? (x, y, i) => w.comp[i] === main : undefined });
   natPts.forEach((p, k) => {
     const id = state.factions.length;
     // Nations get a mix of personalities, cycling through the planet's list.
@@ -204,11 +206,13 @@ export function createBattle(configId, loadout, opts = {}) {
   for (const f of state.factions) if (f && f.profile) state.ai[f.id] = { next: (f.kind === 'enemy' ? e.startDelay * lin : 2) + f.profile.interval * R(), lastTarget: null };
   if (state.factions[PLAYER].profile) state.ai[PLAYER] = { next: 0.5, lastTarget: null };
   if (opts.autoSpawn) autoSpawn(state);
+  // Tutorial lessons hand out what each lesson needs.
+  const setup = cfg.setup || {};
+  const pf = state.factions[PLAYER];
+  for (const k of ['minerals', 'energy', 'exotic']) if (setup[k]) pf[k] = setup[k];
+  if (setup.troops) pf.troops += setup.troops;
+  if (setup.abilities) pf.abilities = [...new Set([...pf.abilities, ...setup.abilities])];
   return state;
-}
-
-function configFor(id) {
-  return config({ configId: id });
 }
 
 // ---------- Spawn phase ----------
@@ -262,6 +266,7 @@ export function playerAttack(state, tileIndex, ratio) {
   const res = launchAttack(state, PLAYER, target, f.troops * ratio, tileIndex);
   if (res.ok) {
     onPlayerAttack(state, target);
+    if (target && state.factions[target].kind === 'nation') state.flags.attackedNation = true;
     // Aim now, so the HUD can show the push direction straight away.
     const a = state.attacks.find(x => x.attacker === PLAYER && x.target === target);
     if (a) { buildFrontier(state, a); res.aim = { x0: a.ox, y0: a.oy, x1: a.fx ?? a.ox, y1: a.fy ?? a.oy }; }
@@ -303,6 +308,7 @@ export function playerDropship(state, tileIndex, ratio) {
   const port = ports.reduce((a, b) => (Math.hypot(a.x - tx, a.y - ty) < Math.hypot(b.x - tx, b.y - ty) ? a : b));
   f.minerals -= DROPSHIP_COST;
   f.troops -= troops;
+  state.flags.dropship = true;
   state.dropships.push({ id: state.nextId++, owner: PLAYER, troops, x: port.x, y: port.y, tx, ty, px: port.x, py: port.y, targetOwner: state.owner[tileIndex], speed: 28 * mapScale(state) * (1 + 0.4 * ((port.level || 1) - 1)) });
   state.stats.attacks++;
   return { ok: true, sent: troops };
@@ -389,6 +395,7 @@ export function playerResearch(state, id) {
   if (f.exotic < r.cost) return { ok: false, reason: 'exotic' };
   f.exotic -= r.cost;
   f.research.push(id);
+  state.flags.researched = true;
   notice(state, 'research', { id });
   return { ok: true };
 }
@@ -435,6 +442,7 @@ export function useAbility(state, id, i) {
   }
   f.energy -= ABILITY_ENERGY[id];
   state.cooldowns[id] = state.time + ABILITIES[id].cooldown * (f.cooldown || 1);
+  state.flags['ability_' + id] = true;
   return { ok: true };
 }
 
@@ -447,6 +455,8 @@ function endAttack(state, a, i, loss = 0) {
   const f = state.factions[a.attacker];
   const home = Math.round(a.troops * (1 - loss));
   if (alive(f)) f.troops += home;
+  if (a.attacker === PLAYER && home > 0) state.flags.returned = true;
+  if (a.attacker === PLAYER && loss > 0) state.flags.retreated = true;
   const k = areaScale(state);
   if (a.attacker === PLAYER || a.target === PLAYER) {
     notice(state, 'ended', {
@@ -512,6 +522,7 @@ function buildFrontier(state, a) {
       if (d < bd) { bd = d; best = i; }
     }
     a.ox = best % W; a.oy = Math.floor(best / W); a.fx = fx; a.fy = fy;
+    if (Math.hypot(fx - a.ox, fy - a.oy) >= 8 * mapScale(state)) state.flags.spearhead = true;
   } else {
     const o = attackOrigin(state, a);
     a.ox = o.x; a.oy = o.y; a.fx = null; a.fy = null;
@@ -631,6 +642,7 @@ function checkObjective(state, obj) {
   switch (obj.type) {
     case 'tiles': return p.tiles >= obj.n;
     case 'attack': return !!state.flags.attacked;
+    case 'flag': return !!state.flags[obj.flag];
     case 'ratioAttack': return !!state.flags.ratioAttack;
     case 'ownType': return countSites(state, obj.site, PLAYER) >= obj.n;
     case 'build': return !!state.flags['built_' + obj.building];
@@ -646,6 +658,7 @@ export function condProgress(state, c, i, dt = 0) {
   const cap = state.sites.find(s => s.id === c.site);
   switch (c.type) {
     case 'capture': return { done: !!cap && siteOwner(state, cap) === PLAYER };
+    case 'tutorialDone': return { done: state.tutorial >= tutorialSteps(state).length && tutorialSteps(state).length > 0 };
     case 'capitals': {
       const n = state.sites.filter(s => (s.type === 'capital' || s.type === 'citadel') && s.id !== 'player-capital' && siteOwner(state, s) === PLAYER).length;
       return { done: n >= c.n, frac: n / c.n, text: ` (${Math.min(n, c.n)}/${c.n})` };
@@ -753,7 +766,11 @@ export function step(state, dt = TICK) {
 // (checked like an objective) and can unlock toolbar tools and resources.
 
 export function tutorialSteps(state) {
-  return state.tutorial >= 0 ? config(state).tutorial || [] : [];
+  if (!(state.tutorial >= 0)) return [];
+  const cfg = config(state);
+  const steps = cfg.tutorial || [];
+  // Players who finished the standalone tutorial get a short version.
+  return state.tutorialShort && cfg.tutorialShort ? steps.filter(s => cfg.tutorialShort.includes(s.id)) : steps;
 }
 
 export function tutorialStep(state) {
@@ -776,7 +793,7 @@ export function skipTutorial(state) {
 // Features the player may use right now; null means everything.
 export function tutorialUnlocked(state) {
   const steps = tutorialSteps(state);
-  if (!(state.tutorial >= 0) || state.tutorial >= steps.length) return null;
+  if (!(state.tutorial >= 0) || state.tutorial >= steps.length || config(state).tutorialWorld || state.tutorialShort) return null;
   const set = new Set();
   for (let k = 0; k <= state.tutorial; k++) for (const u of steps[k].unlock || []) set.add(u);
   return set;

@@ -53,6 +53,12 @@ npm start            # http://localhost:8080
 | 4 | **Xythera**: Ancient Machines | Plan | Relays power automated defences; ancient factories; scarce growth | Core Foundry plus 2 factories | Axiom Directorate: tactical |
 | 5 | **Noctyra**: Eternal Eclipse | Mastery | Command nodes add enemy attack fronts; the eclipse strips the Citadel; everything returns | Conquer the Eclipse Citadel | Umbral Dominion: coordinated |
 
+**Tutorial:** a Tutorial button on the title screen (offered once to new players) opens seven short,
+replayable lessons on a small, calm world where nobody attacks you and the game waits for each step: land and
+expand; direction and survivors; build and upgrade; the battle panel and retreat; across the sea with Starports
+and dropships; research and abilities; and winning a world. Each lesson gets a checkmark, and finishing all seven
+pays 25 Stellar Cores once. After that, Vulkara's in-world training shrinks to three steps.
+
 On the first visit to Vulkara, a step-by-step training card teaches by doing: attack, expand, use the attack
 ratio, build, seize a vent. An arrow on the map or a glowing button shows where to act, and tools and resources
 unlock as each step introduces them (locked tools show a padlock; Skip unlocks everything). Each world also has

@@ -107,6 +107,8 @@ export const PLANETS = [
       { id: 'v4', type: 'build', building: 'habitat', label: 'Build a Habitat', reward: 5,
         tip: 'Spend minerals on buildings. Habitats raise your troop cap.' },
     ],
+    // After the standalone tutorial, only these steps run here.
+    tutorialShort: ['expand', 'habitat', 'capital'],
     // Learn-by-doing tutorial: tools and resources unlock as each step introduces them.
     tutorial: [
       { id: 'expand', label: 'Attack the land next to your border', point: 'frontier', waitFor: { type: 'attack' },
@@ -296,6 +298,74 @@ export function skirmishConfig(theme, seed, mode = 'classic') {
   if (m === 'fast') Object.assign(cfg, { costScale: 0.5, incomeScale: 2, growthScale: 1.5, grace: 30 });
   skirmishCache.set(key, cfg);
   return cfg;
+}
+
+// ---------- Standalone tutorial ----------
+// Seven short lessons on one small, calm map: one weak neighbour, no attacks
+// on you, no time pressure. Each lesson is a list of training steps; the
+// lesson ends when its last step is done (lesson 7 when you take the capital).
+
+const step = (id, label, waitFor, text, extra = {}) => ({ id, label, waitFor, text, ...extra });
+const flag = name => ({ type: 'flag', flag: name });
+
+export const TUTORIAL_LESSONS = [
+  { id: 1, name: 'Land and expand', desc: 'Choose a landing site, attack the wilderness, use the attack ratio.', setup: { manualLanding: true },
+    steps: [
+      step('attack', 'Attack next to your border', { type: 'attack' }, 'You have landed. Click the wilderness next to your border to attack it.', { point: 'frontier' }),
+      step('ratio', 'Attack with a 50% ratio', { type: 'ratioAttack' }, 'Drag the attack ratio to 50% or more, then attack again. Bigger attacks take more land at once.', { point: 'ratio' }),
+      step('grow', 'Reach 400 tiles', { type: 'tiles', n: 400 }, 'Keep expanding. More land raises your troop cap.', { point: 'frontier' }),
+    ] },
+  { id: 2, name: 'Direction and survivors', desc: 'Troops push where you click, and survivors come home.', setup: {},
+    steps: [
+      step('spear', 'Click far from your border', flag('spearhead'), 'Click wilderness well away from your border. Your troops push in a spearhead toward that spot.', { point: 'frontier' }),
+      step('returned', 'Let an attack finish', flag('returned'), 'When an attack runs its course, the surviving troops march home and rejoin your army. Watch the Troops number.', { point: 'el:#empire .stat.big' }),
+    ] },
+  { id: 3, name: 'Build and upgrade', desc: 'Place buildings, then stack them to level 2 and 3.', setup: { minerals: 3000 },
+    steps: [
+      step('build', 'Build a Habitat', { type: 'build', building: 'habitat' }, 'Press 1 or tap Habitat, then click your own land. Habitats raise your troop cap.', { point: 'tool:habitat' }),
+      step('upgrade', 'Upgrade the Habitat', flag('upgraded_habitat'), 'Select Habitat again and click the Habitat you built: it goes to level 2. Each level adds its bonus again.', { point: 'tool:habitat' }),
+      step('extract', 'Build an Extractor', { type: 'build', building: 'extractor' }, 'Extractors raise your mineral income. Build one.', { point: 'tool:extractor' }),
+    ] },
+  { id: 4, name: 'The battle panel', desc: 'Read your troops against theirs, and retreat.', setup: {},
+    steps: [
+      step('war', 'Attack the neighbouring nation', flag('attackedNation'), 'Attack the nation next to you. The battle panel (top right) shows your troops against theirs.', { point: 'el:#battles' }),
+      step('retreat', 'Retreat from the battle', flag('retreated'), 'Press Retreat on the battle row. Your troops come home, minus a quarter.', { point: 'el:#battles' }),
+    ] },
+  { id: 5, name: 'Across the sea', desc: 'Starports and dropships reach other continents.', setup: { minerals: 2000 },
+    steps: [
+      step('port', 'Build a Starport', { type: 'build', building: 'starport' }, 'Starports must be near the coast. Press 3, then click your land by the sea.', { point: 'tool:starport' }),
+      step('drop', 'Send a dropship', flag('dropship'), 'Press 6, then click land across the water. A dropship carries your attack ratio of troops there.', { point: 'tool:dropship' }),
+    ] },
+  { id: 6, name: 'Research and abilities', desc: 'Spend exotic matter on research, energy on abilities.', setup: { exotic: 120, energy: 120, abilities: ['strike', 'rally', 'emp'] },
+    steps: [
+      step('research', 'Research something', flag('researched'), 'Press R and pick a research. It lasts for the rest of the battle.', { point: 'tool:research' }),
+      step('muster', 'Use Rapid Muster', flag('ability_rally'), 'Press 8 (Muster) and click anywhere: you instantly gain troops. Strike (7) and Pulse (9) work on enemy land.', { point: 'tool:rally' }),
+    ] },
+  { id: 7, name: 'Win a world', desc: 'Objectives and capturing a capital.', setup: { troops: 3000 },
+    steps: [
+      step('capital', 'Capture the Training Fort', null, 'Each world has a victory goal at the top of the screen. Here it is to capture the Training Fort: attack toward it until its tile is yours.', { point: 'site:enemy-capital' }),
+    ] },
+];
+
+export function tutorialConfig(lesson = 1) {
+  const L = TUTORIAL_LESSONS[Math.max(0, Math.min(TUTORIAL_LESSONS.length - 1, lesson - 1))];
+  return {
+    id: 'tutorial', name: 'Tutorial', title: `Lesson ${L.id}: ${L.name}`, lesson: L.name, tagline: L.desc,
+    theme: 'vulkara', seed: 2024, size: [300, 190], scale: 1, tutorialWorld: true, lessonId: L.id, setup: L.setup,
+    grace: 99999,
+    enemy: { name: 'Training Drones', color: '#ff4b3e', profile: 'passive', radius: 6, troops: 250, capitalName: 'Training Fort', startDelay: 99999 },
+    nations: { count: 1, radius: 5, troops: 300, profiles: ['passive'], mainOnly: true },
+    sites: [],
+    events: null,
+    victory: L.id === 7
+      ? { mode: 'any', conds: [{ type: 'capture', site: 'enemy-capital', label: 'Capture the Training Fort' }] }
+      : { mode: 'any', conds: [{ type: 'tutorialDone', label: `Finish: ${L.name}` }] },
+    objectives: [],
+    tutorial: L.steps,
+    briefing: [L.desc],
+    lessons: [L.name],
+    rewards: { base: 0 },
+  };
 }
 
 export const PLANET_INDEX = Object.fromEntries(PLANETS.map((p, i) => [p.id, i]));

@@ -40,6 +40,7 @@ export function newCampaign() {
     version: SAVE_VERSION,
     cores: 0,
     totalEarned: 0,
+    tutorial: { done: [], rewarded: false },
     upgrades: Object.fromEntries(UPGRADES.map(u => [u.id, 0])),
     civ: 'terran',
     civsUnlocked: ['terran'],
@@ -82,6 +83,11 @@ export function normalizeCampaign(raw) {
   }
   if (raw.settings && /^(civ|#[0-9a-f]{6})$/i.test(raw.settings.playerColor || '')) c.settings.playerColor = raw.settings.playerColor;
   if (raw.settings && typeof raw.settings.name === 'string') c.settings.name = cleanName(raw.settings.name);
+  if (raw.tutorial && Array.isArray(raw.tutorial.done)) {
+    c.tutorial.done = [...new Set(raw.tutorial.done.filter(n => Number.isInteger(n) && n >= 1 && n <= TUTORIAL_REWARD.lessons))];
+    c.tutorial.rewarded = !!raw.tutorial.rewarded;
+    c.tutorial.offered = !!raw.tutorial.offered;
+  }
   if (raw.battle && typeof raw.battle === 'object' && raw.battle.v === 4) c.battle = raw.battle;
   return c;
 }
@@ -132,6 +138,20 @@ export function unlockCiv(campaign, id) {
 }
 
 // Player modifiers derived from upgrades + chosen civilization.
+// Finishing every tutorial lesson pays a one-time bonus.
+export const TUTORIAL_REWARD = { lessons: 7, cores: 25 };
+
+export function completeLesson(campaign, lesson) {
+  if (!campaign.tutorial.done.includes(lesson)) campaign.tutorial.done.push(lesson);
+  if (!campaign.tutorial.rewarded && campaign.tutorial.done.length >= TUTORIAL_REWARD.lessons) {
+    campaign.tutorial.rewarded = true;
+    campaign.cores += TUTORIAL_REWARD.cores;
+    campaign.totalEarned += TUTORIAL_REWARD.cores;
+    return TUTORIAL_REWARD.cores;
+  }
+  return 0;
+}
+
 // Player names: printable characters only, at most 16, never empty.
 export function cleanName(name) {
   const n = String(name).replace(/[^\p{L}\p{N} ._-]/gu, '').trim().slice(0, 16);

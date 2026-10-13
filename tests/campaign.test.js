@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PLANETS, AI_PROFILES, skirmishConfig, getPlanet } from '../js/campaign.js';
+import { PLANETS, AI_PROFILES, skirmishConfig, getPlanet, TUTORIAL_LESSONS } from '../js/campaign.js';
 import {
   createBattle, step, advance, spawnPlayer, canSpawnAt, playerAttack, playerBuild, playerDropship,
   playerResearch, useAbility, serialize, deserialize, battleResult, analyzeDefeat, PLAYER,
@@ -16,6 +16,7 @@ import { THEMES, THEME_IDS, isLand, T } from '../js/world/themes.js';
 import {
   newCampaign, normalizeCampaign, loadCampaign, saveCampaign, playerLoadout, computeRewards,
   applyVictory, applyDefeat, assistLevel, buyUpgrade, unlockCiv, isUnlocked, SAVE_KEY, starsFor, parTime,
+  completeLesson, TUTORIAL_REWARD,
 } from '../js/progression.js';
 
 const loadout = (mut = c => c) => playerLoadout(mut(newCampaign()));
@@ -587,6 +588,112 @@ test('a dropship turns back when its target changes hands', () => {
   advance(s, 30);
   assert.equal(s.dropships.length, 0);
   assert.ok(me.troops >= before + 400, 'troops came home');
+});
+
+test('every tutorial lesson can be finished, and finishing all pays a bonus once', () => {
+  const lesson = n => createBattle('tutorial', loadout(), { seed: 5, lesson: n, autoSpawn: n > 1 });
+  const W = s => s.w;
+  const borderTiles = (s, owner) => {
+    const out = [];
+    for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === owner && isLand(world(s).terrain[i]) && [i - 1, i + 1, i - W(s), i + W(s)].some(j => s.owner[j] === PLAYER)) out.push(i);
+    return out;
+  };
+  // Push toward a point until we border its owner (or 3 minutes pass).
+  const reach = (s, x, y) => {
+    for (let t = 0; t < 180; t += 2) {
+      const o = s.owner[y * s.w + x];
+      if (o !== 0 && borderTiles(s, o).length) return true;
+      const wild = borderTiles(s, 0);
+      if (!wild.length) return false;
+      wild.sort((a, b) => Math.hypot(a % s.w - x, Math.floor(a / s.w) - y) - Math.hypot(b % s.w - x, Math.floor(b / s.w) - y));
+      s.factions[PLAYER].troops = Math.max(s.factions[PLAYER].troops, 4000);
+      playerAttack(s, wild[0], 0.6);
+      advance(s, 2);
+    }
+    return false;
+  };
+  const done = [];
+  for (const L of TUTORIAL_LESSONS) {
+    const s = lesson(L.id);
+    const me = s.factions[PLAYER];
+    if (L.id === 1) {
+      const w = world(s), main = w.compSize.indexOf(Math.max(...w.compSize));
+      let ok = false;
+      for (let i = 0; i < s.owner.length && !ok; i += 7) if (w.comp[i] === main && canSpawnAt(s, i % s.w, Math.floor(i / s.w))) ok = spawnPlayer(s, i % s.w, Math.floor(i / s.w));
+      s.spawnLeft = 0.01; advance(s, 0.5);
+      playerAttack(s, borderTiles(s, 0)[0], 0.6);
+      for (let t = 0; t < 60 && s.status === 'playing'; t++) { const b = borderTiles(s, 0); if (b.length) playerAttack(s, b[t % b.length], 0.6); advance(s, 2); }
+    } else if (L.id === 2) {
+      advance(s, 0.5);
+      const cap = site(s, 'player-capital');
+      const far = borderTiles(s, 0).sort((a, b) => Math.hypot(b % s.w - cap.x, Math.floor(b / s.w) - cap.y) - Math.hypot(a % s.w - cap.x, Math.floor(a / s.w) - cap.y));
+      // Click well beyond the border: aim at a wilderness tile ~20 tiles out.
+      const t0 = far[0], fx = t0 % s.w, fy = Math.floor(t0 / s.w);
+      let target = t0;
+      for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === 0 && isLand(world(s).terrain[i]) && Math.abs(Math.hypot(i % s.w - fx, Math.floor(i / s.w) - fy) - 15) < 1) { target = i; break; }
+      playerAttack(s, target, 0.3);
+      advance(s, 60);
+    } else if (L.id === 3) {
+      advance(s, 0.5);
+      const spots = [];
+      for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === PLAYER && [T.PLAINS, T.WILD, T.HIGHLAND, T.RUINS].includes(world(s).terrain[i])) spots.push(i);
+      const h = spots.find(i => playerBuild(s, 'habitat', i).ok);
+      playerBuild(s, 'habitat', h);
+      spots.find(i => playerBuild(s, 'extractor', i).ok);
+      advance(s, 1);
+    } else if (L.id === 4) {
+      advance(s, 0.5);
+      const n = s.factions.find(f => f && f.kind === 'nation');
+      const c = s.sites.find(x => x.faction === n.id);
+      assert.ok(reach(s, c.x, c.y), 'lesson 4: can reach the neighbour');
+      playerAttack(s, borderTiles(s, n.id)[0], 0.3);
+      advance(s, 0.3);
+      playerRetreat(s, n.id);
+      advance(s, 1);
+    } else if (L.id === 5) {
+      advance(s, 0.5);
+      me.minerals = 5000;
+      const spots = [];
+      for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === PLAYER) spots.push(i);
+      let port = spots.find(i => playerBuild(s, 'starport', i).ok);
+      if (port === undefined) { const cap = site(s, 'player-capital'); reach(s, 0, cap.y); for (let i = 0; i < s.owner.length && port === undefined; i++) if (s.owner[i] === PLAYER && playerBuild(s, 'starport', i).ok) port = i; }
+      assert.ok(port !== undefined, 'lesson 5: a starport fits');
+      const w = world(s), main = w.comp[port];
+      let target = -1;
+      for (let i = 0; i < s.owner.length; i++) if (isLand(w.terrain[i]) && w.comp[i] !== main && s.owner[i] !== PLAYER) { target = i; break; }
+      assert.ok(playerDropship(s, target, 0.2).ok, 'lesson 5: dropship across the sea');
+      advance(s, 1);
+    } else if (L.id === 6) {
+      advance(s, 0.5);
+      assert.ok(playerResearch(s, 'swift').ok);
+      assert.ok(useAbility(s, 'rally', site(s, 'player-capital').y * s.w + site(s, 'player-capital').x).ok);
+      advance(s, 1);
+    } else {
+      advance(s, 0.5);
+      const c = site(s, 'enemy-capital');
+      for (let t = 0; t < 150 && s.status === 'playing'; t++) {
+        const tiles = borderTiles(s, s.owner[c.y * s.w + c.x]);
+        if (tiles.length) { me.troops = Math.max(me.troops, 20000); playerAttack(s, c.y * s.w + c.x, 1); advance(s, 3); } else reach(s, c.x, c.y);
+      }
+    }
+    assert.equal(s.status, 'won', `lesson ${L.id} (${L.name}) can be finished`);
+    done.push(L.id);
+  }
+  const c = newCampaign();
+  const cores = c.cores;
+  for (const id of done.slice(0, -1)) assert.equal(completeLesson(c, id), 0);
+  assert.equal(completeLesson(c, done[done.length - 1]), TUTORIAL_REWARD.cores, 'bonus for finishing all');
+  assert.equal(completeLesson(c, 1), 0, 'paid only once');
+  assert.equal(c.cores, cores + TUTORIAL_REWARD.cores);
+  assert.deepEqual(normalizeCampaign(JSON.parse(JSON.stringify(c))).tutorial.done.sort(), [1, 2, 3, 4, 5, 6, 7]);
+});
+
+test('Vulkara training is shorter after the standalone tutorial', () => {
+  const s = createBattle('vulkara', loadout(), { seed: 7, autoSpawn: true, tutorial: 'short' });
+  advance(s, 0.5);
+  assert.deepEqual(TUTORIAL_LESSONS.length, 7);
+  assert.equal(tutorialStep(s).id, 'expand');
+  assert.equal(tutorialUnlocked(s), null, 'nothing locked in the short version');
 });
 
 test('ownership maps round-trip through run-length encoding', () => {

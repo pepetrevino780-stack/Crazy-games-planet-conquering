@@ -1,8 +1,8 @@
 // Interface controller: screens, map input, HUD, notices, saving and portal hooks.
-import { PLANETS, getPlanet, skirmishConfig, BUILDINGS, RESEARCH, SITE_TYPES, PERSONAS, SKIRMISH_MODES } from './campaign.js';
+import { PLANETS, getPlanet, skirmishConfig, BUILDINGS, RESEARCH, SITE_TYPES, PERSONAS, SKIRMISH_MODES, TUTORIAL_LESSONS } from './campaign.js';
 import {
   newCampaign, loadCampaign, saveCampaign, isUnlocked, UPGRADES, CIVS, ABILITIES, upgradeCost,
-  buyUpgrade, unlockCiv, playerLoadout, cleanName, computeRewards, applyVictory, applyDefeat, assistLevel, starsFor,
+  buyUpgrade, unlockCiv, playerLoadout, cleanName, completeLesson, TUTORIAL_REWARD, computeRewards, applyVictory, applyDefeat, assistLevel, starsFor,
 } from './progression.js';
 import {
   createBattle, step, spawnPlayer, canSpawnAt, playerAttack, playerDropship, playerBuild,
@@ -97,13 +97,17 @@ function show(name) {
   if (name === 'campaign') renderCampaign();
   if (name === 'upgrades') renderUpgrades();
   if (name === 'skirmish') renderSkirmish();
+  if (name === 'tutorial') renderTutorial();
 }
 
 const persist = () => { if (campaign) saveCampaign(storage, campaign); };
 
-function confirmBox(text) {
+function confirmBox(text, yes = 'Confirm', no = 'Cancel') {
   return new Promise(resolve => {
     $('#confirm-text').textContent = text;
+    $('#confirm-yes').textContent = yes;
+    $('#confirm-no').textContent = no;
+    $('#confirm-yes').classList.toggle('danger', yes === 'Confirm');
     $('#modal-confirm').classList.remove('hidden');
     const done = v => { $('#modal-confirm').classList.add('hidden'); resolve(v); };
     $('#confirm-yes').onclick = () => done(true);
@@ -162,7 +166,7 @@ function renderTitle() {
   if (document.activeElement !== $('#player-name')) $('#player-name').value = campaign?.settings.name || 'Commander';
 }
 
-const battleName = b => (b.configId === 'skirmish' ? `Skirmish${b.mode && b.mode !== 'classic' ? ` (${SKIRMISH_MODES[b.mode].name})` : ''}: ${THEMES[b.theme].name}` : getPlanet(b.configId).name);
+const battleName = b => (b.configId === 'tutorial' ? `Tutorial lesson ${b.lesson}` : b.configId === 'skirmish' ? `Skirmish${b.mode && b.mode !== 'classic' ? ` (${SKIRMISH_MODES[b.mode].name})` : ''}: ${THEMES[b.theme].name}` : getPlanet(b.configId).name);
 
 function renderCampaign() {
   $('#cores-campaign').textContent = campaign.cores;
@@ -207,6 +211,31 @@ function renderSkirmish() {
     li.querySelector('button').onclick = () => openBriefing({ configId: 'skirmish', theme, worldSeed: Number($('#skirmish-seed').value) || 1, mode: $('#skirmish-mode').value });
     list.appendChild(li);
   }
+}
+
+function renderTutorial() {
+  if (!campaign) { campaign = newCampaign(); persist(); }
+  const done = campaign.tutorial.done;
+  $('#tutorial-progress').textContent = `${done.length}/${TUTORIAL_LESSONS.length}${campaign.tutorial.rewarded ? ' · bonus earned' : ` · +${TUTORIAL_REWARD.cores} cores for all`}`;
+  const list = $('#lesson-list');
+  list.innerHTML = '';
+  for (const L of TUTORIAL_LESSONS) {
+    const li = document.createElement('li');
+    li.className = 'panel' + (done.includes(L.id) ? ' done' : '');
+    const next = !done.includes(L.id) && TUTORIAL_LESSONS.find(x => !done.includes(x.id)) === L;
+    li.innerHTML = `<span class="mark">${done.includes(L.id) ? '&#10003;' : L.id}</span><div class="info"><b>${L.id}. ${esc(L.name)}</b><p>${esc(L.desc)}</p></div><button class="btn ${next ? 'primary' : ''}">${done.includes(L.id) ? 'Replay' : 'Play'}</button>`;
+    li.querySelector('button').onclick = () => startTutorial(L.id);
+    list.appendChild(li);
+  }
+}
+
+function startTutorial(lesson) {
+  sfx.click();
+  const L = TUTORIAL_LESSONS[lesson - 1];
+  battle = createBattle('tutorial', playerLoadout(campaign), {
+    lesson, seed: 77 + lesson, autoSpawn: !L.setup.manualLanding, spawnTime: L.setup.manualLanding ? 600 : 10,
+  });
+  enterBattle();
 }
 
 function renderUpgrades() {
@@ -283,8 +312,9 @@ function startBattle(ref) {
     assist: rec ? assistLevel(campaign, ref.configId) : 0,
     seed: Date.now() & 0x7fffffff,
     theme: ref.theme, worldSeed: ref.worldSeed, mode: ref.mode,
-    // The training steps run until the planet has been cleared once.
-    tutorial: !rec?.completed,
+    // The training steps run until the planet has been cleared once
+    // (a short version for players who finished the standalone tutorial).
+    tutorial: rec?.completed ? false : campaign.tutorial.done.length >= TUTORIAL_REWARD.lessons ? 'short' : true,
   });
   enterBattle();
 }
@@ -389,8 +419,43 @@ function battleStats(state, result) {
   return `<div class="stat-grid">${items.map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('')}</div>`;
 }
 
+function endTutorialLesson() {
+  const cfg = config(battle);
+  const won = battle.status === 'won';
+  const lesson = cfg.lessonId;
+  const body = $('#debrief-body');
+  $('#debrief-icon').src = iconURL(won ? 'victory' : 'defeat', 4);
+  $('#btn-debrief-replay').classList.remove('hidden');
+  $('#btn-debrief-replay').onclick = () => startTutorial(lesson);
+  if (won) {
+    const bonus = completeLesson(campaign, lesson);
+    campaign.battle = null;
+    persist();
+    $('#debrief-title').textContent = `Lesson ${lesson} complete`;
+    $('#debrief-sub').textContent = `${cfg.lesson} · ${campaign.tutorial.done.length}/${TUTORIAL_LESSONS.length} lessons done`;
+    body.innerHTML = `<ul class="bullets">${cfg.tutorial.map(s => `<li>${esc(s.label)}</li>`).join('')}</ul>
+      ${bonus ? `<p class="reward-ad">Every lesson done: <b>+${bonus} Stellar Cores</b>. Spend them on Command upgrades.</p>` : ''}`;
+    const nextLesson = TUTORIAL_LESSONS.find(L => !campaign.tutorial.done.includes(L.id));
+    $('#btn-debrief-primary').textContent = nextLesson ? `Next: ${nextLesson.name}` : 'Start the campaign';
+    $('#btn-debrief-primary').onclick = () => (nextLesson ? startTutorial(nextLesson.id) : openBriefing({ configId: PLANETS[0].id }));
+  } else {
+    campaign.battle = null;
+    persist();
+    $('#debrief-title').textContent = 'Lesson not finished';
+    $('#debrief-sub').textContent = cfg.lesson;
+    body.innerHTML = '<p class="note">Try the lesson again: nobody attacks you, so take your time.</p>';
+    $('#btn-debrief-primary').textContent = 'Try again';
+    $('#btn-debrief-primary').onclick = () => startTutorial(lesson);
+  }
+  $('#btn-debrief-secondary').textContent = 'Tutorial menu';
+  $('#btn-debrief-secondary').onclick = () => show('tutorial');
+  battle = null;
+  show('debrief');
+}
+
 function endBattle() {
   gameplayStop();
+  if (config(battle).tutorialWorld) { endTutorialLesson(); return; }
   const cfg = config(battle);
   const won = battle.status === 'won';
   const body = $('#debrief-body');
@@ -1046,6 +1111,7 @@ function updateTutorial() {
   const now = performance.now();
   if (now - tutPointerAt > 1000) { tutPointerAt = now; tutPointer = findPointer(step); }
   const p = step.point || '';
+  if (p.startsWith('el:')) document.querySelector(p.slice(3))?.classList.add('glow');
   if (p.startsWith('tool:')) document.querySelector(`.tool[data-id="${p.slice(5)}"]`)?.classList.add('glow');
   if (p === 'ratio') {
     $('#empire .ratio').classList.add('glow');
@@ -1130,7 +1196,8 @@ function updateHud(force = false) {
   $('#st-land-share').textContent = `${((f.tiles / world(battle).landCount) * 100).toFixed(1)}%`;
   $('#ratio-label').textContent = `${Math.round(ratio * 100)}% (${fmt(f.troops * ratio)})`;
   $('#hud-time').textContent = battle.status === 'spawn' ? `Landing ${Math.ceil(battle.spawnLeft)}s` : fmtTime(battle.time);
-  const grace = battle.status === 'playing' ? graceLeft(battle) : 0;
+  // (The tutorial world is peaceful throughout: no countdown there.)
+  const grace = battle.status === 'playing' && !config(battle).tutorialWorld ? graceLeft(battle) : 0;
   $('#hud-grace').classList.toggle('hidden', !grace);
   if (grace) $('#hud-grace').textContent = `Ceasefire ${fmtTime(Math.ceil(grace))}`;
   const ev = eventPhase(battle);
@@ -1536,12 +1603,18 @@ async function init() {
   document.querySelectorAll('[data-nav]').forEach(b => { b.onclick = () => { sfx.click(); show(b.dataset.nav); }; });
   document.querySelectorAll('[data-open="settings"]').forEach(b => { b.onclick = openSettings; });
   $('#btn-settings-close').onclick = closeSettings;
-  $('#btn-continue').onclick = () => {
+  $('#btn-continue').onclick = async () => {
     const fresh = !hasProgress();
     if (!campaign) { campaign = newCampaign(); persist(); }
-    // A brand-new player goes straight to the first briefing.
+    // A brand-new player is offered the tutorial once, then goes straight to the first briefing.
+    if (fresh && !campaign.tutorial.done.length && !campaign.tutorial.offered) {
+      campaign.tutorial.offered = true;
+      persist();
+      if (await confirmBox('First time? Play the 5-minute tutorial.', 'Play the tutorial', 'Skip')) { show('tutorial'); return; }
+    }
     if (fresh) openBriefing({ configId: PLANETS[0].id }); else show('campaign');
   };
+  $('#btn-tutorial').onclick = () => show('tutorial');
   $('#btn-skirmish').onclick = () => { if (!campaign) { campaign = newCampaign(); persist(); } show('skirmish'); };
   $('#btn-skirmish-reroll').onclick = () => { skirmishSeed = 1 + Math.floor(Math.random() * 99999); $('#skirmish-seed').value = skirmishSeed; };
   $('#btn-new').onclick = async () => {
@@ -1572,7 +1645,7 @@ async function init() {
       startBattle(ref);
     }
   };
-  $('#btn-quit').onclick = () => { saveBattle(); battle = null; show(campaign.battle?.configId === 'skirmish' ? 'title' : 'campaign'); };
+  $('#btn-quit').onclick = () => { saveBattle(); const id = campaign.battle?.configId; battle = null; show(id === 'skirmish' ? 'title' : id === 'tutorial' ? 'tutorial' : 'campaign'); };
   $('#btn-help').onclick = openHelp;
   // Closing an overlay resumes the game, unless the pause menu is still open.
   const resumeUnlessPaused = () => { paused = !$('#overlay-pause').classList.contains('hidden'); };

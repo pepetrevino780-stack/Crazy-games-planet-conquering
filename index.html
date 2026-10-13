@@ -21,6 +21,7 @@
         <div class="menu">
           <button id="btn-resume" class="btn primary hidden">Resume battle</button>
           <button id="btn-continue" class="btn primary">Start campaign</button>
+          <button id="btn-tutorial" class="btn">Tutorial</button>
           <button id="btn-skirmish" class="btn">Skirmish</button>
           <button id="btn-new" class="btn ghost hidden">New game</button>
           <button class="btn ghost" data-open="settings">Settings</button>
@@ -55,6 +56,18 @@
     </section>
 
     <!-- Skirmish -->
+    <section id="screen-tutorial" class="screen">
+      <header class="bar">
+        <button class="btn small" data-nav="title">&lt; Menu</button>
+        <h2>Tutorial</h2>
+        <span id="tutorial-progress" class="note"></span>
+      </header>
+      <div class="scroll narrow">
+        <p class="note">Seven short lessons on a small, calm world. Nobody attacks you and the game waits for each step. Play them in order or pick any one; finish all seven for a bonus of Stellar Cores.</p>
+        <ol id="lesson-list" class="lesson-list"></ol>
+      </div>
+    </section>
+
     <section id="screen-skirmish" class="screen">
       <header class="bar">
         <button class="btn small" data-nav="title">&lt; Menu</button>

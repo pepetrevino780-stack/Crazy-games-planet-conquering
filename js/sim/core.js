@@ -7,7 +7,7 @@
 // front advances tile by tile, paying troops for each tile, until it runs out.
 import { TERRAIN, isLand } from '../world/themes.js';
 import { generateWorld } from '../world/generate.js';
-import { SITE_TYPES, BUILDINGS, getPlanet, skirmishConfig, UPGRADE_GROWTH } from '../campaign.js';
+import { SITE_TYPES, BUILDINGS, getPlanet, skirmishConfig, tutorialConfig, UPGRADE_GROWTH } from '../campaign.js';
 
 export const TICK = 0.1;
 export const PLAYER = 1;
@@ -27,7 +27,9 @@ export function rt(state) {
 export const world = state => rt(state).world;
 
 export function config(state) {
-  return state.configId === 'skirmish' ? skirmishConfig(state.theme, state.seed, state.mode) : getPlanet(state.configId);
+  if (state.configId === 'skirmish') return skirmishConfig(state.theme, state.seed, state.mode);
+  if (state.configId === 'tutorial') return tutorialConfig(state.lesson);
+  return getPlanet(state.configId);
 }
 
 // ---------- Small helpers ----------
