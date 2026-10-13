@@ -27,7 +27,7 @@ export function rt(state) {
 export const world = state => rt(state).world;
 
 export function config(state) {
-  return state.configId === 'skirmish' ? skirmishConfig(state.theme, state.seed) : getPlanet(state.configId);
+  return state.configId === 'skirmish' ? skirmishConfig(state.theme, state.seed, state.mode) : getPlanet(state.configId);
 }
 
 // ---------- Small helpers ----------
@@ -108,12 +108,12 @@ export const graceLeft = state => Math.max(0, (config(state).grace ?? 75) - stat
 
 export const bastionRadius = (state, b) => (BUILDINGS.bastion.radius + 2 * ((b.level || 1) - 1)) * mapScale(state);
 
-export function upgradeCost(b) {
-  return Math.round(BUILDINGS[b.type].cost * Math.pow(UPGRADE_GROWTH, b.level || 1));
+export function upgradeCost(b, state = null) {
+  return Math.round(BUILDINGS[b.type].cost * Math.pow(UPGRADE_GROWTH, b.level || 1) * (state ? config(state).costScale || 1 : 1));
 }
 
 export function buildCost(state, owner, type) {
-  return Math.round(BUILDINGS[type].cost * Math.pow(1.4, buildingsOf(state, owner, type)));
+  return Math.round(BUILDINGS[type].cost * Math.pow(1.4, buildingsOf(state, owner, type)) * (config(state).costScale || 1));
 }
 
 // ---------- Faction numbers ----------
@@ -153,7 +153,8 @@ export function income(state, f) {
   }
   minerals += 4 * buildingLevels(state, f.id, 'extractor');
   exotic += 0.5 * buildingLevels(state, f.id, 'spire');
-  return { minerals: minerals * (f.income || 1), energy, exotic };
+  const scale = config(state).incomeScale || 1;
+  return { minerals: minerals * (f.income || 1) * scale, energy: energy * scale, exotic: exotic * scale };
 }
 
 export function attackFronts(state, f) {

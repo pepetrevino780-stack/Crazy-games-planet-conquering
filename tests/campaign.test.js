@@ -8,9 +8,10 @@ import {
 } from '../js/sim/engine.js';
 import {
   world, maxTroops, regen, borders, siteOwner, isShielded, isPowered, tileDefense, eventPhase, setOwner,
-  countSites, attackFronts, config, income, upgradeCost,
+  countSites, attackFronts, config, income, upgradeCost, buildCost,
 } from '../js/sim/core.js';
 import { generateWorld, components } from '../js/world/generate.js';
+import { requestAlliance, gift, betray, isAllied, relation, isTraitor } from '../js/sim/diplomacy.js';
 import { THEMES, THEME_IDS, isLand, T } from '../js/world/themes.js';
 import {
   newCampaign, normalizeCampaign, loadCampaign, saveCampaign, playerLoadout, computeRewards,
@@ -525,6 +526,67 @@ test('a clicked attack pushes a spearhead toward the click and can be re-aimed',
   assert.ok(playerAttack(s, other, 0.2).ok);
   assert.equal(s.attacks.filter(x => x.attacker === PLAYER).length, 1, 'still one attack');
   assert.equal(a.fx, other % s.w, 're-aimed at the new click');
+});
+
+test('diplomacy: gifts build trust, allies are off-limits, betrayal is remembered', () => {
+  const s = battle('cryonis', { tutorial: false });
+  advance(s, 0.5);
+  const me = s.factions[PLAYER];
+  const nations = s.factions.filter(f => f && f.kind === 'nation');
+  const [a, b] = nations;
+  const enemy = s.factions.find(f => f && f.kind === 'enemy');
+  assert.equal(requestAlliance(s, enemy.id).reason, 'enemyRefuses');
+  relation(s, a.id).trust = -30;
+  assert.equal(requestAlliance(s, a.id).ok, false, 'distrustful nations refuse');
+  me.minerals = 5000;
+  for (let k = 0; k < 4; k++) gift(s, a.id, 'minerals', 500);
+  assert.ok(requestAlliance(s, a.id).ok, 'gifts earned the alliance');
+  assert.ok(isAllied(s, PLAYER, a.id) && isAllied(s, a.id, PLAYER));
+  // Allies are off-limits for attacks.
+  let tile = -1;
+  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === a.id) { tile = i; break; }
+  assert.equal(playerAttack(s, tile, 0.2).reason, 'allied');
+  // Betrayal: traitor mark, everyone else trusts you less.
+  const before = relation(s, b.id).trust;
+  assert.ok(betray(s, a.id).ok);
+  assert.ok(isTraitor(s));
+  assert.ok(relation(s, b.id).trust <= before - 25 + 1e-9);
+  assert.equal(requestAlliance(s, b.id).reason, 'traitor');
+});
+
+test('skirmish modes: teams, free-for-all and fast build', () => {
+  const t = createBattle('skirmish', loadout(), { seed: 2, theme: 'cryonis', worldSeed: 9, mode: 'teams', autoSpawn: true });
+  const mates = t.factions.filter(f => f && f.kind === 'nation' && t.teams[f.id] === 1);
+  const foes = t.factions.filter(f => f && f.kind === 'nation' && t.teams[f.id] === 2);
+  assert.ok(mates.length && foes.length, 'nations split into two teams');
+  assert.ok(isAllied(t, PLAYER, mates[0].id) && !isAllied(t, PLAYER, foes[0].id));
+  assert.ok(isAllied(t, foes[0].id, t.factions.find(f => f && f.kind === 'enemy').id), 'the other team sides with the Dominion');
+  assert.equal(betray(t, mates[0].id).reason, 'locked');
+  const ffa = createBattle('skirmish', loadout(), { seed: 2, theme: 'cryonis', worldSeed: 9, mode: 'ffa', autoSpawn: true });
+  assert.equal(config(ffa).victory.conds[0].type, 'capitals');
+  const fast = createBattle('skirmish', loadout(), { seed: 2, theme: 'cryonis', worldSeed: 9, mode: 'fast', autoSpawn: true });
+  const classic = createBattle('skirmish', loadout(), { seed: 2, theme: 'cryonis', worldSeed: 9, autoSpawn: true });
+  assert.equal(buildCost(fast, PLAYER, 'habitat') * 2, buildCost(classic, PLAYER, 'habitat'));
+  assert.equal(deserialize(serialize(fast)).mode, 'fast', 'the mode is saved');
+});
+
+test('a dropship turns back when its target changes hands', () => {
+  const s = battle('cryonis', { tutorial: false });
+  freezeAI(s);
+  advance(s, 0.5);
+  const me = s.factions[PLAYER];
+  const cap = site(s, 'player-capital');
+  let tile = -1;
+  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === 0 && isLand(world(s).terrain[i]) && Math.hypot(i % s.w - cap.x, Math.floor(i / s.w) - cap.y) > 150) { tile = i; break; }
+  const tx = tile % s.w, ty = Math.floor(tile / s.w);
+  s.dropships.push({ id: 999, owner: PLAYER, troops: 500, x: cap.x, y: cap.y, tx, ty, px: cap.x, py: cap.y, targetOwner: 0, speed: 30 });
+  const before = me.troops;
+  advance(s, 1);
+  setOwner(s, tile, s.factions.find(f => f && f.kind === 'nation').id);
+  s.notices.length = 0;
+  advance(s, 30);
+  assert.equal(s.dropships.length, 0);
+  assert.ok(me.troops >= before + 400, 'troops came home');
 });
 
 test('ownership maps round-trip through run-length encoding', () => {

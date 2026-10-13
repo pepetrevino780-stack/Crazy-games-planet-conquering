@@ -64,6 +64,8 @@
       <div class="scroll narrow">
         <p class="note">A new procedurally generated world every time. Pick a world type.</p>
         <ol id="skirmish-list" class="planet-list"></ol>
+        <label class="field">Mode <select id="skirmish-mode"></select></label>
+        <p id="skirmish-mode-desc" class="note"></p>
         <label class="field">World seed <input id="skirmish-seed" type="number" min="1" max="999999"></label>
         <button id="btn-skirmish-reroll" class="btn small">New seed</button>
       </div>
@@ -163,6 +165,7 @@
       <div id="battles" class="hud-box battles hidden" aria-live="polite"></div>
       <button id="battles-chip" class="btn small battles-chip hidden"></button>
       <div id="inspector" class="hud-box inspector hidden"></div>
+      <div id="radial" class="radial hidden" role="menu"></div>
       <div id="tutorial" class="hud-box tutorial hidden" aria-live="polite"></div>
 
       <div id="toasts" class="toasts"></div>

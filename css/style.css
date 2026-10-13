@@ -216,6 +216,14 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .ratio b { color: #fff; float: right; }
 .ratio input { width: 100%; accent-color: var(--bad); height: 22px; }
 
+/* Radial menu around a map spot. */
+.radial { position: fixed; z-index: 40; width: 0; height: 0; }
+.radial .rcenter { position: absolute; transform: translate(-50%, -50%); padding: 3px 7px; background: rgba(9, 7, 18, 0.92); border: var(--px) solid var(--line); font-size: 12px; white-space: nowrap; text-align: center; pointer-events: none; }
+.radial .ritem { position: absolute; transform: translate(-50%, -50%); width: 64px; min-height: 44px; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 3px 2px; background: rgba(21, 18, 42, 0.95); border: var(--px) solid var(--line); color: var(--text); font: 11px var(--font-body); cursor: pointer; animation: rpop .15s steps(3); }
+.radial .ritem:hover { border-color: var(--gold); color: var(--gold); }
+.radial .ritem img { width: 18px; height: 18px; image-rendering: pixelated; }
+@keyframes rpop { from { opacity: 0; } }
+
 /* Battle panel: you vs each country you are fighting, top right. */
 .battles { position: absolute; right: 6px; top: var(--hud-top); width: 340px; z-index: 2; padding: 4px; display: flex; flex-direction: column; gap: 3px; }
 .brow { position: relative; padding: 4px 6px 6px; background: rgba(21, 18, 42, 0.85); border: 1px solid var(--line); cursor: pointer; font-size: 13px; }
@@ -245,6 +253,7 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .inspector .row { display: flex; justify-content: space-between; gap: 8px; }
 .inspector .row span { color: var(--muted); }
 .inspector .note { font-size: 12px; color: var(--muted); margin: 1px 0 3px; }
+.board .ally { color: var(--good); }
 .board .persona { display: block; font-size: 11px; color: var(--muted); margin-left: 16px; }
 .inspector .tags { color: var(--cyan); font-size: 12px; margin-top: 4px; overflow-wrap: anywhere; }
 .inspector .close { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; padding: 0; background: transparent; border: 0; color: var(--muted); cursor: pointer; font-family: var(--font-head); }

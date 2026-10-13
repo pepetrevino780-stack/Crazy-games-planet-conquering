@@ -9,6 +9,7 @@ import {
   maxTroops, regen, income, tileCost, tileLocked, neighbors4, TileHeap, eventPhase, sitesOf, countSites, buildCost,
   alive, borders, upgradeCost, mapScale, areaScale,
 } from './core.js';
+import { isAllied, relation, onPlayerAttack, driftTrust } from './diplomacy.js';
 import { think } from './ai.js';
 
 export const STATE_VERSION = 4;
@@ -89,7 +90,7 @@ export function createBattle(configId, loadout, opts = {}) {
   };
   const cfgSeed = opts.worldSeed;
   // Resolve the config (skirmish worlds are defined by theme + seed).
-  if (!base) { state.theme = opts.theme || 'noctyra'; state.seed = cfgSeed ?? 1; }
+  if (!base) { state.theme = opts.theme || 'noctyra'; state.seed = cfgSeed ?? 1; state.mode = opts.mode || 'classic'; }
   const cfg0 = base ? configFor(configId) : null;
   if (cfg0) { state.theme = cfg0.theme; state.seed = cfgSeed ?? cfg0.seed; }
   const cfg = config(state);
@@ -179,6 +180,17 @@ export function createBattle(configId, loadout, opts = {}) {
     claimBlob(state, p.x, p.y, cfg.nations.radius * lin, id);
   });
 
+  // Teams mode: alternate nations join the player's side or the Dominion's.
+  if (cfg.teams) {
+    state.teams = { [PLAYER]: 1, [enemyId]: 2 };
+    let k = 0;
+    for (const f of state.factions) {
+      if (!f || f.kind !== 'nation') continue;
+      state.teams[f.id] = k++ % 2 === 0 ? 1 : 2;
+      if (state.teams[f.id] === 1) Object.assign(relation(state, f.id), { allied: true, locked: true, trust: 100 });
+    }
+  }
+
   // Contested resource and objective sites.
   for (const spec of cfg.sites || []) {
     const pts = placePoints(w, spec.count, {
@@ -245,9 +257,11 @@ export function playerAttack(state, tileIndex, ratio) {
   if (!isLand(world(state).terrain[tileIndex])) return { ok: false, reason: 'water' };
   if (target === PLAYER) return { ok: false, reason: 'own' };
   if (tileLocked(state, tileIndex)) { state.stats.shieldBlocked++; return { ok: false, reason: 'shielded' }; }
+  if (target && isAllied(state, PLAYER, target)) return { ok: false, reason: 'allied' };
   const f = state.factions[PLAYER];
   const res = launchAttack(state, PLAYER, target, f.troops * ratio, tileIndex);
   if (res.ok) {
+    onPlayerAttack(state, target);
     // Aim now, so the HUD can show the push direction straight away.
     const a = state.attacks.find(x => x.attacker === PLAYER && x.target === target);
     if (a) { buildFrontier(state, a); res.aim = { x0: a.ox, y0: a.oy, x1: a.fx ?? a.ox, y1: a.fy ?? a.oy }; }
@@ -279,6 +293,7 @@ export function playerDropship(state, tileIndex, ratio) {
   const f = state.factions[PLAYER];
   if (!isLand(world(state).terrain[tileIndex]) || state.owner[tileIndex] === PLAYER) return { ok: false, reason: 'invalid' };
   if (tileLocked(state, tileIndex)) return { ok: false, reason: 'shielded' };
+  if (state.owner[tileIndex] && isAllied(state, PLAYER, state.owner[tileIndex])) return { ok: false, reason: 'allied' };
   const ports = state.buildings.filter(b => b.type === 'starport' && state.owner[b.y * state.w + b.x] === PLAYER);
   if (!ports.length) return { ok: false, reason: 'noStarport' };
   if (f.minerals < DROPSHIP_COST) return { ok: false, reason: 'minerals' };
@@ -288,7 +303,7 @@ export function playerDropship(state, tileIndex, ratio) {
   const port = ports.reduce((a, b) => (Math.hypot(a.x - tx, a.y - ty) < Math.hypot(b.x - tx, b.y - ty) ? a : b));
   f.minerals -= DROPSHIP_COST;
   f.troops -= troops;
-  state.dropships.push({ id: state.nextId++, owner: PLAYER, troops, x: port.x, y: port.y, tx, ty, speed: 28 * mapScale(state) * (1 + 0.4 * ((port.level || 1) - 1)) });
+  state.dropships.push({ id: state.nextId++, owner: PLAYER, troops, x: port.x, y: port.y, tx, ty, px: port.x, py: port.y, targetOwner: state.owner[tileIndex], speed: 28 * mapScale(state) * (1 + 0.4 * ((port.level || 1) - 1)) });
   state.stats.attacks++;
   return { ok: true, sent: troops };
 }
@@ -323,7 +338,7 @@ export function upgradeTarget(state, owner, type, i) {
 function upgradeBuilding(state, owner, b) {
   const f = state.factions[owner];
   if ((b.level || 1) >= MAX_LEVEL) return { ok: false, reason: 'maxLevel' };
-  const cost = upgradeCost(b);
+  const cost = upgradeCost(b, state);
   if (f.minerals < cost) return { ok: false, reason: 'minerals' };
   f.minerals -= cost;
   b.level = (b.level || 1) + 1;
@@ -394,6 +409,7 @@ export function useAbility(state, id, i) {
   if (id === 'strike') {
     const target = state.owner[i];
     if (!target || target === PLAYER) return { ok: false, reason: 'target' };
+    if (isAllied(state, PLAYER, target)) return { ok: false, reason: 'allied' };
     if (tileLocked(state, i)) return { ok: false, reason: 'shielded' };
     const tf = state.factions[target];
     const density = tf.troops / Math.max(1, tf.tiles);
@@ -559,8 +575,15 @@ function advanceDropships(state, dt) {
     const d = state.dropships[k];
     const dist = Math.hypot(d.tx - d.x, d.ty - d.y);
     const step = (d.speed || 28 * mapScale(state)) * dt;
+    // Auto-return: if the target changes hands before landing, turn back home.
+    if (!d.returning && d.targetOwner !== undefined && state.owner[d.ty * state.w + d.tx] !== d.targetOwner) {
+      d.returning = true; d.tx = d.px ?? Math.round(d.x); d.ty = d.py ?? Math.round(d.y);
+      notice(state, 'dropReturn', { owner: d.owner, x: Math.round(d.x), y: Math.round(d.y) });
+      continue;
+    }
     if (dist > step) { d.x += (d.tx - d.x) / dist * step; d.y += (d.ty - d.y) / dist * step; continue; }
     state.dropships.splice(k, 1);
+    if (d.returning) { const f = state.factions[d.owner]; if (alive(f)) f.troops += d.troops; continue; }
     const i = d.ty * state.w + d.tx;
     const f = state.factions[d.owner];
     const target = state.owner[i];
@@ -623,6 +646,10 @@ export function condProgress(state, c, i, dt = 0) {
   const cap = state.sites.find(s => s.id === c.site);
   switch (c.type) {
     case 'capture': return { done: !!cap && siteOwner(state, cap) === PLAYER };
+    case 'capitals': {
+      const n = state.sites.filter(s => (s.type === 'capital' || s.type === 'citadel') && s.id !== 'player-capital' && siteOwner(state, s) === PLAYER).length;
+      return { done: n >= c.n, frac: n / c.n, text: ` (${Math.min(n, c.n)}/${c.n})` };
+    }
     case 'ownType': { const n = countSites(state, c.site, PLAYER); return { done: n >= c.n, text: ` (${Math.min(n, c.n)}/${c.n})` }; }
     case 'holdType': {
       const n = countSites(state, c.site, PLAYER);
@@ -716,6 +743,7 @@ export function step(state, dt = TICK) {
       }
     }
     advanceTutorial(state);
+    driftTrust(state, dt * 3);
     updateVictory(state, dt * 3);
   }
 }

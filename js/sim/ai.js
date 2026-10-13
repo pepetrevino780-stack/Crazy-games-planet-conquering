@@ -6,6 +6,7 @@ import {
   maxTroops, borderMap, launchAttack, attackFronts, siteOwner, buildCost, world, PLAYER, mapScale, areaScale, graceLeft,
 } from './core.js';
 import { npcBuild, npcUpgrade } from './engine.js';
+import { isAllied } from './diplomacy.js';
 
 const VALUE = { capital: 3, citadel: 3, hub: 2.5, relay: 2.2, command: 2.2, factory: 1.6, crystal: 1.4, vent: 1.2, turret: 0.6, ruin: 0.6 };
 
@@ -36,6 +37,8 @@ export function think(state, fid, rand) {
   let best = null, bestScore = 0;
   for (const [o, len] of near) {
     if (o === fid || state.attacks.some(a => a.attacker === fid && a.target === o)) continue;
+    // Allies and teammates never attack each other.
+    if (o && isAllied(state, fid, o)) continue;
     let score;
     if (o === 0) {
       score = p.wildBias * Math.min(1, len / (15 * mapScale(state)));
@@ -58,6 +61,9 @@ export function think(state, fid, rand) {
       score += p.objectiveSense * targetValue(state, fid, o) * 0.35;
       if (f.kind === 'player' && other.kind === 'enemy') score += p.objectiveSense * 1.2;
       if (grudge) score += 1.2;
+      // Allies of the player help out against whoever is attacking the player.
+      const pa = state.factions[PLAYER].attackedBy;
+      if (isAllied(state, fid, PLAYER) && o in pa && state.time - pa[o] < 30) score += 1.2;
       if (p.prey) score += p.prey * ((busy ? 0.9 : 0) + Math.min(1.5, Math.max(0, ratio - 1)) * 0.5);
       score *= Math.min(1, 0.4 + len / (25 * mapScale(state)));
     }

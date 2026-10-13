@@ -1,5 +1,5 @@
 // Interface controller: screens, map input, HUD, notices, saving and portal hooks.
-import { PLANETS, getPlanet, skirmishConfig, BUILDINGS, RESEARCH, SITE_TYPES, PERSONAS } from './campaign.js';
+import { PLANETS, getPlanet, skirmishConfig, BUILDINGS, RESEARCH, SITE_TYPES, PERSONAS, SKIRMISH_MODES } from './campaign.js';
 import {
   newCampaign, loadCampaign, saveCampaign, isUnlocked, UPGRADES, CIVS, ABILITIES, upgradeCost,
   buyUpgrade, unlockCiv, playerLoadout, cleanName, computeRewards, applyVictory, applyDefeat, assistLevel, starsFor,
@@ -14,6 +14,7 @@ import {
   config, world, maxTroops, regen, income, buildCost, siteOwner, isShielded, isPowered, countSites,
   eventPhase, tileDefense, attackFronts, sitesOf, borders, graceLeft, upgradeCost as levelUpCost, mapScale,
 } from './sim/core.js';
+import { isAllied, attitude, requestAlliance, gift, betray, isTraitor } from './sim/diplomacy.js';
 import { MapRenderer, fmt } from './render.js';
 import { THEMES, TERRAIN, THEME_IDS, isLand } from './world/themes.js';
 import { iconURL, spriteCanvas, mixHex } from './art/sprites.js';
@@ -64,6 +65,11 @@ const PROFILE_TEXT = {
   mastermind: 'Coordinated. Attacks on one front per command node and times its moves to the eclipse.',
 };
 const REASONS = {
+  allied: 'You are allied with them. Break the alliance first (right-click or long-press their land).',
+  enemyRefuses: 'They are at war with you and will not deal.',
+  traitor: 'Nobody trusts a traitor. Wait until your traitor mark fades.',
+  locked: 'Teammates cannot be betrayed.',
+  notAllied: 'You are not allied with them.',
   notBordering: 'You do not border that land. Expand toward it, or build a Starport and use a dropship (6).',
   noTroops: 'Not enough troops. Raise the attack ratio or wait for your army to regrow.',
   fronts: 'Too many attacks at once. Wait for one to finish.',
@@ -156,7 +162,7 @@ function renderTitle() {
   if (document.activeElement !== $('#player-name')) $('#player-name').value = campaign?.settings.name || 'Commander';
 }
 
-const battleName = b => (b.configId === 'skirmish' ? `Skirmish: ${THEMES[b.theme].name}` : getPlanet(b.configId).name);
+const battleName = b => (b.configId === 'skirmish' ? `Skirmish${b.mode && b.mode !== 'classic' ? ` (${SKIRMISH_MODES[b.mode].name})` : ''}: ${THEMES[b.theme].name}` : getPlanet(b.configId).name);
 
 function renderCampaign() {
   $('#cores-campaign').textContent = campaign.cores;
@@ -185,6 +191,12 @@ function renderCampaign() {
 
 function renderSkirmish() {
   $('#skirmish-seed').value = skirmishSeed;
+  const sel = $('#skirmish-mode');
+  if (!sel.options.length) {
+    sel.innerHTML = Object.entries(SKIRMISH_MODES).map(([id, m]) => `<option value="${id}">${esc(m.name)}</option>`).join('');
+    sel.onchange = () => { $('#skirmish-mode-desc').textContent = SKIRMISH_MODES[sel.value].desc; };
+  }
+  $('#skirmish-mode-desc').textContent = SKIRMISH_MODES[sel.value].desc;
   const list = $('#skirmish-list');
   list.innerHTML = '';
   for (const theme of THEME_IDS) {
@@ -192,7 +204,7 @@ function renderSkirmish() {
     li.className = 'planet panel';
     li.innerHTML = `<h3>${esc(THEMES[theme].name)}</h3><div class="lesson">${esc(getPlanet(theme)?.name || '')} world</div><button class="btn primary">Generate &amp; play</button>`;
     li.insertBefore(orbCanvas(theme), li.querySelector('h3'));
-    li.querySelector('button').onclick = () => openBriefing({ configId: 'skirmish', theme, worldSeed: Number($('#skirmish-seed').value) || 1 });
+    li.querySelector('button').onclick = () => openBriefing({ configId: 'skirmish', theme, worldSeed: Number($('#skirmish-seed').value) || 1, mode: $('#skirmish-mode').value });
     list.appendChild(li);
   }
 }
@@ -232,14 +244,14 @@ function renderUpgrades() {
 }
 
 function cfgFor(ref) {
-  return ref.configId === 'skirmish' ? skirmishConfig(ref.theme, ref.worldSeed) : getPlanet(ref.configId);
+  return ref.configId === 'skirmish' ? skirmishConfig(ref.theme, ref.worldSeed, ref.mode) : getPlanet(ref.configId);
 }
 
 function openBriefing(ref) {
   briefingRef = ref;
   const p = cfgFor(ref);
   const idx = PLANETS.indexOf(p);
-  $('#brief-title').textContent = ref.configId === 'skirmish' ? `Skirmish — ${THEMES[ref.theme].name}` : `${p.name}: ${p.title}`;
+  $('#brief-title').textContent = ref.configId === 'skirmish' ? `Skirmish — ${THEMES[ref.theme].name} · ${SKIRMISH_MODES[p.mode].name}` : `${p.name}: ${p.title}`;
   $('#brief-back').dataset.nav = ref.configId === 'skirmish' ? 'skirmish' : 'campaign';
   $('#brief-lesson').textContent = idx >= 0 ? `Lesson ${idx + 1}: ${p.lesson}` : `World seed ${ref.worldSeed}`;
   $('#brief-tagline').textContent = p.tagline;
@@ -270,7 +282,7 @@ function startBattle(ref) {
     difficulty: campaign.settings.difficulty,
     assist: rec ? assistLevel(campaign, ref.configId) : 0,
     seed: Date.now() & 0x7fffffff,
-    theme: ref.theme, worldSeed: ref.worldSeed,
+    theme: ref.theme, worldSeed: ref.worldSeed, mode: ref.mode,
     // The training steps run until the planet has been cleared once.
     tutorial: !rec?.completed,
   });
@@ -384,7 +396,7 @@ function endBattle() {
   const body = $('#debrief-body');
   const result = battleResult(battle);
   const chart = landChart(battle);
-  const replayRef = cfg.skirmish ? { configId: 'skirmish', theme: battle.theme, worldSeed: battle.seed } : { configId: cfg.id };
+  const replayRef = cfg.skirmish ? { configId: 'skirmish', theme: battle.theme, worldSeed: battle.seed, mode: battle.mode } : { configId: cfg.id };
   $('#btn-debrief-replay').onclick = () => openBriefing(replayRef);
   $('#debrief-icon').src = iconURL(won ? 'victory' : 'defeat', 4);
   if (won) {
@@ -426,7 +438,7 @@ function endBattle() {
     body.innerHTML = `${battleStats(battle, result)}<div class="chart-slot"></div><h3>What went wrong</h3><ul class="bullets">${tips.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
       <h3>This world tests</h3><ul class="bullets">${cfg.lessons.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
       ${assist ? `<p class="assist">Adaptive assist ${assist}/3 active for your next attempt.</p>` : ''}`;
-    const ref = { configId: battle.configId, theme: battle.theme, worldSeed: battle.seed };
+    const ref = { configId: battle.configId, theme: battle.theme, worldSeed: battle.seed, mode: battle.mode };
     $('#btn-debrief-primary').textContent = 'Retry';
     $('#btn-debrief-primary').onclick = () => beginBattle(ref);
     $('#btn-debrief-secondary').textContent = cfg.skirmish ? 'Skirmish menu' : 'Campaign';
@@ -577,7 +589,7 @@ function updateObjectives() {
   const next = conds.find(x => !x.pr.done);
   const tut = battle.status === 'playing' ? tutorialStep(battle) : null;
   $('#hud-objective').textContent = battle.status === 'spawn' ? 'Choose your landing site' : tut ? tut.label : cur ? cur.label : next ? next.c.label + (next.pr.text || '') : '';
-  $('#obj-count').textContent = `${battle.objectivesDone.length}/${cfg.objectives.length}`;
+  $('#obj-count').textContent = cfg.objectives.length ? `${battle.objectivesDone.length}/${cfg.objectives.length}` : '';
   // Victory progress bar: hold timers and land share report real progress.
   const frac = Math.max(...conds.map(x => (x.pr.done ? 1 : x.pr.frac || 0)), 0);
   $('#hud-progress').style.width = `${Math.min(100, frac * 100).toFixed(1)}%`;
@@ -653,8 +665,10 @@ function tileTip(i) {
   const parts = [];
   if (f) {
     const p = persona(f);
+    const att = o !== PLAYER && attitude(battle, o);
     parts.push(`<b style="color:${f.color}">${esc(o === PLAYER ? 'Your empire' : f.name)}</b>${p ? ` · ${esc(p.name)}` : ''}<br>${fmt(f.tiles)} tiles · ${fmt(f.troops)} troops`);
     if (p) parts.push(`<span class="dim">${esc(p.desc)}</span>`);
+    if (att) parts.push(`Attitude to you: <span class="${att.cls}">${esc(att.label)}</span>${att.label === 'At war' || att.label === 'Teammate' ? '' : ` (trust ${att.trust})`}`);
   } else if (isLand(t)) parts.push('<b>Unclaimed wilderness</b>');
   if (isLand(t)) {
     const cont = (w.continents || []).find(c => c.id === w.comp[i]);
@@ -668,7 +682,7 @@ function tileTip(i) {
     const lvl = bld.level || 1;
     parts.push(`<b>${esc(BUILDINGS[bld.type].name)}</b> · level ${lvl}/3: ${esc(BUILDINGS[bld.type].desc)}`);
     if (armed?.kind === 'build' && armed.id === bld.type && o === PLAYER) {
-      parts.push(lvl >= 3 ? '<span class="no">Already at the highest level.</span>' : `<span class="ok">Click to upgrade to level ${lvl + 1} for ${fmt(levelUpCost(bld))} minerals.</span>`);
+      parts.push(lvl >= 3 ? '<span class="no">Already at the highest level.</span>' : `<span class="ok">Click to upgrade to level ${lvl + 1} for ${fmt(levelUpCost(bld, battle))} minerals.</span>`);
     }
   }
   if (battle.status === 'playing' && isLand(t) && o !== PLAYER && !armed) parts.push(`<span class="ok">Click to attack with ${fmt(battle.factions[PLAYER].troops * ratio)} troops.</span>`);
@@ -751,6 +765,74 @@ function initTooltips() {
     swallowClick = false;
     e.preventDefault(); e.stopPropagation();
   }, true);
+}
+
+// ---------- Radial menu ----------
+// Right-click (or long-press on touch) a spot on the map: Attack, Dropship,
+// Build, diplomacy (Ally, send troops or minerals, Betray) and Info.
+
+function radialItems(i) {
+  const o = battle.owner[i], t = world(battle).terrain[i];
+  const f = o ? battle.factions[o] : null;
+  const land = isLand(t);
+  const allied = !!(o && o !== PLAYER && isAllied(battle, PLAYER, o));
+  const items = [];
+  if (battle.status !== 'playing') return items;
+  const act = (kind, id) => () => { armed = kind ? { kind, id } : null; clickTile(i); armed = null; };
+  if (land && o !== PLAYER && !allied) items.push({ icon: iconURL('attack', 3), label: 'Attack', act: act(null) });
+  if (land && o !== PLAYER && !allied && canDropship(battle) && toolUnlocked('dropship', 'dropship')) items.push({ icon: iconURL('fleet', 3), label: 'Dropship', act: act('dropship', 'dropship') });
+  if (o === PLAYER) {
+    for (const [id, b] of Object.entries(BUILDINGS)) {
+      if (!toolUnlocked('build', id)) continue;
+      items.push({ icon: spriteIcon(id), label: `${b.name.split(' ')[0]} ${fmt(buildCost(battle, PLAYER, id))}`, act: act('build', id) });
+    }
+  }
+  if (f && o !== PLAYER && f.kind !== 'enemy' && attitude(battle, o).label !== 'At war') {
+    if (!allied) {
+      items.push({ icon: iconURL('crown', 3), label: 'Ally', act: () => {
+        const r = requestAlliance(battle, o);
+        if (!r.ok) toast(r.reason === 'refused' ? `${esc(f.name)} declined. They need ${r.need} more trust: gifts help.` : REASONS[r.reason] || 'They refused.', 'bad', 3500);
+      } });
+    }
+    const me = battle.factions[PLAYER];
+    items.push({ icon: iconURL('troops', 3), label: `Send ${fmt(me.troops * 0.1)}`, act: () => gift(battle, o, 'troops', me.troops * 0.1) });
+    items.push({ icon: iconURL('minerals', 3), label: 'Send 100', act: () => { const r = gift(battle, o, 'minerals', 100); if (!r.ok) toast(REASONS[r.reason] || 'Not enough minerals.', 'bad', 2500); } });
+    if (allied && attitude(battle, o).label !== 'Teammate') {
+      items.push({ icon: iconURL('enemy', 3), label: 'Betray', act: async () => { if (await confirmBox(`Break your alliance with ${f.name}? Every nation will trust you less.`)) betray(battle, o); } });
+    }
+  }
+  items.push({ icon: iconURL('map', 3), label: 'Info', act: () => { inspectTile = i; inspectorClosed = false; } });
+  return items;
+}
+
+function openRadial(i, cx, cy) {
+  if (!battle || battle.status !== 'playing') return;
+  const items = radialItems(i);
+  const el = $('#radial');
+  const o = battle.owner[i];
+  const title = o ? (o === PLAYER ? 'Your land' : battle.factions[o].name) : isLand(world(battle).terrain[i]) ? 'Wilderness' : 'Sea';
+  const R = items.length > 6 ? 78 : 64;
+  el.innerHTML = `<div class="rcenter">${esc(title)}${isTraitor(battle) ? '<br><small class="no">traitor</small>' : ''}</div>` + items.map((it, k) => {
+    const a = -Math.PI / 2 + (k / items.length) * Math.PI * 2;
+    return `<button class="ritem" data-k="${k}" style="left:${Math.round(Math.cos(a) * R)}px;top:${Math.round(Math.sin(a) * R)}px"><img src="${it.icon}" alt=""><span>${esc(it.label)}</span></button>`;
+  }).join('');
+  const m = R + 40;
+  el.style.left = `${Math.max(m, Math.min(window.innerWidth - m, cx))}px`;
+  el.style.top = `${Math.max(m, Math.min(window.innerHeight - m, cy))}px`;
+  el.classList.remove('hidden');
+  el.onpointerdown = e => {
+    e.stopPropagation();
+    const b = e.target.closest('.ritem');
+    if (!b) return;
+    closeRadial();
+    sfx.click();
+    items[Number(b.dataset.k)].act();
+  };
+  hideTooltip();
+}
+
+function closeRadial() {
+  $('#radial').classList.add('hidden');
 }
 
 // ---------- Battle panel ----------
@@ -860,6 +942,8 @@ function initBattlePanel() {
     if (p) { renderer.centerOn(p.x, p.y); sfx.click(); }
   });
   $('#battles-chip').onclick = () => { battlesOpen = !battlesOpen; updateBattles(); };
+  // Any press outside the radial menu closes it.
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('#radial')) closeRadial(); }, true);
 }
 
 // ---------- Enemy intent ----------
@@ -973,7 +1057,7 @@ function updateBoard() {
   if ($('#board').classList.contains('hidden')) return;
   const land = world(battle).landCount;
   const rows = battle.factions.filter(f => f && f.alive).sort((a, b) => b.tiles - a.tiles).slice(0, 10);
-  $('#board').innerHTML = `<table><tr><th>#</th><th>Civilization</th><th>Land</th><th>Troops</th></tr>${rows.map((f, i) => `<tr class="${f.id === PLAYER ? 'me' : ''}"><td>${i + 1}</td><td><span class="sw" style="background:${f.color}"></span>${esc(f.id === PLAYER ? `${f.name} (you)` : f.name)}${persona(f) ? `<small class="persona" data-tip="${esc(persona(f).desc)}">${esc(persona(f).name)}</small>` : ''}</td><td>${((f.tiles / land) * 100).toFixed(1)}%</td><td>${fmt(f.troops)}</td></tr>`).join('')}</table>`;
+  $('#board').innerHTML = `<table><tr><th>#</th><th>Civilization</th><th>Land</th><th>Troops</th></tr>${rows.map((f, i) => `<tr class="${f.id === PLAYER ? 'me' : ''}"><td>${i + 1}</td><td><span class="sw" style="background:${f.color}"></span>${esc(f.id === PLAYER ? `${f.name} (you)` : f.name)}${persona(f) ? `<small class="persona" data-tip="${esc(persona(f).desc)}">${esc(persona(f).name)}${f.id !== PLAYER && isAllied(battle, PLAYER, f.id) ? ' · <span class="ally">ally</span>' : ''}</small>` : ''}</td><td>${((f.tiles / land) * 100).toFixed(1)}%</td><td>${fmt(f.troops)}</td></tr>`).join('')}</table>`;
 }
 
 function updateInspector() {
@@ -1142,6 +1226,14 @@ function processNotices() {
         if (n.owner === PLAYER && n.cost) renderer.pop(n.x, n.y, `-${fmt(n.cost)} minerals`, '#c9b8ff');
         break;
       case 'tutorial': sfx.objective(); break;
+      case 'diplomacy': {
+        const f = battle.factions[n.faction];
+        if (n.kind === 'allied') { toast(`<b>${esc(f.name)}</b> accepted your alliance.`, 'good'); sfx.objective(); }
+        else if (n.kind === 'gift') toast(`Sent ${fmt(n.amount)} ${n.what} to ${esc(f.name)}.`, 'good', 2200);
+        else if (n.kind === 'betrayed') { toast(`You betrayed <b>${esc(f.name)}</b>. Every nation trusts you less, and you carry a traitor mark for 30 s.`, 'bad', 5000); sfx.lost(); }
+        break;
+      }
+      case 'dropReturn': if (n.owner === PLAYER) toast('Dropship turned back: its target changed hands. The troops are coming home.', 'tip', 3000); break;
       case 'ended': battleEnded(n); break;
       case 'gain': renderer.pop(n.x, n.y - 2, n.text, { minerals: '#c9b8ff', troops: '#7fe8ff', energy: '#ffe066' }[n.res] || '#ffffff'); break;
       case 'research': toast(`Research complete: ${esc(RESEARCH[n.id].name)}.`, 'good'); break;
@@ -1193,7 +1285,13 @@ function onDown(e) {
   $('#canvas').setPointerCapture?.(e.pointerId);
   const p = canvasXY(e);
   pointers.set(e.pointerId, p);
-  if (e.button === 2) { armed = null; return; }
+  if (e.button === 2) {
+    // Right-click: cancel a tool, or open the radial menu on that spot.
+    if (armed) { armed = null; return; }
+    const i = renderer.screenToTile(p.x, p.y);
+    if (i >= 0) openRadial(i, e.clientX, e.clientY);
+    return;
+  }
   if (pointers.size === 2) {
     const [a, b] = [...pointers.values()];
     gesture = { pinch: true, dist: Math.hypot(a.x - b.x, a.y - b.y), moved: true };
@@ -1201,14 +1299,14 @@ function onDown(e) {
     gesture = { x: p.x, y: p.y, lx: p.x, ly: p.y, t: performance.now(), moved: false, pinch: false, type: e.pointerType };
     if (e.pointerType === 'touch') {
       const g = gesture, cx = e.clientX, cy = e.clientY;
-      // Long press on the map: describe the tile instead of acting on it.
+      // Long press on the map: the radial menu (with the tile's details).
       setTimeout(() => {
         if (gesture !== g || g.moved || pointers.size !== 1 || !battle || battle.status === 'spawn') return;
         const i = renderer.screenToTile(g.x, g.y);
         if (i < 0) return;
         g.longPress = true;
         tipSource = null;
-        showTooltip(tileTip(i), cx, cy - 60);
+        openRadial(i, cx, cy);
       }, LONG_PRESS);
     }
   }
@@ -1469,7 +1567,7 @@ async function init() {
   $('#btn-resume-battle').onclick = () => togglePause(false);
   $('#btn-restart').onclick = async () => {
     if (await confirmBox('Restart this world? Current battle progress will be lost.')) {
-      const ref = { configId: battle.configId, theme: battle.theme, worldSeed: battle.seed };
+      const ref = { configId: battle.configId, theme: battle.theme, worldSeed: battle.seed, mode: battle.mode };
       campaign.battle = null;
       startBattle(ref);
     }
@@ -1517,7 +1615,7 @@ async function init() {
     else if (k === '6') activateTool('dropship', 'dropship');
     else if (k === 'r') activateTool('research', 'research');
     else if (k === ' ') togglePause();
-    else if (k === 'escape') { armed = null; inspectTile = -1; }
+    else if (k === 'escape') { armed = null; inspectTile = -1; closeRadial(); }
     else if (k === 'l') $('#btn-board').click();
     else if (k === 'o') $('#objectives').classList.toggle('hidden');
     else if (k === 'c') centerOnCapital();

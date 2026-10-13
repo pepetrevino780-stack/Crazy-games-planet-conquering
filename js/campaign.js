@@ -261,12 +261,23 @@ export const PLANETS = [
 ];
 
 // A replayable random battle on any world.
-export function skirmishConfig(theme, seed) {
+export const SKIRMISH_MODES = {
+  classic: { name: 'Classic', desc: 'Capture the enemy capital or rule 60% of the land.' },
+  ffa: { name: 'Free-for-all', desc: 'Every civilization for itself. Capture any 4 capitals to win.' },
+  teams: { name: 'Teams', desc: 'Half the nations fight on your side, half with the Dominion. Capture its capital.' },
+  fast: { name: 'Fast build', desc: 'Half-price buildings, double income, faster growth, a short ceasefire.' },
+};
+
+const skirmishCache = new Map();
+export function skirmishConfig(theme, seed, mode = 'classic') {
+  const key = `${theme}:${seed}:${mode}`;
+  if (skirmishCache.has(key)) return skirmishCache.get(key);
   const profiles = { vulkara: 'aggressive', cryonis: 'cautious', mycelion: 'aggressive', xythera: 'tactical', noctyra: 'mastermind' };
-  return {
-    id: 'skirmish', name: 'Skirmish', title: 'Uncharted World', lesson: 'Free conquest',
+  const m = SKIRMISH_MODES[mode] ? mode : 'classic';
+  const cfg = {
+    id: 'skirmish', name: 'Skirmish', title: 'Uncharted World', lesson: SKIRMISH_MODES[m].name,
     tagline: 'A procedurally generated world. Conquer it your way.',
-    theme, seed, size: [1140, 690], scale: 3, skirmish: true,
+    theme, seed, mode: m, size: [1140, 690], scale: 3, skirmish: true,
     enemy: { name: 'Hostile Dominion', color: '#ff4b3e', profile: profiles[theme] || 'aggressive', radius: 9, troops: 1000, capitalName: 'Enemy Capital', startDelay: 8 },
     nations: { count: 18, radius: 5, troops: 500, profiles: ['tribe', 'opportunist', 'aggressive', 'cautious'] },
     sites: [{ type: 'crystal', count: 2, where: 'middle' }, { type: 'factory', count: 2, where: 'middle' }, { type: 'vent', count: 2, where: 'any' }, { type: 'ruin', count: 3, where: 'any' }],
@@ -276,10 +287,15 @@ export function skirmishConfig(theme, seed) {
       { type: 'landShare', share: 0.6, label: 'Or rule 60% of the land' },
     ] },
     objectives: [],
-    briefing: ['A new world every time. Capture the enemy capital or rule most of the land.'],
+    briefing: ['A new world every time. ' + SKIRMISH_MODES[m].desc],
     lessons: ['Free conquest'],
     rewards: { base: 15 },
   };
+  if (m === 'ffa') cfg.victory = { mode: 'any', conds: [{ type: 'capitals', n: 4, label: 'Capture 4 capitals' }] };
+  if (m === 'teams') { cfg.teams = true; cfg.victory = { mode: 'any', conds: [{ type: 'capture', site: 'enemy-capital', label: 'Capture the Dominion capital' }] }; }
+  if (m === 'fast') Object.assign(cfg, { costScale: 0.5, incomeScale: 2, growthScale: 1.5, grace: 30 });
+  skirmishCache.set(key, cfg);
+  return cfg;
 }
 
 export const PLANET_INDEX = Object.fromEntries(PLANETS.map((p, i) => [p.id, i]));

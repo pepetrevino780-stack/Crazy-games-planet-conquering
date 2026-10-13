@@ -39,6 +39,7 @@ npm start            # http://localhost:8080
 | Leaderboard / Objectives | `L` / `O` | Top bar |
 | Center on capital / Pause | `C` / `Space` | Top bar |
 | Battle panel (top right) | Your troops vs each country you fight; click a row to glide there, Retreat to recall (−25%) | Tap the battles chip |
+| Radial menu: attack, dropship, build, ally, gift, betray, info | Right-click a spot | Long-press |
 | Explain anything | Hover it (map tiles, tools, resources, buttons) | Long-press |
 | Pin a tile's details | Click it | Tap |
 
@@ -57,6 +58,14 @@ ratio, build, seize a vent. An arrow on the map or a glowing button shows where 
 unlock as each step introduces them (locked tools show a padlock; Skip unlocks everything). Each world also has
 10–18 independent nations with mixed personalities, short
 objectives with bonus rewards, contextual tips (can be turned off), and a field manual (`?`) that pauses the game.
+
+**Diplomacy:** every independent nation has a level of trust in you (hover its land to see its attitude).
+Gifts of troops or minerals raise it; attacking it lowers it. With enough trust a nation accepts an alliance:
+allies never attack you or each other, help fight whoever attacks you, and can't be attacked by you. Betraying
+an ally leaves a traitor mark for 30 s, and every other nation trusts you less.
+
+**Skirmish modes:** Classic, Free-for-all (capture any 4 capitals), Teams (half the nations fight on your side,
+half with the Dominion) and Fast build (half-price buildings, double income, faster growth, short ceasefire).
 
 **Fair difficulty:**
 - Rival civilizations start with footprints comparable to yours.
