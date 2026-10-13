@@ -1041,7 +1041,8 @@ function processNotices() {
       case 'emp': renderer.ring(n.x, n.y, '#7fd8ff', 10); sfx.ability(); break;
       case 'start': {
         // Bring the camera in over the landing zone and crash-land the colony ship.
-        if (renderer.cam.zoom < 4) renderer.zoomBy(1);
+        // Glide in over the landing zone.
+        renderer.zoomTo(Math.max(renderer.target.zoom, 3.2 * renderer.dpr));
         centerOnCapital();
         const cap = battle.sites.find(s => s.id === 'player-capital');
         if (cap) renderer.crashLanding(cap.x, cap.y, { owner: PLAYER, color: battle.factions[PLAYER].color });
@@ -1111,8 +1112,9 @@ function onMove(e) {
     const [a, b] = [...pointers.values()];
     const d = Math.hypot(a.x - b.x, a.y - b.y);
     const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    if (d / gesture.dist > 1.3) { renderer.zoomBy(1, mid.x, mid.y); gesture.dist = d; }
-    else if (d / gesture.dist < 0.77) { renderer.zoomBy(-1, mid.x, mid.y); gesture.dist = d; }
+    // Pinch zooms in proportion to the gesture.
+    if (gesture.dist > 0 && d > 0) renderer.zoomByFactor(d / gesture.dist, mid.x, mid.y);
+    gesture.dist = d;
     return;
   }
   if (gesture && pointers.has(e.pointerId)) {
@@ -1188,7 +1190,8 @@ function openHelp() {
     <h4>Field notes</h4><ul>${cfg.briefing.map(b => `<li>${esc(b)}</li>`).join('')}</ul>
     <h4>Controls</h4><ul>
       <li>Click enemy or unclaimed land next to your border to attack it with your attack ratio of troops.</li>
-      <li>Drag to pan the map. Mouse wheel or pinch to zoom. C centers on your capital.</li>
+      <li>Drag or WASD to pan the map. Mouse wheel, pinch or Q / E to zoom smoothly. C glides to your capital.</li>
+      <li>Zoomed out, buildings show as badges with their level; zoom in to see them up close.</li>
       <li>1–5 build, 6 dropship, R research, 7–9 abilities, Space pause, L leaderboard, O objectives.</li>
       <li>On touch screens, a drag never attacks: only a clean tap does.</li>
       <li>Oceans separate the continents. Build a Starport on a coast to send dropships across.</li></ul>
@@ -1372,7 +1375,13 @@ async function init() {
   c.addEventListener('pointercancel', e => { pointers.delete(e.pointerId); gesture = null; });
   c.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { hoverTile = -1; if (tipSource === 'map') hideTooltip(); } });
   c.addEventListener('contextmenu', e => e.preventDefault());
-  c.addEventListener('wheel', e => { e.preventDefault(); const p = canvasXY(e); renderer.zoomBy(e.deltaY < 0 ? 1 : -1, p.x, p.y); }, { passive: false });
+  // Each wheel tick zooms by a small percentage (trackpads give fine steps).
+  c.addEventListener('wheel', e => {
+    e.preventDefault();
+    const p = canvasXY(e);
+    const dy = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1);
+    renderer.zoomByFactor(Math.pow(1.0015, -Math.max(-300, Math.min(300, dy))), p.x, p.y);
+  }, { passive: false });
 
   // Keep the embedding page from scrolling on game keys.
   window.addEventListener('keydown', e => {
@@ -1392,8 +1401,8 @@ async function init() {
     else if (k === 'l') $('#btn-board').click();
     else if (k === 'o') $('#objectives').classList.toggle('hidden');
     else if (k === 'c') centerOnCapital();
-    else if (k === '=' || k === '+') renderer.zoomBy(1);
-    else if (k === '-') renderer.zoomBy(-1);
+    else if (k === '=' || k === '+' || k === 'e') renderer.zoomBy(1);
+    else if (k === '-' || k === 'q') renderer.zoomBy(-1);
     else if (k === 'w' || k === 'arrowup') renderer.panBy(0, 60);
     else if (k === 's' || k === 'arrowdown') renderer.panBy(0, -60);
     else if (k === 'a' || k === 'arrowleft') renderer.panBy(60, 0);

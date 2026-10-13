@@ -574,3 +574,17 @@ export function miniCanvas(kind, ownerColor, accent = ['#ffd25e', '#ffffff']) {
 }
 
 export const spriteAccent = name => (SPRITES[name] || DETAIL[name] || { accent: ['#ffd25e', '#ffffff'] }).accent;
+
+// White glyphs for zoomed-out badges (the filled pixels of the 5x5 icons).
+const glyphCache = new Map();
+export function glyphCanvas(kind) {
+  if (glyphCache.has(kind)) return glyphCache.get(kind);
+  const rows = MINI[kind] || MINI.site;
+  const c = document.createElement('canvas');
+  c.width = 5; c.height = 5;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  rows.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== '.' && ch !== 'o') ctx.fillRect(x, y, 1, 1); }));
+  glyphCache.set(kind, c);
+  return c;
+}

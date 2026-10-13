@@ -31,7 +31,7 @@ npm start            # http://localhost:8080
 | --- | --- | --- |
 | Attack / expand | Click land next to your border | Tap |
 | Pan | Drag, or WASD / arrow keys | Drag (never attacks) |
-| Zoom | Mouse wheel, `+` / `-` | Pinch |
+| Zoom (smooth) | Mouse wheel, `Q` / `E`, `+` / `-` | Pinch |
 | Attack ratio | Slider, `[` / `]` | Slider |
 | Build | `1`–`5`, then click your land | Build bar |
 | Dropship / Research | `6` / `R` | Build bar |

@@ -4,11 +4,12 @@
 import { paintWorld } from './world/paint.js';
 import { isLand } from './world/themes.js';
 import { SITE_TYPES } from './campaign.js';
-import { spriteCanvas, spriteCanvasHi, miniCanvas, spriteAccent, CAPITAL_SPRITE, mixHex } from './art/sprites.js';
+import { spriteCanvas, spriteCanvasHi, glyphCanvas, spriteAccent, CAPITAL_SPRITE, mixHex, shadeHex } from './art/sprites.js';
 import { backdropCanvas } from './art/backdrop.js';
 import { rt, world, siteOwner, isShielded, isPowered, empActive, eventPhase, mapScale, PLAYER } from './sim/core.js';
 
 const NEUTRAL = '#8a8478';
+const shadeColor = (c, k) => shadeHex(c, k);
 const hexRgb = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
 export function fmt(n) {
@@ -85,11 +86,16 @@ export class MapRenderer {
     if (this.state) this.clamp();
   }
 
-  // Smallest zoom that covers the whole window with map (rounded up to a
-  // whole number so pixels stay crisp; the slight overflow can be panned).
+  // Smallest zoom that covers the whole window with map. Zoom is continuous
+  // (device pixels per tile); the map is drawn with smoothing off, so pixels
+  // stay sharp at in-between zooms.
   minZoom() {
     const d = this.dpr;
-    return Math.max(1, Math.ceil(Math.max((this.cssW * d) / this.W, (this.cssH * d) / this.H) - 0.02));
+    return Math.max((this.cssW * d) / this.W, (this.cssH * d) / this.H);
+  }
+
+  maxZoom() {
+    return Math.max(this.minZoom(), 8 * this.dpr);
   }
 
   fit() {
@@ -97,57 +103,91 @@ export class MapRenderer {
     this.cam.zoom = this.minZoom();
     this.cam.cx = this.W / 2; this.cam.cy = this.H / 2;
     this.clamp();
+    this.target = { zoom: this.cam.zoom, cx: this.cam.cx, cy: this.cam.cy, anchor: null };
   }
 
   // The map is laid out against the full window; HUD insets only decide
-  // where "centre" is (the free area between panels) and how far the map
-  // may be panned so land can be pulled out from under a panel.
+  // where "centre" is (the free area between panels).
   origin() {
     const d = this.dpr;
     return { x: Math.round((this.cssW * d) / 2 - this.cam.cx * this.cam.zoom), y: Math.round((this.cssH * d) / 2 - this.cam.cy * this.cam.zoom) };
   }
 
-  // strict: keep the map covering the whole window (automatic camera moves).
-  // Otherwise the player may drag the edge out from under a HUD panel.
-  // The map always covers the whole window: the space backdrop never shows
-  // past its edge. (HUD insets only shift where "centre" is.)
-  clamp() {
+  // Keep a camera ({zoom, cx, cy}) inside the map: the space backdrop never
+  // shows past its edge.
+  clampCam(cam) {
     const { W, H } = this, d = this.dpr;
-    const i = { top: 0, right: 0, bottom: 0, left: 0 };
-    this.cam.zoom = Math.max(this.minZoom(), this.cam.zoom);
-    const z = this.cam.zoom;
-    const vw = (this.cssW * d) / z, vh = (this.cssH * d) / z;
-    const lo = x => x * d / z;
-    this.cam.cx = Math.max(vw / 2 - lo(i.left), Math.min(W - vw / 2 + lo(i.right), this.cam.cx));
-    this.cam.cy = Math.max(vh / 2 - lo(i.top), Math.min(H - vh / 2 + lo(i.bottom), this.cam.cy));
+    cam.zoom = Math.max(this.minZoom(), Math.min(this.maxZoom(), cam.zoom));
+    const vw = (this.cssW * d) / cam.zoom, vh = (this.cssH * d) / cam.zoom;
+    cam.cx = Math.max(vw / 2, Math.min(W - vw / 2, cam.cx));
+    cam.cy = Math.max(vh / 2, Math.min(H - vh / 2, cam.cy));
   }
 
+  clamp() {
+    this.clampCam(this.cam);
+    if (this.target) this.clampCam(this.target);
+  }
+
+  // Zoom toward a target by a factor; the camera eases there over ~150 ms,
+  // keeping the point under (sx, sy) fixed when given.
+  zoomByFactor(f, sx, sy) {
+    if (!this.target) this.fit();
+    const t = this.target;
+    t.zoom = Math.max(this.minZoom(), Math.min(this.maxZoom(), t.zoom * f));
+    if (sx !== undefined) t.anchor = { sx, sy, tile: this.screenToTileF(sx, sy) };
+    else t.anchor = { sx: this.cssW / 2, sy: this.cssH / 2, tile: this.screenToTileF(this.cssW / 2, this.cssH / 2) };
+  }
+
+  // Step-wise zoom for keys and the landing camera: about a quarter per step.
   zoomBy(dir, sx, sy) {
-    const z0 = this.cam.zoom;
-    const z1 = Math.max(this.minZoom(), Math.min(16, z0 + dir));
-    if (z1 === z0) return;
-    // Keep the point under the cursor fixed.
-    if (sx !== undefined) {
-      const t = this.screenToTileF(sx, sy);
-      this.cam.zoom = z1;
-      const t2 = this.screenToTileF(sx, sy);
-      this.cam.cx += t.x - t2.x; this.cam.cy += t.y - t2.y;
-    } else this.cam.zoom = z1;
-    this.clamp();
+    this.zoomByFactor(dir > 0 ? 1.25 : 0.8, sx, sy);
   }
 
+  zoomTo(zoom) {
+    if (!this.target) this.fit();
+    this.zoomByFactor(zoom / this.target.zoom);
+  }
+
+  // Move the live camera toward its target (called once per frame).
+  ease(dt) {
+    const t = this.target;
+    if (!t) return;
+    const k = 1 - Math.exp(-dt * 14);
+    const c = this.cam;
+    c.zoom += (t.zoom - c.zoom) * k;
+    if (Math.abs(t.zoom - c.zoom) < 0.002) c.zoom = t.zoom;
+    if (t.anchor) {
+      // Re-anchor every frame so the point under the cursor stays put.
+      const d = this.dpr;
+      c.cx = t.anchor.tile.x - (t.anchor.sx * d - (this.cssW * d) / 2) / c.zoom;
+      c.cy = t.anchor.tile.y - (t.anchor.sy * d - (this.cssH * d) / 2) / c.zoom;
+      this.clampCam(c);
+      if (c.zoom === t.zoom) { t.cx = c.cx; t.cy = c.cy; t.anchor = null; }
+    } else {
+      c.cx += (t.cx - c.cx) * k; c.cy += (t.cy - c.cy) * k;
+      this.clampCam(c);
+    }
+  }
+
+  // Dragging moves the camera directly.
   panBy(dxCss, dyCss) {
-    this.cam.cx -= (dxCss * this.dpr) / this.cam.zoom;
-    this.cam.cy -= (dyCss * this.dpr) / this.cam.zoom;
-    this.clamp();
+    const d = this.dpr;
+    this.cam.cx -= (dxCss * d) / this.cam.zoom;
+    this.cam.cy -= (dyCss * d) / this.cam.zoom;
+    this.clampCam(this.cam);
+    if (this.target) { this.target.zoom = this.cam.zoom; this.target.cx = this.cam.cx; this.target.cy = this.cam.cy; this.target.anchor = null; }
   }
 
-  // Put a tile in the middle of the free area between the HUD panels.
-  centerOn(x, y) {
-    const i = this.insets, d = this.dpr, z = this.cam.zoom;
-    const dx = ((i.left - i.right) / 2) * d / z, dy = ((i.top - i.bottom) / 2) * d / z;
-    this.cam.cx = x - dx; this.cam.cy = y - dy;
-    this.clamp();
+  // Glide to put a tile in the middle of the free area between the HUD panels.
+  centerOn(x, y, instant = false) {
+    if (!this.target) this.fit();
+    const i = this.insets, d = this.dpr, z = this.target.zoom;
+    const t = this.target;
+    t.cx = x - ((i.left - i.right) / 2) * d / z;
+    t.cy = y - ((i.top - i.bottom) / 2) * d / z;
+    t.anchor = null;
+    this.clampCam(t);
+    if (instant) { this.cam.cx = t.cx; this.cam.cy = t.cy; this.cam.zoom = t.zoom; }
   }
 
   screenToTileF(sxCss, syCss) {
@@ -295,6 +335,120 @@ export class MapRenderer {
       }
     }
     if (r.r > 30 * lin) { this.reveal = null; this.holdOwner = 0; c.allDirty = true; }
+  }
+
+  // Zoomed-out structure badge: a fixed-size shape in the owner's colour
+  // with a white glyph (pentagon = starport, hexagon = bastion, diamond =
+  // spire, square = capital, circle = everything else).
+  drawBadge(p, kind, color, accent, level = 1) {
+    const ctx = this.ctx, d = this.dpr;
+    const site = kind === 'site';
+    const R = Math.round((site ? 5.5 : 7.5) * d);
+    const sides = { starport: 5, bastion: 6, spire: 4, capital: 4 }[kind] || 0;
+    const fill = site && color === NEUTRAL ? accent[0] : color;
+    const cx = Math.round(p.x), cy = Math.round(p.y);
+    ctx.beginPath();
+    if (sides) {
+      const rot = kind === 'capital' ? Math.PI / 4 : -Math.PI / 2;
+      const rr = kind === 'capital' ? R * 1.25 : R * 1.1;
+      for (let k = 0; k < sides; k++) {
+        const a = rot + (k / sides) * Math.PI * 2;
+        const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
+        if (k) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+      }
+      ctx.closePath();
+    } else ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.fillStyle = shadeColor(fill, 0.78);
+    ctx.fill();
+    ctx.lineWidth = Math.max(1.5, 1.5 * d);
+    ctx.strokeStyle = '#0a0a14';
+    ctx.stroke();
+    const g = glyphCanvas(kind);
+    const gs = Math.max(1, Math.round((site ? 1.2 : 1.7) * d));
+    ctx.drawImage(g, cx - Math.round((g.width * gs) / 2), cy - Math.round((g.height * gs) / 2), g.width * gs, g.height * gs);
+    if (level > 1) this.levelTag(cx - R - 2 * d, cy - R - 6 * d, level);
+    return { p: { x: cx, y: cy + R }, w: R * 2, h: R * 2 };
+  }
+
+  // Small white-on-black level number, as in FrontWars.
+  levelTag(x, y, level) {
+    const ctx = this.ctx, d = this.dpr;
+    const s = Math.round(9 * d);
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(Math.round(x), Math.round(y), s, s);
+    ctx.font = `700 ${Math.round(8 * d)}px "Alien Body", monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(String(level), Math.round(x + s / 2), Math.round(y + s / 2 + d * 0.5));
+  }
+
+  // Rails: for every civilization, a minimum spanning tree over its
+  // buildings and capital (short links over its own land only), drawn as
+  // white sleepers on a dark bed. Recomputed once a second.
+  railNetwork() {
+    const st = this.state;
+    if (this.rails && st.time - this.railsTime < 1) return this.rails;
+    this.railsTime = st.time;
+    const lin = mapScale(st), maxLen = 45 * lin;
+    const byOwner = new Map();
+    const add = (o, x, y) => { if (!o) return; if (!byOwner.has(o)) byOwner.set(o, []); byOwner.get(o).push({ x, y }); };
+    for (const b of st.buildings) add(st.owner[b.y * st.w + b.x], b.x, b.y);
+    for (const s of st.sites) if ((s.type === 'capital' || s.type === 'citadel') && byOwner.has(siteOwner(st, s))) add(siteOwner(st, s), s.x, s.y);
+    const segs = [];
+    const ownLine = (o, a, b) => {
+      for (const f of [0.2, 0.4, 0.5, 0.6, 0.8]) {
+        const x = Math.round(a.x + (b.x - a.x) * f), y = Math.round(a.y + (b.y - a.y) * f);
+        if (st.owner[y * st.w + x] !== o) return false;
+      }
+      return true;
+    };
+    for (const [o, nodes] of byOwner) {
+      if (nodes.length < 2) continue;
+      const inTree = [nodes[0]], rest = nodes.slice(1);
+      while (rest.length) {
+        let best = null, bd = Infinity, bi = -1;
+        for (let i = 0; i < rest.length; i++) {
+          for (const t of inTree) {
+            const dd = Math.hypot(rest[i].x - t.x, rest[i].y - t.y);
+            if (dd < bd) { bd = dd; best = t; bi = i; }
+          }
+        }
+        const n = rest.splice(bi, 1)[0];
+        inTree.push(n);
+        if (bd <= maxLen && ownLine(o, best, n)) segs.push({ x0: best.x, y0: best.y, x1: n.x, y1: n.y, len: bd });
+      }
+    }
+    this.rails = segs;
+    return segs;
+  }
+
+  drawRails(T, z, now, motion, near) {
+    const ctx = this.ctx, d = this.dpr;
+    const segs = this.railNetwork();
+    if (!segs.length) return;
+    const bed = near ? Math.max(3 * d, z * 0.55) : 3 * d;
+    ctx.lineCap = 'butt';
+    ctx.strokeStyle = 'rgba(16,12,24,0.85)';
+    ctx.lineWidth = bed;
+    ctx.beginPath();
+    for (const s of segs) { const a = T(s.x0 + 0.5, s.y0 + 0.5), b = T(s.x1 + 0.5, s.y1 + 0.5); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); }
+    ctx.stroke();
+    ctx.strokeStyle = '#f2ecff';
+    ctx.lineWidth = bed * 0.5;
+    ctx.setLineDash([bed * 0.6, bed * 0.6]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (!near || !motion) return;
+    // A little train shuttles along each line.
+    for (const s of segs) {
+      const u = (now * 6 * mapScale(this.state)) / Math.max(1, s.len) + (s.x0 * 0.37 + s.y1 * 0.11);
+      const f = u % 2 < 1 ? u % 2 : 2 - (u % 2);
+      const p = T(s.x0 + 0.5 + (s.x1 - s.x0) * f, s.y0 + 0.5 + (s.y1 - s.y0) * f);
+      const w = Math.round(bed * 1.6), h = Math.round(bed * 0.9);
+      ctx.fillStyle = '#0a0a14'; ctx.fillRect(Math.round(p.x - w / 2) - 1, Math.round(p.y - h / 2) - 1, w + 2, h + 2);
+      ctx.fillStyle = '#d8323c'; ctx.fillRect(Math.round(p.x - w / 2), Math.round(p.y - h / 2), w, h);
+      ctx.fillStyle = '#ffd0d0'; ctx.fillRect(Math.round(p.x - w / 2) + 1, Math.round(p.y - h / 2) + 1, Math.max(1, Math.round(w / 3)), Math.max(1, Math.round(h / 3)));
+    }
   }
 
   // Start a building's rise-from-the-ground animation.
@@ -447,6 +601,7 @@ export class MapRenderer {
   render(ui) {
     const st = this.state, ctx = this.ctx;
     if (!st) return;
+    this.ease(ui.dt || 0.016);
     const z = this.cam.zoom, d = this.dpr;
     const o = this.origin();
     const now = ui.now / 1000;
@@ -510,37 +665,44 @@ export class MapRenderer {
         if (st.owner[i] !== a.target) continue;
         if (motion && (k + Math.floor(now * 8)) % 3 === 0) continue;
         const x = i % this.W, y = (i - x) / this.W;
-        ctx.fillRect(o.x + x * z, o.y + y * z, z, z);
+        // Snap to whole pixels so neighbouring front tiles never leave gaps.
+        const px = Math.floor(o.x + x * z), py = Math.floor(o.y + y * z);
+        ctx.fillRect(px, py, Math.floor(o.x + (x + 1) * z) - px, Math.floor(o.y + (y + 1) * z) - py);
       }
     }
 
     // Enemy intent: arrows from attacking empires to where they are pushing into you.
     for (const it of ui.intents || []) this.drawIntent(T(it.x0 + 0.5, it.y0 + 0.5), T(it.x1 + 0.5, it.y1 + 0.5), it, z, now, motion);
 
-    // Structures.
+    // Structures, with two levels of detail (like FrontWars). Zoomed out,
+    // every structure is a fixed-size badge: an owner-coloured shape with a
+    // white glyph. Zoomed in, it is a large detailed sprite on a ground
+    // shadow. Rails link each civilization's structures at both levels.
     const sc = Math.max(1, Math.round(z / 2));
-    // Close up, structures use the double-detail sprites (only at even
-    // scales, so every sprite pixel stays a whole number of screen pixels).
-    const hi = sc >= 2 && sc % 2 === 0;
-    // Zoomed far out, structures become simple 5x5 map icons.
-    const mini = z <= 2;
+    const near = z / d >= 2.6;
+    const ps = Math.max(1, Math.round(z * 0.38)); // device px per detailed-sprite pixel
     // Lights blink out of step with each other.
     const frameAt = (x, y) => (motion ? Math.floor(now * 2 + ((x * 7 + y * 13) % 10) / 10) % 2 : 0);
-    const drawSprite = (name, x, y, color, opts = {}) => {
+    this.drawRails(T, z, now, motion, near);
+    const drawStructure = (name, x, y, color, opts = {}) => {
       const p = T(x + 0.5, y + 0.5);
-      let spr, ps;
-      if (mini && opts.mini) { spr = miniCanvas(opts.mini, color, spriteAccent(name)); ps = z >= 2 ? 2 : 1; }
-      else if (hi) { spr = spriteCanvasHi(name, color, frameAt(x, y)); ps = sc / 2; }
-      else { spr = spriteCanvas(name, color, frameAt(x, y)); ps = sc; }
+      if (!near) return this.drawBadge(p, opts.badge || 'site', color, spriteAccent(name), opts.level);
+      const spr = spriteCanvasHi(name, color, frameAt(x, y));
       const w = spr.width * ps, h = spr.height * ps;
+      const base = Math.round(p.y + ps * 2);
       const k = opts.rise ?? 1;
-      if (k >= 1) ctx.drawImage(spr, Math.round(p.x - w / 2), Math.round(p.y - h + sc), w, h);
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath();
+      ctx.ellipse(Math.round(p.x), base, w * 0.55, Math.max(2, ps * 2.2), 0, 0, Math.PI * 2);
+      ctx.fill();
+      if (k >= 1) ctx.drawImage(spr, Math.round(p.x - w / 2), base - h, w, h);
       else if (k > 0) {
         // Rising out of the ground: the top of the sprite appears first.
         const rows = Math.max(1, Math.round(spr.height * k));
-        ctx.drawImage(spr, 0, 0, spr.width, rows, Math.round(p.x - w / 2), Math.round(p.y + sc - rows * ps), w, rows * ps);
+        ctx.drawImage(spr, 0, 0, spr.width, rows, Math.round(p.x - w / 2), base - rows * ps, w, rows * ps);
       }
-      return { p, w, h };
+      if (opts.level > 1) this.levelTag(Math.round(p.x - w / 2), base - h, opts.level);
+      return { p: { x: p.x, y: base }, w, h };
     };
     for (const b of st.buildings) {
       const bo = st.owner[b.y * st.w + b.x];
@@ -551,16 +713,7 @@ export class MapRenderer {
         rise = motion ? (ui.now - t0) / 700 : 1;
         if (rise >= 1) this.rising.delete(b.id);
       }
-      const r = drawSprite(lvl > 1 ? `${b.type}_${lvl}` : b.type, b.x, b.y, bo ? st.factions[bo].color : NEUTRAL, { mini: b.type, rise });
-      // Zoomed out, upgraded buildings carry gold level pips above the icon.
-      if (lvl > 1 && mini) {
-        const u = Math.max(2, sc);
-        for (let k = 0; k < lvl - 1; k++) {
-          const px = Math.round(r.p.x - ((lvl - 1) * (u * 2 + u)) / 2 + k * (u * 3)), py = Math.round(r.p.y - r.h - u * 3);
-          ctx.fillStyle = '#12060a'; ctx.fillRect(px - 1, py - 1, u * 2 + 2, u * 2 + 2);
-          ctx.fillStyle = '#ffd25e'; ctx.fillRect(px, py, u * 2, u * 2);
-        }
-      }
+      drawStructure(lvl > 1 ? `${b.type}_${lvl}` : b.type, b.x, b.y, bo ? st.factions[bo].color : NEUTRAL, { badge: b.type, rise, level: lvl });
     }
     for (const s of st.sites) {
       const so = siteOwner(st, s);
@@ -568,7 +721,7 @@ export class MapRenderer {
       if (this.landing && so === this.landing) continue;
       let name = s.type;
       if (s.type === 'capital') name = s.id === 'enemy-capital' ? CAPITAL_SPRITE[st.theme] : s.id === 'player-capital' ? 'fortress' : 'normal';
-      const r = drawSprite(name, s.x, s.y, color, { mini: s.type === 'capital' || s.type === 'citadel' ? 'capital' : 'site' });
+      const r = drawStructure(name, s.x, s.y, color, { badge: s.type === 'capital' || s.type === 'citadel' ? 'capital' : 'site' });
       if (empActive(st, s)) {
         ctx.strokeStyle = '#7fd8ff'; ctx.lineWidth = Math.max(1, d);
         if (!motion || Math.floor(now * 6) % 2) ctx.strokeRect(r.p.x - r.w / 2 - 2, r.p.y - r.h - 2, r.w + 4, r.h + 4);
@@ -580,6 +733,11 @@ export class MapRenderer {
         ctx.strokeRect(r.p.x - r.w / 2 - pad, r.p.y - r.h - pad, r.w + pad * 2, r.h + pad * 2);
       }
     }
+    const drawSprite = (name, x, y, color) => {
+      const spr = spriteCanvas(name, color);
+      const p = T(x + 0.5, y + 0.5);
+      ctx.drawImage(spr, Math.round(p.x - (spr.width * sc) / 2), Math.round(p.y - (spr.height * sc) / 2), spr.width * sc, spr.height * sc);
+    };
 
     // Tutorial pointer: a bouncing arrow over the tile the current step is about.
     if (ui.pointer) this.drawPointer(T(ui.pointer.x + 0.5, ui.pointer.y + 0.5), now, motion);

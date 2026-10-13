@@ -284,7 +284,7 @@ export function canBuildAt(state, type, i) {
   const x = i % state.w, y = (i - x) / state.w;
   const t = world(state).terrain[i];
   if (state.owner[i] !== PLAYER || !isLand(t) || t === T.MOUNTAIN || t === T.VOLCANO || t === T.RIVER) return 'terrain';
-  if (state.buildings.some(b => Math.abs(b.x - x) < 4 && Math.abs(b.y - y) < 4)) return 'crowded';
+  if (state.buildings.some(b => Math.abs(b.x - x) < buildSpacing(state) && Math.abs(b.y - y) < buildSpacing(state))) return 'crowded';
   if (state.sites.some(s => Math.abs(s.x - x) < 3 && Math.abs(s.y - y) < 3)) return 'crowded';
   if (BUILDINGS[type].coastal) {
     let coast = false;
@@ -297,10 +297,14 @@ export function canBuildAt(state, type, i) {
   return null;
 }
 
-// An own building of this type within 1 tile of the click: building there upgrades it.
+// Buildings keep 3 base tiles apart, so their art has room at close zoom.
+const buildSpacing = state => 3 * mapScale(state);
+
+// An own building of this type under the click (its art stands above its
+// tile, so the area reaches up): building there upgrades it.
 export function upgradeTarget(state, owner, type, i) {
-  const x = i % state.w, y = (i - x) / state.w;
-  return state.buildings.find(b => b.type === type && Math.abs(b.x - x) <= 1 && Math.abs(b.y - y) <= 1 && state.owner[b.y * state.w + b.x] === owner) || null;
+  const x = i % state.w, y = (i - x) / state.w, lin = mapScale(state);
+  return state.buildings.find(b => b.type === type && Math.abs(b.x - x) <= lin && y - b.y <= lin && b.y - y <= 2 * lin && state.owner[b.y * state.w + b.x] === owner) || null;
 }
 
 function upgradeBuilding(state, owner, b) {
@@ -344,7 +348,7 @@ export function npcBuild(state, fid, type, i) {
   const cost = buildCost(state, fid, type);
   if (f.minerals < cost) return false;
   const x = i % state.w, y = (i - x) / state.w;
-  if (state.buildings.some(b => Math.abs(b.x - x) < 4 && Math.abs(b.y - y) < 4)) return false;
+  if (state.buildings.some(b => Math.abs(b.x - x) < buildSpacing(state) && Math.abs(b.y - y) < buildSpacing(state))) return false;
   f.minerals -= cost;
   state.buildings.push({ id: state.nextId++, type, x, y, level: 1 });
   return true;
