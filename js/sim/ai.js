@@ -5,7 +5,7 @@ import { isLand, T } from '../world/themes.js';
 import {
   maxTroops, borderMap, launchAttack, attackFronts, siteOwner, buildCost, world, PLAYER, mapScale, areaScale, graceLeft,
 } from './core.js';
-import { npcBuild, npcUpgrade } from './engine.js';
+import { npcBuild, npcUpgrade, launchExpedition, coastalTiles } from './engine.js';
 import { isAllied } from './diplomacy.js';
 
 const VALUE = { capital: 3, citadel: 3, hub: 2.5, relay: 2.2, command: 2.2, factory: 1.6, crystal: 1.4, vent: 1.2, turret: 0.6, ruin: 0.6 };
@@ -29,6 +29,9 @@ export function think(state, fid, rand) {
   if (rand() < p.build) tryBuild(state, fid, rand);
 
   if (f.troops < max * p.attackAt) return;
+  // Smart commanders send expeditions against weak, isolated civilizations.
+  // (Only computer opponents: the balance bot playing the player's side doesn't.)
+  if (p.expeditions && fid !== PLAYER && rand() < 0.08 && tryExpedition(state, f, rand)) return;
   const running = state.attacks.filter(a => a.attacker === fid).length;
   if (running >= attackFronts(state, f)) return;
 
@@ -75,6 +78,32 @@ export function think(state, fid, rand) {
   const send = Math.min(f.troops * p.ratio * (best === 0 ? 0.8 : 1.3), f.troops - reserve);
   if (send < 10 * areaScale(state)) return;
   launchAttack(state, fid, best, send);
+}
+
+// A weak civilization (under 40% of our troops) on another continent:
+// land on its coast nearest to us.
+export function tryExpedition(state, f, rand) {
+  if (f.minerals < 100) return false;
+  const w = world(state);
+  const capOf = id => state.sites.find(s => s.faction === id && (s.type === 'capital' || s.type === 'citadel') && siteOwner(state, s) === id);
+  const mine = capOf(f.id);
+  if (!mine) return false;
+  const myComp = w.comp[mine.y * state.w + mine.x];
+  const prey = state.factions.filter(o => o && o.alive && o.id !== f.id && !isAllied(state, f.id, o.id) && o.troops < f.troops * 0.4)
+    // The player's ceasefire (and an opportunist's patience) apply at sea too.
+    .filter(o => o.id !== PLAYER || o.id in f.attackedBy || (graceLeft(state) <= 0 && state.time >= (f.profile.ignorePlayer || 0)))
+    .filter(o => { const c = capOf(o.id); return c && w.comp[c.y * state.w + c.x] !== myComp; })
+    .sort((a, b) => a.troops - b.troops);
+  if (!prey.length) return false;
+  const target = prey[Math.floor(rand() * Math.min(2, prey.length))];
+  const coast = coastalTiles(state, target.id);
+  if (!coast.length) return false;
+  let best = coast[0], bd = Infinity;
+  for (const i of coast) {
+    const d = (i % state.w - mine.x) ** 2 + (Math.floor(i / state.w) - mine.y) ** 2;
+    if (d < bd) { bd = d; best = i; }
+  }
+  return launchExpedition(state, f.id, best, f.troops * 0.3).ok;
 }
 
 function randomOwnTile(state, fid, rand, accept) {

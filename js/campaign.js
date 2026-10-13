@@ -31,11 +31,11 @@ export const AI_PROFILES = {
   },
   tactical: {
     interval: 1.6, attackAt: 0.45, ratio: 0.4, wildBias: 1.2, playerBias: 1.1, nationBias: 1.0,
-    objectiveSense: 1.0, retaliate: true, fronts: 2, reserve: 0.4, build: 0.9, noise: 0.15,
+    objectiveSense: 1.0, retaliate: true, fronts: 2, reserve: 0.4, build: 0.9, noise: 0.15, expeditions: true,
   },
   mastermind: {
     interval: 1.3, attackAt: 0.42, ratio: 0.42, wildBias: 1.1, playerBias: 1.3, nationBias: 1.0,
-    objectiveSense: 1.0, retaliate: true, fronts: 1, reserve: 0.4, build: 1.0, noise: 0.1, // + command nodes
+    objectiveSense: 1.0, retaliate: true, fronts: 1, reserve: 0.4, build: 1.0, noise: 0.1, expeditions: true, // + command nodes
   },
 };
 
@@ -69,7 +69,7 @@ export const SITE_TYPES = {
 export const BUILDINGS = {
   habitat: { key: '1', name: 'Habitat', desc: '+12% max troops per level (up to 5 levels count).', cost: 300 },
   extractor: { key: '2', name: 'Extractor', desc: '+4 minerals/s per level.', cost: 250 },
-  starport: { key: '3', name: 'Starport', desc: 'Launch dropships to land you do not border. Must be near the coast. Each level makes its dropships 40% faster.', cost: 400, coastal: true },
+  starport: { key: '3', name: 'Starport', desc: 'Expeditions launched from it are 40% faster per level, and it can build battleships. Must be near the coast.', cost: 400, coastal: true },
   bastion: { key: '4', name: 'Bastion', desc: 'Your nearby land defends at 1.8x. Each upgrade widens its reach by a fifth.', cost: 300, radius: 10 },
   spire: { key: '5', name: 'Research Spire', desc: '+0.5 exotic matter/s per level, for research.', cost: 350 },
 };
@@ -331,10 +331,10 @@ export const TUTORIAL_LESSONS = [
       step('war', 'Attack the neighbouring nation', flag('attackedNation'), 'Attack the nation next to you. The battle panel (top right) shows your troops against theirs.', { point: 'el:#battles' }),
       step('retreat', 'Retreat from the battle', flag('retreated'), 'Press Retreat on the battle row. Your troops come home, minus a quarter.', { point: 'el:#battles' }),
     ] },
-  { id: 5, name: 'Across the sea', desc: 'Starports and dropships reach other continents.', setup: { minerals: 2000 },
+  { id: 5, name: 'Across the sea', desc: 'Expeditions reach other continents; Starports speed them up.', setup: { minerals: 2000 },
     steps: [
       step('port', 'Build a Starport', { type: 'build', building: 'starport' }, 'Starports must be near the coast. Press 3, then click your land by the sea.', { point: 'tool:starport' }),
-      step('drop', 'Send a dropship', flag('dropship'), 'Press 6, then click land across the water. A dropship carries your attack ratio of troops there.', { point: 'tool:dropship' }),
+      step('drop', 'Send an expedition', flag('dropship'), 'Click land across the water: an expedition sails your attack ratio of troops there. Watch its countdown.', { point: 'tool:dropship' }),
     ] },
   { id: 6, name: 'Research and abilities', desc: 'Spend exotic matter on research, energy on abilities.', setup: { exotic: 120, energy: 120, abilities: ['strike', 'rally', 'emp'] },
     steps: [

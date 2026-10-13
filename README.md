@@ -34,12 +34,12 @@ npm start            # http://localhost:8080
 | Zoom (smooth) | Mouse wheel, `Q` / `E`, `+` / `-` | Pinch |
 | Attack ratio | Slider, `[` / `]` | Slider |
 | Build | `1`–`5`, then click your land | Build bar |
-| Dropship / Research | `6` / `R` | Build bar |
+| Expedition / Research | `6` / `R` (or just click land across the sea) | Build bar |
 | Abilities | `7` `8` `9` | Build bar |
 | Leaderboard / Objectives | `L` / `O` | Top bar |
 | Center on capital / Pause | `C` / `Space` | Top bar |
 | Battle panel (top right) | Your troops vs each country you fight; click a row to glide there, Retreat to recall (−25%) | Tap the battles chip |
-| Radial menu: attack, dropship, build, ally, gift, betray, info | Right-click a spot | Long-press |
+| Radial menu: attack, expedition, build, ally, gift, betray, info | Right-click a spot | Long-press |
 | Explain anything | Hover it (map tiles, tools, resources, buttons) | Long-press |
 | Pin a tile's details | Click it | Tap |
 
@@ -102,7 +102,7 @@ Everything is original pixel art, generated or hand-authored in code:
 - **Maps:** each world is generated as a coherent, Earth-like planet, at 3× the original width and height
   (Vulkara 900×570 up to Noctyra 1230×750 tiles).
   - About a third land: one big main continent where you and the main enemy start, 3–5 smaller named
-    continents separated by straits and open ocean, and island chains. Crossing an ocean needs a dropship.
+    continents separated by straits and open ocean, and island chains. Crossing an ocean needs an expedition.
   - Two layers of domain warp shape the coastlines; a 2–3 tile shelf and a dark coast outline frame the land,
     and the open ocean darkens with distance from shore.
   - Mountain ranges with passes, and rivers that run to the sea.

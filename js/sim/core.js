@@ -133,6 +133,8 @@ export function growthMult(state, f) {
     if (st.growth && siteOwner(state, s) === f.id && !empActive(state, s)) g *= 1 + st.growth;
   }
   if (f.research.includes('logistics')) g *= 1.1;
+  // Cut-off land grows at half rate.
+  g *= 0.5 + 0.5 * connectedShare(state, f);
   return g;
 }
 
@@ -234,7 +236,68 @@ export function setOwner(state, i, o) {
   if (prev) { const p = state.factions[prev]; p.tiles--; p.sx -= x; p.sy -= y; }
   if (o) { const f = state.factions[o]; f.tiles++; f.sx += x; f.sy += y; }
   state.owner[i] = o;
-  rt(state).dirty.push(i);
+  const c = rt(state);
+  c.dirty.push(i);
+  c.ownerVersion = (c.ownerVersion || 0) + 1;
+}
+
+// ---------- Supply lines ----------
+// Land a civilization can reach from its capital over its own land. Cut-off
+// land (a beachhead, an enclave) grows troops at half rate. One flood fill
+// from every capital at once; recomputed when territory has changed, at most
+// once a second of game time.
+export function connectedLand(state) {
+  const c = rt(state);
+  // Recomputed in whole-second buckets of game time (deterministic, so a
+  // resumed battle plays out exactly like the original).
+  const bucket = Math.floor(state.time);
+  if (c.conn && (c.connVersion === c.ownerVersion || c.connTime === bucket)) return c.conn;
+  const { owner, w: W } = state, N = owner.length;
+  const mask = c.conn?.mask || new Uint8Array(N);
+  mask.fill(0);
+  const queue = new Int32Array(N);
+  let head = 0, tail = 0;
+  for (const s of state.sites) {
+    if ((s.type !== 'capital' && s.type !== 'citadel') || !s.faction) continue;
+    const i = s.y * W + s.x;
+    if (owner[i] !== s.faction || mask[i]) continue;
+    mask[i] = 1; queue[tail++] = i;
+  }
+  const counts = new Map();
+  while (head < tail) {
+    const i = queue[head++];
+    const o = owner[i];
+    counts.set(o, (counts.get(o) || 0) + 1);
+    const x = i % W;
+    const nb = [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W];
+    for (const j of nb) {
+      if (j < 0 || j >= N || mask[j] || owner[j] !== o) continue;
+      mask[j] = 1; queue[tail++] = j;
+    }
+  }
+  c.conn = { mask, counts };
+  c.connVersion = c.ownerVersion; c.connTime = bucket;
+  return c.conn;
+}
+
+// Fresh answer for player commands (recomputed whenever territory changed).
+export function isConnected(state, i) {
+  const c = rt(state);
+  if (!c.connFresh || c.connFreshVersion !== c.ownerVersion) {
+    const saved = { conn: c.conn, connTime: c.connTime, connVersion: c.connVersion };
+    c.conn = null;
+    c.connFresh = connectedLand(state);
+    c.connFresh = { mask: c.connFresh.mask.slice(), counts: c.connFresh.counts };
+    c.connFreshVersion = c.ownerVersion;
+    Object.assign(c, saved); // leave the simulation's cached copy untouched
+  }
+  return !!c.connFresh.mask[i];
+}
+
+// Share of a civilization's land that is connected to its capital.
+export function connectedShare(state, f) {
+  if (!f.tiles) return 1;
+  return Math.min(1, (connectedLand(state).counts.get(f.id) || 0) / f.tiles);
 }
 
 // Does `a` have any land tile next to land owned by `b`?
@@ -254,7 +317,9 @@ export function frontierBetween(state, a, b) {
 // Cached for half a second of game time.
 export function borderMap(state) {
   const c = rt(state);
-  if (c.border && state.time - c.borderTime < 0.5) return c.border;
+  // Half-second buckets of game time, so resumed battles stay deterministic.
+  const bucket = Math.floor(state.time * 2);
+  if (c.border && c.borderTime === bucket) return c.border;
   const { owner, w: W, h: H } = state;
   const terrain = world(state).terrain;
   const map = new Map();
@@ -275,7 +340,7 @@ export function borderMap(state) {
     }
   }
   c.border = map;
-  c.borderTime = state.time;
+  c.borderTime = bucket;
   return map;
 }
 

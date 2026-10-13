@@ -13,6 +13,9 @@ import {
 import { generateWorld, components } from '../js/world/generate.js';
 import { requestAlliance, gift, betray, isAllied, relation, isTraitor } from '../js/sim/diplomacy.js';
 import { planRoute } from '../js/sim/path.js';
+import { tryExpedition } from '../js/sim/ai.js';
+import { travelTime, expeditionPlan } from '../js/sim/engine.js';
+import { connectedShare, growthMult, isConnected } from '../js/sim/core.js';
 import { THEMES, THEME_IDS, isLand, T } from '../js/world/themes.js';
 import {
   newCampaign, normalizeCampaign, loadCampaign, saveCampaign, playerLoadout, computeRewards,
@@ -250,7 +253,13 @@ test('buildings, research, dropships and abilities work and cost resources', () 
   assert.ok(me.minerals < 5000);
   assert.equal(playerResearch(s, 'swift').ok, true);
   assert.equal(playerResearch(s, 'swift').reason, 'done');
-  assert.equal(playerDropship(s, cap.y * s.w + cap.x + 60, 0.3).reason, 'noStarport');
+  // Expeditions need no Starport: any coastal border tile will do.
+  let far = -1;
+  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === 0 && isLand(world(s).terrain[i]) && Math.hypot(i % s.w - cap.x, Math.floor(i / s.w) - cap.y) > 80) { far = i; break; }
+  const mBefore = me.minerals;
+  const exp = playerDropship(s, far, 0.1);
+  assert.ok(exp.ok && exp.eta > 0, `expedition launched (${exp.reason})`);
+  assert.equal(mBefore - me.minerals, 100);
   const e = enemyOf(s);
   const ecap = site(s, 'enemy-capital');
   let target = -1;
@@ -525,7 +534,8 @@ test('a clicked attack pushes a spearhead toward the click and can be re-aimed',
   assert.ok(sideSum / n < 12 * config(s).scale, `stays narrow (mean side ${(sideSum / n).toFixed(1)})`);
   // Clicking elsewhere on the same front re-aims the same attack.
   const other = [...Array(s.owner.length).keys()].find(i => s.owner[i] === 0 && isLand(world(s).terrain[i]) && [i - 1, i + 1, i - s.w, i + s.w].some(j => s.owner[j] === PLAYER) && Math.hypot(i % s.w - a.fx, Math.floor(i / s.w) - a.fy) > 20);
-  assert.ok(playerAttack(s, other, 0.2).ok);
+  const re = playerAttack(s, other, 0.2);
+  assert.ok(re.ok, `re-aim (${re.reason})`);
   assert.equal(s.attacks.filter(x => x.attacker === PLAYER).length, 1, 'still one attack');
   assert.equal(a.fx, other % s.w, 're-aimed at the new click');
 });
@@ -728,6 +738,85 @@ test('attack any land you click: the spearhead marches along a route to it', () 
   let island = -1;
   for (let i = 0; i < s.owner.length; i++) if (isLand(w.terrain[i]) && w.comp[i] !== mainComp && w.compSize[w.comp[i]] > 50) { island = i; break; }
   assert.equal(planRoute(s, PLAYER, island).kind, 'sea');
+});
+
+test('expeditions: launch from any coast, take time, land; Starports speed them up', () => {
+  const s = battle('cryonis', { tutorial: false });
+  freezeAI(s);
+  advance(s, 0.5);
+  const me = s.factions[PLAYER];
+  me.minerals = 5000;
+  const w = world(s);
+  const cap = site(s, 'player-capital');
+  const mainComp = w.comp[cap.y * s.w + cap.x];
+  let goal = -1;
+  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === 0 && isLand(w.terrain[i]) && w.comp[i] !== mainComp && w.compSize[w.comp[i]] > 5000 && [T.PLAINS, T.WILD].includes(w.terrain[i])) { goal = i; break; }
+  // Clicking land on another continent sends an expedition automatically.
+  me.troops = 20000;
+  const res = playerAttack(s, goal, 0.05);
+  assert.ok(res.ok && res.expedition, `expedition (${res.reason})`);
+  const plan = expeditionPlan(s, PLAYER, goal);
+  assert.ok(Math.abs(plan.eta - travelTime(s, plan.x, plan.y, goal % s.w, Math.floor(goal / s.w), plan.bonus)) < 1e-9);
+  // Sea is faster than land: 20 vs 14 tiles/s (x scale).
+  const lin = config(s).scale;
+  assert.ok(Math.abs(travelTime(s, 0, 0, 40, 0) - 40 / (20 * lin)) < 0.01, 'open sea at sea speed');
+  const eta = res.eta;
+  advance(s, eta * 0.5);
+  assert.equal(s.dropships.length, 1, 'still under way halfway');
+  advance(s, eta * 0.6 + 1);
+  assert.equal(s.dropships.length, 0, 'arrived');
+  assert.equal(s.owner[goal], PLAYER, 'landed and took the target');
+  // The beachhead is cut off from the capital: half growth on that share.
+  advance(s, 2);
+  assert.ok(!isConnected(s, goal));
+  const share = connectedShare(s, me);
+  assert.ok(share < 1);
+  // Reinforcing the beachhead sails the full way first.
+  let near = -1;
+  for (let i = 0; i < s.owner.length && near < 0; i++) {
+    const d = Math.hypot(i % s.w - goal % s.w, Math.floor(i / s.w) - Math.floor(goal / s.w));
+    if (s.owner[i] !== PLAYER && isLand(w.terrain[i]) && w.comp[i] === w.comp[goal] && d > 10 && d < 60) near = i;
+  }
+  assert.ok(near >= 0, 'found land near the beachhead');
+  const r2 = playerAttack(s, near, 0.2);
+  assert.ok(r2.ok && r2.reinforce && r2.eta > 1, `reinforcements travel (${JSON.stringify({ ok: r2.ok, reason: r2.reason, reinforce: r2.reinforce, exp: r2.expedition, eta: r2.eta })})`);
+  // A Starport makes expeditions faster.
+  const t0 = expeditionPlan(s, PLAYER, goal).eta;
+  const port = s.factions && (() => { for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === PLAYER && playerBuild(s, 'starport', i).ok) return i; return -1; })();
+  if (port >= 0) assert.ok(expeditionPlan(s, PLAYER, goal).eta <= t0, 'a port never slows things down');
+});
+
+test('half growth on land cut off from the capital', () => {
+  const s = battle('vulkara', { tutorial: false });
+  freezeAI(s);
+  advance(s, 0.5);
+  const me = s.factions[PLAYER];
+  const g0 = growthMult(s, me);
+  // Hand the player a large enclave far away.
+  const w = world(s);
+  let n = 0;
+  const t0 = me.tiles;
+  for (let i = 0; i < s.owner.length && n < t0; i++) if (s.owner[i] === 0 && isLand(w.terrain[i]) && i % s.w > s.w * 0.8) { setOwner(s, i, PLAYER); n++; }
+  advance(s, 1.1);
+  const share = connectedShare(s, me);
+  assert.ok(share > 0.4 && share < 0.6, `about half connected (${share.toFixed(2)})`);
+  assert.ok(Math.abs(growthMult(s, me) - g0 * (0.5 + 0.5 * share)) < 1e-9);
+});
+
+test('tactical commanders send expeditions against weak, isolated civilizations', () => {
+  const s = createBattle('xythera', loadout(), { seed: 3, autoSpawn: true });
+  advance(s, 1);
+  const enemy = s.factions.find(f => f && f.kind === 'enemy');
+  const w = world(s);
+  const capOf = id => s.sites.find(x => x.faction === id && (x.type === 'capital' || x.type === 'citadel'));
+  const ec = capOf(enemy.id);
+  const islander = s.factions.find(f => f && f.kind === 'nation' && capOf(f.id) && w.comp[capOf(f.id).y * s.w + capOf(f.id).x] !== w.comp[ec.y * s.w + ec.x]);
+  assert.ok(islander, 'a nation lives on another continent');
+  enemy.troops = 100000; enemy.minerals = 1000; islander.troops = 100;
+  for (const f of s.factions) if (f && f !== islander && f !== enemy && f.id !== PLAYER) f.troops = 1e9; // only the islander is weak
+  assert.ok(tryExpedition(s, enemy, () => 0), 'launched');
+  assert.equal(s.dropships.length, 1);
+  assert.equal(s.dropships[0].owner, enemy.id);
 });
 
 test('ownership maps round-trip through run-length encoding', () => {

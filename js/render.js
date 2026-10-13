@@ -791,7 +791,20 @@ export class MapRenderer {
     if (ui.pointer) this.drawPointer(T(ui.pointer.x + 0.5, ui.pointer.y + 0.5), now, motion);
 
     // Dropships.
-    for (const ds of st.dropships) drawSprite('fleet', ds.x, ds.y, st.factions[ds.owner].color);
+    // Expeditions: a ship marker, with a countdown on the player's.
+    for (const ds of st.dropships) {
+      drawSprite('fleet', ds.x, ds.y, st.factions[ds.owner].color);
+      if (ds.owner === PLAYER && ds.eta !== undefined) {
+        const p = T(ds.x + 0.5, ds.y + 0.5);
+        ctx.font = `700 ${Math.round(10 * d)}px "Alien Body", monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.lineWidth = Math.max(2, 3 * d); ctx.strokeStyle = 'rgba(5,4,12,0.9)';
+        const label = ds.returning ? `back ${Math.ceil(ds.eta)}s` : `${Math.ceil(ds.eta)}s`;
+        ctx.strokeText(label, Math.round(p.x), Math.round(p.y - 9 * d));
+        ctx.fillStyle = ds.returning ? '#ffd25e' : '#7fe8ff';
+        ctx.fillText(label, Math.round(p.x), Math.round(p.y - 9 * d));
+      }
+    }
 
     // Particles and rings.
     const dt = ui.dt || 0.016;

@@ -6,7 +6,7 @@ import {
 } from './progression.js';
 import {
   createBattle, step, spawnPlayer, canSpawnAt, playerAttack, playerDropship, playerBuild,
-  playerResearch, useAbility, abilityReady, ABILITY_ENERGY, DROPSHIP_COST, canDropship, currentObjective, playerRetreat,
+  playerResearch, useAbility, abilityReady, ABILITY_ENERGY, DROPSHIP_COST, canDropship, currentObjective, playerRetreat, expeditionPlan,
   condProgress, battleResult, serialize, deserialize, analyzeDefeat, TICK, PLAYER,
   tutorialStep, tutorialSteps, tutorialUnlocked, skipTutorial,
 } from './sim/engine.js';
@@ -67,17 +67,17 @@ const PROFILE_TEXT = {
 };
 const REASONS = {
   noPath: 'There is no way through: allied or shielded land blocks every route.',
-  water: 'That land is across the sea. Send an expedition from a coastal border tile.',
+  water: 'Troops cannot land on water.',
   allied: 'You are allied with them. Break the alliance first (right-click or long-press their land).',
   enemyRefuses: 'They are at war with you and will not deal.',
   traitor: 'Nobody trusts a traitor. Wait until your traitor mark fades.',
   locked: 'Teammates cannot be betrayed.',
   notAllied: 'You are not allied with them.',
-  notBordering: 'You do not border that land. Expand toward it, or build a Starport and use a dropship (6).',
+  notBordering: 'You do not border that land.',
+  noCoast: 'You hold no coast to launch an expedition from.',
   noTroops: 'Not enough troops. Raise the attack ratio or wait for your army to regrow.',
   fronts: 'Too many attacks at once. Wait for one to finish.',
   shielded: 'Shielded! Capture the network hubs first.',
-  water: 'Your troops cannot march over water. Use a dropship from a Starport.',
   own: 'That land is already yours.',
   minerals: 'Not enough minerals.',
   energy: 'Not enough energy.',
@@ -558,7 +558,7 @@ function buildToolbar() {
   const tools = [
     ...Object.entries(BUILDINGS).map(([id, b]) => ({ kind: 'build', id, key: b.key, label: b.name, icon: spriteIcon(id) })),
     'sep',
-    { kind: 'dropship', id: 'dropship', key: '6', label: 'Dropship', icon: iconURL('fleet', 3) },
+    { kind: 'dropship', id: 'dropship', key: '6', label: 'Expedition', icon: iconURL('fleet', 3) },
     { kind: 'research', id: 'research', key: 'R', label: 'Research', icon: iconURL('research', 3) },
     'sep',
     ...Object.entries(ABILITIES).map(([id, a]) => ({ kind: 'ability', id, key: a.key, label: a.name.split(' ')[1], icon: iconURL(id, 3), locked: !f.abilities.includes(id) })),
@@ -594,7 +594,7 @@ function activateTool(kind, id) {
   armed = { kind, id };
   const hints = {
     build: `Click your land to build a ${BUILDINGS[id]?.name}. Right-click or Esc to cancel.`,
-    dropship: canDropship(battle) ? 'Click enemy or unclaimed land anywhere to send a dropship.' : 'Build a Starport near the coast to launch dropships.',
+    dropship: canDropship(battle) ? 'Click land anywhere to send an expedition from your nearest coast.' : 'You need land on a coast to launch expeditions.',
     ability: { strike: 'Click enemy land to bombard it.', rally: 'Click anywhere to muster troops.', emp: 'Click near enemy hubs, relays, defenses or buildings.' }[id],
   };
   toast(hints[kind], 'tip', 2600);
@@ -684,7 +684,7 @@ const LONG_PRESS = 450;
 
 const STAT_TIPS = {
   troops: f => `<b>Troops</b><br>Your army: one pool for attacks and defence. The cap (${fmt(maxTroops(battle, f))}) grows with land and Habitats. Regrows +${fmt(regen(battle, f))}/s, fastest when well below the cap.${f.troops > maxTroops(battle, f) ? '<br><span class="warn">Over the cap: growth pauses until you spend the extra troops.</span>' : ''}`,
-  minerals: f => `<b>Minerals</b><br>Spend on buildings and dropships. +${income(battle, f).minerals.toFixed(1)}/s from your land, Extractors and vents.`,
+  minerals: f => `<b>Minerals</b><br>Spend on buildings and expeditions. +${income(battle, f).minerals.toFixed(1)}/s from your land, Extractors and vents.`,
   energy: f => `<b>Energy</b><br>Powers abilities (7, 8, 9). +${income(battle, f).energy.toFixed(1)}/s from vents and other sites.`,
   exotic: f => `<b>Exotic matter</b><br>Spend on research (R). +${income(battle, f).exotic.toFixed(1)}/s from Research Spires.`,
   land: f => `<b>Land</b><br>${fmt(f.tiles)} tiles, ${((f.tiles / world(battle).landCount) * 100).toFixed(1)}% of the planet. More land means a higher troop cap and more minerals.`,
@@ -703,7 +703,7 @@ const TIP_FNS = {
       const b = BUILDINGS[id], c = buildCost(battle, PLAYER, id);
       return `<b>${esc(b.name)}</b> <kbd>${b.key}</kbd><br>${esc(b.desc)}<br><span class="${f.minerals >= c ? 'ok' : 'no'}">Cost ${fmt(c)} minerals</span> (you have ${fmt(f.minerals)}). Each one you own costs more.<br><span class="dim">Use it on one of your own ${esc(b.name)}s to upgrade it (up to level 3).</span>`;
     }
-    if (kind === 'dropship') return `<b>Dropship</b> <kbd>6</kbd><br>Send your attack ratio of troops to land anywhere, even across the sea. Needs a Starport.${canDropship(battle) ? '' : ' <span class="no">You have no Starport.</span>'}<br>Cost ${DROPSHIP_COST} minerals.`;
+    if (kind === 'dropship') return `<b>Expedition</b> <kbd>6</kbd><br>Send your attack ratio of troops to land anywhere, even across the sea. Launches from your fastest coast; each Starport level makes it 40% faster.${canDropship(battle) ? '' : ' <span class="no">You hold no coast.</span>'}<br>Cost ${DROPSHIP_COST} minerals. Clicking land on another continent sends one automatically.`;
     if (kind === 'research') return `<b>Research</b> <kbd>R</kbd><br>Spend exotic matter on upgrades that last this battle. You have ${fmt(f.exotic)} exotic.`;
     const a = ABILITIES[id], u = UPGRADES.find(x => x.id === id);
     const owned = f.abilities.includes(id);
@@ -742,7 +742,7 @@ function tileTip(i) {
     const cont = (w.continents || []).find(c => c.id === w.comp[i]);
     parts.push(`${esc(names[ter.id])}${cont ? ` on ${esc(cont.name)}` : ''}: attack cost ×${ter.cost} · defence ×${tileDefense(battle, i).toFixed(2)}`);
   }
-  else parts.push(`<b>${esc(names[ter.id])}</b><br>Water. Cross it with a dropship from a Starport.`);
+  else parts.push(`<b>${esc(names[ter.id])}</b><br>Water. Cross it with an expedition (6) from any of your coasts.`);
   const site = battle.sites.find(s => Math.abs(s.x - x) <= 2 && Math.abs(s.y - y) <= 2);
   if (site) parts.push(`<b>${esc(site.name)}</b>: ${esc(SITE_TYPES[site.type].desc)}`);
   const bld = battle.buildings.find(b => Math.abs(b.x - x) <= 2 && Math.abs(b.y - y) <= 2);
@@ -755,7 +755,9 @@ function tileTip(i) {
   }
   if (battle.status === 'playing' && isLand(t) && o !== PLAYER && !armed) {
     const near = borders(battle, PLAYER, o);
-    parts.push(`<span class="ok">Click to ${near ? 'attack' : 'march there'} with ${fmt(battle.factions[PLAYER].troops * ratio)} troops.</span>${near ? '' : '<br><span class="dim">The dotted line shows the route.</span>'}`);
+    const sea = !near && routeTile === i && routeKind === 'sea';
+    if (sea) parts.push(`<span class="ok">Across the sea: click to send an expedition of ${fmt(battle.factions[PLAYER].troops * ratio)} troops.</span><br><span class="dim">${routeEta ? `Arrives in ${Math.ceil(routeEta)} s. ` : ''}Costs ${DROPSHIP_COST} minerals.</span>`);
+    else parts.push(`<span class="ok">Click to ${near ? 'attack' : 'march there'} with ${fmt(battle.factions[PLAYER].troops * ratio)} troops.</span>${near ? '' : '<br><span class="dim">The dotted line shows the route.</span>'}`);
   }
   return parts.join('<br>');
 }
@@ -840,7 +842,7 @@ function initTooltips() {
 
 // ---------- Route preview ----------
 // Hovering land you don't border shows the route a click would march along.
-let routeTile = -1, routeAt = 0, routePath = null;
+let routeTile = -1, routeAt = 0, routePath = null, routeKind = null, routeEta = 0;
 function updateRoutePreview() {
   if (!battle || battle.status !== 'playing' || armed || hoverTile < 0 || tipSource !== 'map') { routePath = null; return; }
   const i = hoverTile, o = battle.owner[i];
@@ -850,10 +852,12 @@ function updateRoutePreview() {
   routeTile = i; routeAt = now;
   const r = planRoute(battle, PLAYER, i);
   routePath = r && r.kind === 'land' ? r.path : null;
+  routeKind = r ? r.kind : null;
+  routeEta = r && r.kind === 'sea' ? expeditionPlan(battle, PLAYER, i)?.eta || 0 : 0;
 }
 
 // ---------- Radial menu ----------
-// Right-click (or long-press on touch) a spot on the map: Attack, Dropship,
+// Right-click (or long-press on touch) a spot on the map: Attack, Expedition,
 // Build, diplomacy (Ally, send troops or minerals, Betray) and Info.
 
 function radialItems(i) {
@@ -865,7 +869,7 @@ function radialItems(i) {
   if (battle.status !== 'playing') return items;
   const act = (kind, id) => () => { armed = kind ? { kind, id } : null; clickTile(i); armed = null; };
   if (land && o !== PLAYER && !allied) items.push({ icon: iconURL('attack', 3), label: 'Attack', act: act(null) });
-  if (land && o !== PLAYER && !allied && canDropship(battle) && toolUnlocked('dropship', 'dropship')) items.push({ icon: iconURL('fleet', 3), label: 'Dropship', act: act('dropship', 'dropship') });
+  if (land && o !== PLAYER && !allied && canDropship(battle) && toolUnlocked('dropship', 'dropship')) items.push({ icon: iconURL('fleet', 3), label: 'Expedition', act: act('dropship', 'dropship') });
   if (o === PLAYER) {
     for (const [id, b] of Object.entries(BUILDINGS)) {
       if (!toolUnlocked('build', id)) continue;
@@ -1320,14 +1324,14 @@ function processNotices() {
         else if (n.kind === 'betrayed') { toast(`You betrayed <b>${esc(f.name)}</b>. Every nation trusts you less, and you carry a traitor mark for 30 s.`, 'bad', 5000); sfx.lost(); }
         break;
       }
-      case 'dropReturn': if (n.owner === PLAYER) toast('Dropship turned back: its target changed hands. The troops are coming home.', 'tip', 3000); break;
+      case 'dropReturn': if (n.owner === PLAYER) toast('Expedition turned back: its target changed hands. The troops are coming home.', 'tip', 3000); break;
       case 'ended': battleEnded(n); break;
       case 'gain': renderer.pop(n.x, n.y - 2, n.text, { minerals: '#c9b8ff', troops: '#7fe8ff', energy: '#ffe066' }[n.res] || '#ffffff'); break;
       case 'research': toast(`Research complete: ${esc(RESEARCH[n.id].name)}.`, 'good'); break;
       case 'landed':
-        if (n.owner === PLAYER) { toast('Dropship landed. Beachhead established.', 'good'); renderer.crashLanding(n.x, n.y, { small: true, color: battle.factions[PLAYER].color }); }
+        if (n.owner === PLAYER) { toast('Expedition landed. Beachhead established.', 'good'); renderer.crashLanding(n.x, n.y, { small: true, color: battle.factions[PLAYER].color }); }
         break;
-      case 'dropFailed': if (n.owner === PLAYER) toast('The dropship was shot down on landing. Send more troops.', 'bad'); break;
+      case 'dropFailed': if (n.owner === PLAYER) toast('The expedition was beaten back on landing. Send more troops.', 'bad'); break;
       case 'strike': renderer.burst(n.x, n.y, '#ff7a1f', 40); renderer.ring(n.x, n.y, '#ffd25e', 8); sfx.ability(); break;
       case 'emp': renderer.ring(n.x, n.y, '#7fd8ff', 10); sfx.ability(); break;
       case 'start': {
@@ -1447,10 +1451,12 @@ function clickTile(i) {
   let res;
   if (armed?.kind === 'build') res = playerBuild(battle, armed.id, i);
   else if (armed?.kind === 'ability') res = useAbility(battle, armed.id, i);
-  else if (armed?.kind === 'dropship') { res = playerDropship(battle, i, ratio); if (res.ok) { toast(`Dropship launched with ${fmt(res.sent)} troops.`, 'good', 2000); sfx.attack(); } }
+  else if (armed?.kind === 'dropship') { res = playerDropship(battle, i, ratio); if (res.ok) { toast(`Expedition of ${fmt(res.sent)} troops launched: arrives in ${Math.ceil(res.eta)} s.`, 'good', 2500); sfx.attack(); } }
   else if (battle.owner[i] === PLAYER) { inspectTile = inspectTile === i ? -1 : i; sfx.click(); return; }
   else {
     res = playerAttack(battle, i, ratio);
+    if (res.ok && res.expedition) toast(`Across the sea: expedition of ${fmt(res.sent)} troops launched, arrives in ${Math.ceil(res.eta)} s.`, 'good', 3000);
+    if (res.ok && res.reinforce) toast(`Reinforcements sailing to your beachhead: they attack on arrival in ${Math.ceil(res.eta)} s.`, 'good', 3000);
     if (res.ok) { sfx.attack(); renderer.pop(x, y, `-${fmt(res.sent)}`, '#ffe9a8'); if (res.aim) renderer.aim(res.aim.x0, res.aim.y0, res.aim.x1, res.aim.y1, '#fff2a8'); tip('ratio', 'Troops regrow fastest when your army is well below its cap. Big attacks are not wasted.'); }
   }
   if (res && !res.ok) { sfx.error(); toast(REASONS[res.reason] || 'You cannot do that.', 'bad', 2600); }
@@ -1487,9 +1493,9 @@ function openHelp() {
       <li>Click enemy or unclaimed land next to your border to attack it with your attack ratio of troops.</li>
       <li>Drag or WASD to pan the map. Mouse wheel, pinch or Q / E to zoom smoothly. C glides to your capital.</li>
       <li>Zoomed out, buildings show as badges with their level; zoom in to see them up close.</li>
-      <li>1–5 build, 6 dropship, R research, 7–9 abilities, Space pause, L leaderboard, O objectives.</li>
+      <li>1–5 build, 6 expedition, 0 battleship, R research, 7–9 abilities, Space pause, L leaderboard, O objectives.</li>
       <li>On touch screens, a drag never attacks: only a clean tap does.</li>
-      <li>Oceans separate the continents. Build a Starport on a coast to send dropships across.</li></ul>
+      <li>Oceans separate the continents. Click land across the sea to send an expedition from your nearest coast (Starports make them faster). Cut-off land grows troops at half rate.</li></ul>
     <h4>Terrain (attack cost · defense)</h4><ul>${['plains', 'wild', 'highland', 'mountain', 'river', 'volcano', 'ruins'].map(k => { const t = TERRAIN.find(x => x.id === k); return `<li>${esc(names[k])}: ×${t.cost} · ×${t.defense}</li>`; }).join('')}</ul>
     <h4>Sites on this world</h4><ul>${sitesHere.map(t => `<li><b>${esc(SITE_TYPES[t].label)}</b>: ${esc(SITE_TYPES[t].desc)}</li>`).join('')}</ul>`;
   $('#overlay-help').classList.remove('hidden');

@@ -7,7 +7,7 @@ import { DIFFICULTIES, ABILITIES } from '../progression.js';
 import {
   TICK, PLAYER, world, config, setOwner, launchAttack, notice, siteOwner, isShielded, isPowered,
   maxTroops, regen, income, tileCost, tileLocked, neighbors4, TileHeap, eventPhase, sitesOf, countSites, buildCost,
-  alive, borders, upgradeCost, mapScale, areaScale, attackFronts,
+  alive, borders, upgradeCost, mapScale, areaScale, attackFronts, rt, isConnected, connectedLand,
 } from './core.js';
 import { isAllied, relation, onPlayerAttack, driftTrust } from './diplomacy.js';
 import { planRoute } from './path.js';
@@ -264,9 +264,25 @@ export function playerAttack(state, tileIndex, ratio) {
   if (tileLocked(state, tileIndex)) { state.stats.shieldBlocked++; return { ok: false, reason: 'shielded' }; }
   if (target && isAllied(state, PLAYER, target)) return { ok: false, reason: 'allied' };
   const f = state.factions[PLAYER];
-  // Land we don't border: march there along the cheapest route.
-  if (!borders(state, PLAYER, target)) return playerRouteAttack(state, tileIndex, ratio);
-  const res = launchAttack(state, PLAYER, target, f.troops * ratio, tileIndex);
+  // Troops never teleport: if the nearest land we hold there is cut off from
+  // our capital (a beachhead), they sail there first, then attack.
+  const src = nearestOwn(state, PLAYER, tileIndex);
+  if (src >= 0 && !isConnected(state, src) && state.sites.some(s => s.id === 'player-capital')) {
+    const res = launchExpedition(state, PLAYER, src, f.troops * ratio, { focus: tileIndex });
+    if (res.ok) res.reinforce = true;
+    return res;
+  }
+  // Land we don't border, or on a continent where we hold nothing: march
+  // there along the cheapest route, or sail.
+  if (!borders(state, PLAYER, target) || src < 0 || world(state).comp[src] !== world(state).comp[tileIndex]) return playerRouteAttack(state, tileIndex, ratio);
+  return attackNow(state, tileIndex, f.troops * ratio, ratio);
+}
+
+function attackNow(state, tileIndex, troops, ratio) {
+  const target = state.owner[tileIndex];
+  if (target === PLAYER || (target && isAllied(state, PLAYER, target)) || tileLocked(state, tileIndex)) return { ok: false, reason: 'invalid' };
+  if (!borders(state, PLAYER, target)) return playerRouteAttack(state, tileIndex, ratio, troops);
+  const res = launchAttack(state, PLAYER, target, troops, tileIndex);
   if (res.ok) {
     onPlayerAttack(state, target);
     if (target && state.factions[target].kind === 'nation') state.flags.attackedNation = true;
@@ -282,12 +298,17 @@ export function playerAttack(state, tileIndex, ratio) {
 
 // Attack land we don't border: the spearhead follows an A* route across the
 // continent, taking a corridor as it goes, then pushes on around the click.
-export function playerRouteAttack(state, tileIndex, ratio) {
+export function playerRouteAttack(state, tileIndex, ratio, amount = null) {
   const route = planRoute(state, PLAYER, tileIndex);
   if (!route) return { ok: false, reason: 'noPath' };
-  if (route.kind === 'sea') return { ok: false, reason: 'water' };
   const f = state.factions[PLAYER];
-  const troops = Math.floor(f.troops * ratio);
+  // Another continent: send an expedition instead.
+  if (route.kind === 'sea') {
+    const res = launchExpedition(state, PLAYER, tileIndex, amount ?? f.troops * ratio);
+    if (res.ok) res.expedition = true;
+    return res;
+  }
+  const troops = Math.floor(amount ?? f.troops * ratio);
   if (troops < 1) return { ok: false, reason: 'noTroops' };
   if (state.attacks.filter(a => a.attacker === PLAYER).length >= attackFronts(state, f) + 2) return { ok: false, reason: 'fronts' };
   const target = state.owner[tileIndex];
@@ -315,11 +336,94 @@ export function playerRetreat(state, target) {
   return n ? { ok: true, count: n } : { ok: false, reason: 'noAttack' };
 }
 
-export function canDropship(state) {
-  return state.buildings.some(b => b.type === 'starport' && state.owner[b.y * state.w + b.x] === PLAYER);
+// ---------- Expeditions ----------
+// Troops sent across the sea (or anywhere, with the expedition tool). They
+// launch from the fastest coastal border tile; a Starport is optional but
+// speeds them up 40% per level. Travel takes distance / speed: about
+// 14 x mapScale tiles/s over land and 20 x mapScale over sea. If the target
+// changes hands before they arrive, they turn back home.
+
+export const DROPSHIP_COST = 100; // minerals per expedition
+const LAND_SPEED = 14, SEA_SPEED = 20;
+
+// Our land tiles next to water. Game logic always scans fresh; the HUD may
+// use a copy cached for half a second.
+export function coastalTiles(state, owner, cached = false) {
+  const c = rt(state);
+  c.coast = c.coast || {};
+  const e = c.coast[owner];
+  const bucket = Math.floor(state.time * 2);
+  if (cached && e && e.time === bucket) return e.tiles;
+  const { owner: own, w: W } = state, terrain = world(state).terrain, N = own.length;
+  const tiles = [];
+  for (let i = 0; i < N; i++) {
+    if (own[i] !== owner) continue;
+    const x = i % W;
+    if ((x > 0 && !isLand(terrain[i - 1])) || (x < W - 1 && !isLand(terrain[i + 1])) || (i >= W && !isLand(terrain[i - W])) || (i + W < N && !isLand(terrain[i + W]))) tiles.push(i);
+  }
+  c.coast[owner] = { time: bucket, tiles };
+  return tiles;
 }
 
-export const DROPSHIP_COST = 100;
+export function canDropship(state, owner = PLAYER) {
+  return coastalTiles(state, owner, true).length > 0;
+}
+
+// Seconds to travel in a straight line, land and sea at their own speeds.
+export function travelTime(state, x0, y0, x1, y1, bonus = 1) {
+  const terrain = world(state).terrain, lin = mapScale(state);
+  const dist = Math.hypot(x1 - x0, y1 - y0), steps = Math.max(1, Math.ceil(dist));
+  let t = 0;
+  for (let k = 0; k < steps; k++) {
+    const f = (k + 0.5) / steps;
+    const i = Math.round(y0 + (y1 - y0) * f) * state.w + Math.round(x0 + (x1 - x0) * f);
+    t += (dist / steps) / ((isLand(terrain[i]) ? LAND_SPEED : SEA_SPEED) * lin * bonus);
+  }
+  return t;
+}
+
+// Where an expedition to tile `goal` would launch from, and how long it takes.
+export function expeditionPlan(state, owner, goal) {
+  const W = state.w, gx = goal % W, gy = Math.floor(goal / W);
+  // Troops sail from home: only coast still connected to the capital counts
+  // (unless the capital is gone, then any coast).
+  const hasCap = state.sites.some(s => s.faction === owner && (s.type === 'capital' || s.type === 'citadel') && state.owner[s.y * W + s.x] === owner);
+  const home = i => !hasCap || (owner === PLAYER ? isConnected(state, i) : !!connectedLand(state).mask[i]);
+  const ports = state.buildings.filter(b => b.type === 'starport' && state.owner[b.y * W + b.x] === owner && home(b.y * W + b.x));
+  const coast = coastalTiles(state, owner).filter(home);
+  const cands = coast.map(i => ({ x: i % W, y: Math.floor(i / W), bonus: 1 }))
+    .sort((a, b) => Math.hypot(a.x - gx, a.y - gy) - Math.hypot(b.x - gx, b.y - gy)).slice(0, 24);
+  for (const p of ports) cands.push({ x: p.x, y: p.y, bonus: 1 + 0.4 * (p.level || 1) });
+  if (!cands.length) return null;
+  let best = null;
+  for (const c of cands) {
+    const eta = travelTime(state, c.x, c.y, gx, gy, c.bonus);
+    if (!best || eta < best.eta) best = { ...c, eta };
+  }
+  return best;
+}
+
+// Launch an expedition carrying `troops` to tile `goal`. `then` describes what
+// the troops do on arrival at our own land (a reinforcement): { focus }.
+export function launchExpedition(state, owner, goal, troops, then = null) {
+  const f = state.factions[owner];
+  const plan = expeditionPlan(state, owner, goal);
+  if (!plan) return { ok: false, reason: 'noCoast' };
+  if (f.minerals < DROPSHIP_COST) return { ok: false, reason: 'minerals' };
+  troops = Math.floor(Math.min(troops, f.troops));
+  if (troops < 5) return { ok: false, reason: 'noTroops' };
+  f.minerals -= DROPSHIP_COST;
+  f.troops -= troops;
+  const tx = goal % state.w, ty = Math.floor(goal / state.w);
+  state.dropships.push({
+    id: state.nextId++, owner, troops, x: plan.x, y: plan.y, tx, ty, px: plan.x, py: plan.y,
+    targetOwner: state.owner[goal], bonus: plan.bonus, eta: plan.eta, then,
+  });
+  if (owner === PLAYER) { state.flags.dropship = true; state.stats.attacks++; }
+  const t = state.owner[goal];
+  if (t && t !== owner) state.factions[t].attackedBy[owner] = state.time;
+  return { ok: true, sent: troops, eta: plan.eta };
+}
 
 export function playerDropship(state, tileIndex, ratio) {
   if (state.status !== 'playing') return { ok: false, reason: 'notStarted' };
@@ -327,19 +431,19 @@ export function playerDropship(state, tileIndex, ratio) {
   if (!isLand(world(state).terrain[tileIndex]) || state.owner[tileIndex] === PLAYER) return { ok: false, reason: 'invalid' };
   if (tileLocked(state, tileIndex)) return { ok: false, reason: 'shielded' };
   if (state.owner[tileIndex] && isAllied(state, PLAYER, state.owner[tileIndex])) return { ok: false, reason: 'allied' };
-  const ports = state.buildings.filter(b => b.type === 'starport' && state.owner[b.y * state.w + b.x] === PLAYER);
-  if (!ports.length) return { ok: false, reason: 'noStarport' };
-  if (f.minerals < DROPSHIP_COST) return { ok: false, reason: 'minerals' };
-  const troops = Math.floor(f.troops * ratio);
-  if (troops < 5) return { ok: false, reason: 'noTroops' };
-  const tx = tileIndex % state.w, ty = (tileIndex - tx) / state.w;
-  const port = ports.reduce((a, b) => (Math.hypot(a.x - tx, a.y - ty) < Math.hypot(b.x - tx, b.y - ty) ? a : b));
-  f.minerals -= DROPSHIP_COST;
-  f.troops -= troops;
-  state.flags.dropship = true;
-  state.dropships.push({ id: state.nextId++, owner: PLAYER, troops, x: port.x, y: port.y, tx, ty, px: port.x, py: port.y, targetOwner: state.owner[tileIndex], speed: 28 * mapScale(state) * (1 + 0.4 * ((port.level || 1) - 1)) });
-  state.stats.attacks++;
-  return { ok: true, sent: troops };
+  return launchExpedition(state, PLAYER, tileIndex, f.troops * ratio);
+}
+
+// The player's own tile nearest to tile i (or -1).
+function nearestOwn(state, owner, i) {
+  const W = state.w, x = i % W, y = Math.floor(i / W);
+  let best = -1, bd = Infinity;
+  for (let j = 0; j < state.owner.length; j++) {
+    if (state.owner[j] !== owner) continue;
+    const d = (j % W - x) ** 2 + (Math.floor(j / W) - y) ** 2;
+    if (d < bd) { bd = d; best = j; }
+  }
+  return best;
 }
 
 export function canBuildAt(state, type, i) {
@@ -670,10 +774,13 @@ function advanceDropships(state, dt) {
   for (let k = state.dropships.length - 1; k >= 0; k--) {
     const d = state.dropships[k];
     const dist = Math.hypot(d.tx - d.x, d.ty - d.y);
-    const step = (d.speed || 28 * mapScale(state)) * dt;
+    const here = Math.round(d.y) * state.w + Math.round(d.x);
+    const step = (isLand(world(state).terrain[here]) ? LAND_SPEED : SEA_SPEED) * mapScale(state) * (d.bonus || 1) * dt;
+    d.eta = Math.max(0, (d.eta ?? 0) - dt);
     // Auto-return: if the target changes hands before landing, turn back home.
     if (!d.returning && d.targetOwner !== undefined && state.owner[d.ty * state.w + d.tx] !== d.targetOwner) {
       d.returning = true; d.tx = d.px ?? Math.round(d.x); d.ty = d.py ?? Math.round(d.y);
+      d.eta = travelTime(state, d.x, d.y, d.tx, d.ty, d.bonus || 1);
       notice(state, 'dropReturn', { owner: d.owner, x: Math.round(d.x), y: Math.round(d.y) });
       continue;
     }
@@ -683,7 +790,12 @@ function advanceDropships(state, dt) {
     const i = d.ty * state.w + d.tx;
     const f = state.factions[d.owner];
     const target = state.owner[i];
-    if (target === d.owner) { f.troops += d.troops; continue; }
+    if (target === d.owner) {
+      // Reinforcements arrive at our own land: now they attack from here.
+      f.troops += d.troops;
+      if (d.then && d.owner === PLAYER) attackNow(state, d.then.focus, d.troops, 0);
+      continue;
+    }
     const cost = tileCost(state, f, i) * 2; // landing under fire
     if (d.troops <= cost || tileLocked(state, i)) { notice(state, 'dropFailed', { owner: d.owner }); continue; }
     setOwner(state, i, d.owner);
@@ -961,6 +1073,13 @@ export function serialize(state) {
   const copy = JSON.parse(JSON.stringify({ ...rest, attacks }));
   copy.owner = toB64(rleEncode(owner));
   copy.ownerEnc = 'rle';
+  // Cached border and supply-line results are saved too: a resumed battle
+  // must make exactly the same decisions as the original would have.
+  const c = rt(state);
+  copy.caches = {
+    border: c.border ? [...c.border].map(([a, m]) => [a, [...m]]) : null, borderTime: c.borderTime ?? null,
+    conn: c.conn ? [...c.conn.counts] : null, connTime: c.connTime ?? null,
+  };
   return copy;
 }
 
@@ -970,6 +1089,18 @@ export function deserialize(data) {
     const raw = fromB64(data.owner);
     const state = { ...data, owner: data.ownerEnc === 'rle' ? rleDecode(raw, data.w * data.h) : raw, notices: [] };
     delete state.ownerEnc;
+    const caches = state.caches;
+    delete state.caches;
+    if (caches) {
+      const c = rt(state);
+      if (caches.border) { c.border = new Map(caches.border.map(([a, m]) => [a, new Map(m)])); c.borderTime = caches.borderTime; }
+      if (caches.conn) {
+        const fresh = connectedLand(state);
+        c.conn = { mask: fresh.mask, counts: new Map(caches.conn) };
+        c.connTime = caches.connTime;
+        c.connVersion = -1; // stale like the original's: refresh at the next bucket
+      }
+    }
     if (!Array.isArray(state.history)) { state.history = []; state.historyAt = state.time; }
     state.attacks = (state.attacks || []).map(a => {
       if (!a.frontier || !Array.isArray(a.frontier.k)) return { ...a, frontier: null };
