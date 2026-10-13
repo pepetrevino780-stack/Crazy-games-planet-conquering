@@ -2,11 +2,11 @@
 import { PLANETS, getPlanet, skirmishConfig, BUILDINGS, RESEARCH, SITE_TYPES, PERSONAS } from './campaign.js';
 import {
   newCampaign, loadCampaign, saveCampaign, isUnlocked, UPGRADES, CIVS, ABILITIES, upgradeCost,
-  buyUpgrade, unlockCiv, playerLoadout, computeRewards, applyVictory, applyDefeat, assistLevel, starsFor,
+  buyUpgrade, unlockCiv, playerLoadout, cleanName, computeRewards, applyVictory, applyDefeat, assistLevel, starsFor,
 } from './progression.js';
 import {
   createBattle, step, spawnPlayer, canSpawnAt, playerAttack, playerDropship, playerBuild,
-  playerResearch, useAbility, abilityReady, ABILITY_ENERGY, DROPSHIP_COST, canDropship, currentObjective,
+  playerResearch, useAbility, abilityReady, ABILITY_ENERGY, DROPSHIP_COST, canDropship, currentObjective, playerRetreat,
   condProgress, battleResult, serialize, deserialize, analyzeDefeat, TICK, PLAYER,
   tutorialStep, tutorialSteps, tutorialUnlocked, skipTutorial,
 } from './sim/engine.js';
@@ -153,6 +153,7 @@ function renderTitle() {
   cont.textContent = b ? 'Campaign map' : started ? 'Continue campaign' : 'Start campaign';
   cont.classList.toggle('primary', !b);
   $('#btn-new').classList.toggle('hidden', !started);
+  if (document.activeElement !== $('#player-name')) $('#player-name').value = campaign?.settings.name || 'Commander';
 }
 
 const battleName = b => (b.configId === 'skirmish' ? `Skirmish: ${THEMES[b.theme].name}` : getPlanet(b.configId).name);
@@ -752,6 +753,115 @@ function initTooltips() {
   }, true);
 }
 
+// ---------- Battle panel ----------
+// One row per battle you are in: your troops vs theirs, biggest first.
+// Rows for your attacks have a Retreat button; attacks on you are marked
+// Incoming. Finished battles flash their result, then fade out.
+
+let finishedBattles = [];
+let battlesOpen = true;
+let battlesKey = '';
+
+function battleGroups() {
+  const groups = new Map();
+  for (const a of battle.attacks) {
+    if (a.attacker !== PLAYER && a.target !== PLAYER) continue;
+    const out = a.attacker === PLAYER;
+    const key = out ? `out${a.target}` : `in${a.attacker}`;
+    if (!groups.has(key)) groups.set(key, { key, out, other: out ? a.target : a.attacker, mine: 0, theirs: 0, attacks: [] });
+    const g = groups.get(key);
+    if (out) g.mine += a.troops; else g.theirs += a.troops;
+    g.attacks.push(a);
+  }
+  const me = battle.factions[PLAYER];
+  for (const g of groups.values()) {
+    if (g.out) g.theirs = g.other ? battle.factions[g.other].troops : null;
+    else g.mine = me.troops;
+  }
+  return [...groups.values()].sort((a, b) => (b.mine + (b.theirs || 0)) - (a.mine + (a.theirs || 0)));
+}
+
+function battleFront(g) {
+  let sx = 0, sy = 0, n = 0;
+  for (const a of g.attacks) {
+    if (a.lx !== undefined) { sx += a.lx; sy += a.ly; n++; } else if (a.focus != null) { sx += a.focus % battle.w; sy += Math.floor(a.focus / battle.w); n++; }
+  }
+  return n ? { x: sx / n, y: sy / n } : null;
+}
+
+function battleEnded(n) {
+  const out = n.attacker === PLAYER;
+  const other = out ? n.target : n.attacker;
+  const name = other ? battle.factions[other].name : 'Wilderness';
+  const key = out ? `out${other}` : `in${other}`;
+  let text, cls;
+  if (out) {
+    text = n.retreat ? `Retreated from ${name}: ${fmt(n.returned)} came home` : n.won ? `Won vs ${name}: ${fmt(n.returned)} survivors returned` : `Stalled vs ${name}: ${fmt(n.returned)} returned`;
+    cls = n.won && !n.retreat ? 'won' : 'lost';
+    if (n.returned > 0 && n.x !== null) {
+      renderer.pop(n.x, n.y, `+${fmt(n.returned)} returned`, '#7fe8ff');
+      const cap = battle.sites.find(s => s.id === 'player-capital');
+      if (cap) renderer.march(n.x, n.y, cap.x, cap.y, battle.factions[PLAYER].color);
+      const row = $('#st-troops').closest('.stat');
+      row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash');
+    }
+  } else {
+    text = n.repelled ? `${name}'s attack repelled` : `${name} took ground from you`;
+    cls = n.repelled ? 'won' : 'lost';
+  }
+  finishedBattles = finishedBattles.filter(f => f.key !== key);
+  finishedBattles.push({ key, text, cls, until: performance.now() + 3000 });
+}
+
+function updateBattles() {
+  const box = $('#battles'), chip = $('#battles-chip');
+  if (battle.status !== 'playing') { box.classList.add('hidden'); chip.classList.add('hidden'); return; }
+  const groups = battleGroups();
+  const now = performance.now();
+  finishedBattles = finishedBattles.filter(f => f.until > now && !groups.some(g => g.key === f.key));
+  const total = groups.length + finishedBattles.length;
+  // Phones: a summary chip that opens the list.
+  const compact = window.innerWidth < 760 || window.innerHeight < 520;
+  chip.classList.toggle('hidden', !compact || !groups.length);
+  chip.innerHTML = `<img class="vs" src="${iconURL('attack', 2)}" alt=""> ${groups.length} battle${groups.length === 1 ? '' : 's'}`;
+  const show = total > 0 && (!compact || battlesOpen);
+  box.classList.toggle('hidden', !show);
+  if (!show) return;
+  const me = battle.factions[PLAYER];
+  const rows = groups.slice(0, 5).map(g => {
+    const f = g.other ? battle.factions[g.other] : null;
+    const theirName = f ? f.name : 'Wilderness';
+    const share = g.theirs === null ? 1 : g.mine / Math.max(1, g.mine + g.theirs);
+    return `<div class="brow ${g.out ? 'out' : 'in'}" data-key="${g.key}">
+      <div class="line"><span class="who" style="color:${me.color}">${esc(me.name)}</span><b>${fmt(g.mine)}</b><img class="vs" src="${iconURL('attack', 2)}" alt="vs"><b>${g.theirs === null ? '—' : fmt(g.theirs)}</b><span class="who" style="color:${f ? f.color : 'var(--muted)'}">${esc(theirName)}</span>${g.out ? `<button class="btn small retreat" data-retreat="${g.other}" data-tip="Recall this attack: survivors come home minus 25%.">Retreat</button>` : '<span class="tag">INCOMING</span>'}</div>
+      <div class="bbar"><i style="width:${(share * 100).toFixed(0)}%;background:${me.color}"></i></div></div>`;
+  });
+  if (groups.length > 5) rows.push(`<div class="more">+${groups.length - 5} more</div>`);
+  for (const f of finishedBattles) rows.push(`<div class="brow done ${f.cls}${f.until - now < 800 ? ' fade' : ''}">${esc(f.text)}</div>`);
+  const html = rows.join('');
+  if (html !== battlesKey) { battlesKey = html; box.innerHTML = html; }
+}
+
+function initBattlePanel() {
+  // pointerdown, not click: rows re-render several times a second.
+  $('#battles').addEventListener('pointerdown', e => {
+    if (!battle) return;
+    const rb = e.target.closest('[data-retreat]');
+    if (rb) {
+      e.stopPropagation();
+      const res = playerRetreat(battle, Number(rb.dataset.retreat));
+      if (res.ok) sfx.click();
+      return;
+    }
+    const row = e.target.closest('.brow[data-key]');
+    if (!row) return;
+    const g = battleGroups().find(x => x.key === row.dataset.key);
+    const p = g && battleFront(g);
+    if (p) { renderer.centerOn(p.x, p.y); sfx.click(); }
+  });
+  $('#battles-chip').onclick = () => { battlesOpen = !battlesOpen; updateBattles(); };
+}
+
 // ---------- Enemy intent ----------
 // Scouting decides how much you see: the main enemy's attacks on you are
 // always marked; independent nations' need scouting level 1. Level 1 adds
@@ -863,7 +973,7 @@ function updateBoard() {
   if ($('#board').classList.contains('hidden')) return;
   const land = world(battle).landCount;
   const rows = battle.factions.filter(f => f && f.alive).sort((a, b) => b.tiles - a.tiles).slice(0, 10);
-  $('#board').innerHTML = `<table><tr><th>#</th><th>Civilization</th><th>Land</th><th>Troops</th></tr>${rows.map((f, i) => `<tr class="${f.id === PLAYER ? 'me' : ''}"><td>${i + 1}</td><td><span class="sw" style="background:${f.color}"></span>${esc(f.id === PLAYER ? 'You' : f.name)}${persona(f) ? `<small class="persona" data-tip="${esc(persona(f).desc)}">${esc(persona(f).name)}</small>` : ''}</td><td>${((f.tiles / land) * 100).toFixed(1)}%</td><td>${fmt(f.troops)}</td></tr>`).join('')}</table>`;
+  $('#board').innerHTML = `<table><tr><th>#</th><th>Civilization</th><th>Land</th><th>Troops</th></tr>${rows.map((f, i) => `<tr class="${f.id === PLAYER ? 'me' : ''}"><td>${i + 1}</td><td><span class="sw" style="background:${f.color}"></span>${esc(f.id === PLAYER ? `${f.name} (you)` : f.name)}${persona(f) ? `<small class="persona" data-tip="${esc(persona(f).desc)}">${esc(persona(f).name)}</small>` : ''}</td><td>${((f.tiles / land) * 100).toFixed(1)}%</td><td>${fmt(f.troops)}</td></tr>`).join('')}</table>`;
 }
 
 function updateInspector() {
@@ -964,6 +1074,7 @@ function updateHud(force = false) {
   if (battle.status === 'spawn') sb.innerHTML = `CHOOSE YOUR LANDING SITE<small>Click open land on the main continent · auto-landing in ${Math.ceil(battle.spawnLeft)}s</small>`;
   if (battle.status === 'playing') updateIntents(); else intents = [];
   updateTutorial();
+  updateBattles();
   refreshTooltip();
   updateObjectives();
   updateBoard();
@@ -1031,6 +1142,7 @@ function processNotices() {
         if (n.owner === PLAYER && n.cost) renderer.pop(n.x, n.y, `-${fmt(n.cost)} minerals`, '#c9b8ff');
         break;
       case 'tutorial': sfx.objective(); break;
+      case 'ended': battleEnded(n); break;
       case 'gain': renderer.pop(n.x, n.y - 2, n.text, { minerals: '#c9b8ff', troops: '#7fe8ff', energy: '#ffe066' }[n.res] || '#ffffff'); break;
       case 'research': toast(`Research complete: ${esc(RESEARCH[n.id].name)}.`, 'good'); break;
       case 'landed':
@@ -1058,10 +1170,8 @@ function processNotices() {
     seenAttacks.add(a.id);
     if (a.target === PLAYER) {
       const f = battle.factions[a.attacker];
-      if ((battle.factions[PLAYER].scouting || 0) >= 2 || f.kind === 'enemy') {
-        toast(`${esc(f.name)} is attacking you with ${fmt(a.troops)} troops!`, 'bad', 3000);
-        sfx.alarm();
-      }
+      // The battle panel shows it as an "Incoming" row; just sound the alarm.
+      if ((battle.factions[PLAYER].scouting || 0) >= 2 || f.kind === 'enemy') sfx.alarm();
     }
   }
   const cur = currentObjective(battle);
@@ -1242,6 +1352,9 @@ function layoutHud() {
   const empRect = emp.getBoundingClientRect();
   const empOpen = !emp.classList.contains('collapsed');
   scr.style.setProperty('--board-max', `${Math.max(120, (empOpen ? empRect.top : H - bottom) - top - 8)}px`);
+  // The pinned inspector sits under the battle panel.
+  const bat = $('#battles');
+  scr.style.setProperty('--insp-top', `${bat.classList.contains('hidden') ? top : Math.round(bat.getBoundingClientRect().bottom + 6)}px`);
   const insp = $('#inspector');
   const inspBottom = insp.classList.contains('hidden') ? top : insp.getBoundingClientRect().bottom + 6;
   scr.style.setProperty('--toast-max', `${Math.max(60, H - bottom - inspBottom)}px`);
@@ -1312,6 +1425,13 @@ async function init() {
   renderer.onImpact = small => (small ? sfx.thud() : sfx.crash());
   applyIcons();
   initTooltips();
+  initBattlePanel();
+  $('#player-name').addEventListener('change', e => {
+    if (!campaign) campaign = newCampaign();
+    campaign.settings.name = cleanName(e.target.value);
+    e.target.value = campaign.settings.name;
+    persist();
+  });
   // Menus sit on a dimmed pixel starfield.
   $('#app').style.backgroundImage = `linear-gradient(rgba(6,5,12,0.55), rgba(6,5,12,0.75)), url(${backdropCanvas('noctyra', 320, 180).toDataURL()})`;
 

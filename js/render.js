@@ -30,6 +30,7 @@ export class MapRenderer {
     this.particles = [];
     this.fx = [];       // timed effects: crash landings
     this.pops = [];     // floating numbers
+    this.marches = [];  // survivors walking home
     this.shakeT = 0; this.shakeAmp = 0;
     this.holdOwner = 0; // territory hidden until a landing ship touches down...
     this.landing = 0;   // ...and its capital and label until the impact
@@ -461,6 +462,26 @@ export class MapRenderer {
     this.shakeAmp = Math.max(this.shakeT > seconds ? this.shakeAmp : 0, amp);
   }
 
+  // A small column of survivors walking from a front back to the capital.
+  march(x0, y0, x1, y1, color) {
+    const dur = Math.min(1.8, 0.6 + Math.hypot(x1 - x0, y1 - y0) / (60 * mapScale(this.state)));
+    this.marches.push({ x0, y0, x1, y1, color, t: 0, dur });
+  }
+
+  drawMarches(T, dt) {
+    const ctx = this.ctx, d = this.dpr;
+    const u = Math.max(2, Math.round(2 * d));
+    this.marches = this.marches.filter(m => (m.t += dt) < m.dur);
+    for (const m of this.marches) {
+      for (let k = 0; k < 3; k++) {
+        const f = Math.max(0, Math.min(1, m.t / m.dur - k * 0.05));
+        const p = T(m.x0 + 0.5 + (m.x1 - m.x0) * f, m.y0 + 0.5 + (m.y1 - m.y0) * f);
+        ctx.fillStyle = '#0a0a14'; ctx.fillRect(Math.round(p.x) - u, Math.round(p.y) - u, u * 2 + 2, u * 2 + 2);
+        ctx.fillStyle = m.color; ctx.fillRect(Math.round(p.x) - u + 1, Math.round(p.y) - u + 1, u * 2, u * 2);
+      }
+    }
+  }
+
   pop(x, y, text, color = '#ffffff') {
     this.pops.push({ x, y, text, color, life: 1.3, max: 1.3 });
     if (this.pops.length > 24) this.pops.shift();
@@ -761,6 +782,7 @@ export class MapRenderer {
     }
 
     this.drawFx(T, z, dt, motion);
+    if (motion) this.drawMarches(T, dt); else this.marches = [];
     this.drawPops(T, dt);
 
     // Planetary events over the map.
@@ -851,7 +873,7 @@ export class MapRenderer {
       const size = Math.max(10 * d, Math.min(24 * d, base));
       if (id !== PLAYER && base < 6 * d) continue;
       const p = { x: o.x + (pos.x + 0.5) * z, y: o.y + (pos.y + 0.5) * z };
-      const name = id === PLAYER ? 'YOU' : f.name;
+      const name = f.name;
       const big = id === PLAYER || f.kind === 'enemy';
       ctx.font = `${big ? 700 : 400} ${Math.round(size)}px "Alien Body", monospace`;
       const wHalf = ctx.measureText(name).width / 2 + 4;

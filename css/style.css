@@ -216,7 +216,31 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .ratio b { color: #fff; float: right; }
 .ratio input { width: 100%; accent-color: var(--bad); height: 22px; }
 
-.inspector { position: absolute; right: 6px; top: var(--hud-top); width: 250px; font-size: 13px; line-height: 1.35; z-index: 2; }
+/* Battle panel: you vs each country you are fighting, top right. */
+.battles { position: absolute; right: 6px; top: var(--hud-top); width: 340px; z-index: 2; padding: 4px; display: flex; flex-direction: column; gap: 3px; }
+.brow { position: relative; padding: 4px 6px 6px; background: rgba(21, 18, 42, 0.85); border: 1px solid var(--line); cursor: pointer; font-size: 13px; }
+.brow.in { border-color: var(--bad); }
+.brow .line { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.brow .who { overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
+.vs { width: 14px; height: 14px; image-rendering: pixelated; vertical-align: middle; }
+.brow .tag { font-family: var(--font-head); font-size: 9px; color: var(--bad); margin-left: auto; }
+.brow .bbar { height: 3px; margin-top: 3px; background: #4a1820; }
+.brow .bbar i { display: block; height: 100%; }
+.brow .retreat { margin-left: auto; padding: 0 5px; min-height: 0; font-size: 11px; }
+.brow.done { cursor: default; animation: bflash .6s steps(3) 2; }
+.brow.done.won { border-color: var(--good); color: var(--good); }
+.brow.done.lost { border-color: var(--bad); color: var(--bad); }
+.brow.fade { opacity: 0.35; transition: opacity .6s; }
+.battles .more { color: var(--muted); font-size: 12px; text-align: center; }
+@keyframes bflash { 50% { background: rgba(80, 64, 16, 0.95); } }
+.battles-chip { position: absolute; right: 6px; top: var(--hud-top); z-index: 3; }
+@media (max-width: 760px), (max-height: 520px) {
+  .battles { top: calc(var(--hud-top) + 34px); width: min(340px, calc(100vw - 12px)); }
+}
+.stat.flash b { animation: bflash .5s steps(3) 2; color: var(--good); }
+.name-field { display: flex; flex-direction: column; gap: 4px; align-items: center; margin: 4px 0 10px; color: var(--muted); font-size: 13px; }
+.name-field input { font: inherit; font-size: 16px; text-align: center; color: var(--text); background: rgba(9, 7, 18, 0.9); border: var(--px) solid var(--line); padding: 4px 8px; width: 200px; }
+.inspector { position: absolute; right: 6px; top: var(--insp-top, var(--hud-top)); width: 250px; font-size: 13px; line-height: 1.35; z-index: 2; }
 .inspector h4 { margin: 0 0 4px; padding-right: 22px; font-family: var(--font-head); font-size: 13px; display: flex; align-items: center; gap: 6px; }
 .inspector .row { display: flex; justify-content: space-between; gap: 8px; }
 .inspector .row span { color: var(--muted); }

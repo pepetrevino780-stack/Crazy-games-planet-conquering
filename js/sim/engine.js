@@ -121,7 +121,7 @@ export function createBattle(configId, loadout, opts = {}) {
 
   // Player faction (spawns later, during the spawn phase).
   state.factions.push(makeFaction(PLAYER, {
-    name: 'You', color: loadout.color, kind: 'player', civ: loadout.civ,
+    name: loadout.name || 'You', color: loadout.color, kind: 'player', civ: loadout.civ,
     troops: (600 + 150 * loadout.reserves) * k, growth: loadout.growth, atk: loadout.atk, def: loadout.def,
     speed: loadout.speed, income: loadout.income, cooldown: loadout.cooldown, scouting: loadout.scouting,
     abilities: loadout.abilities, minerals: 150, energy: 30,
@@ -253,6 +253,16 @@ export function playerAttack(state, tileIndex, ratio) {
     if (ratio >= 0.5) state.flags.ratioAttack = true;
   }
   return res;
+}
+
+// Recall the player's attacks on one target: survivors come home minus 25%.
+export function playerRetreat(state, target) {
+  let n = 0;
+  for (let k = state.attacks.length - 1; k >= 0; k--) {
+    const a = state.attacks[k];
+    if (a.attacker === PLAYER && a.target === target) { endAttack(state, a, k, 0.25); n++; }
+  }
+  return n ? { ok: true, count: n } : { ok: false, reason: 'noAttack' };
 }
 
 export function canDropship(state) {
@@ -411,11 +421,21 @@ export function useAbility(state, id, i) {
 
 // ---------- Simulation ----------
 
-function endAttack(state, a, i) {
+// An attack is over: its surviving troops come home (minus `loss`, e.g. a
+// retreat), and the HUD is told how it went.
+function endAttack(state, a, i, loss = 0) {
   state.attacks.splice(i, 1);
   const f = state.factions[a.attacker];
-  if (alive(f)) f.troops += a.troops;
+  const home = Math.round(a.troops * (1 - loss));
+  if (alive(f)) f.troops += home;
   const k = areaScale(state);
+  if (a.attacker === PLAYER || a.target === PLAYER) {
+    notice(state, 'ended', {
+      attacker: a.attacker, target: a.target, conquered: a.conquered, returned: alive(f) ? home : 0,
+      retreat: loss > 0, won: a.conquered >= 5 * k, x: a.lx ?? a.ox ?? null, y: a.ly ?? a.oy ?? null,
+      repelled: a.target === PLAYER && a.conquered < 12 * k && a.initial >= 20 * k,
+    });
+  }
   if (a.target === PLAYER && a.conquered < 12 * k && a.initial >= 20 * k) {
     state.stats.repelled++;
     notice(state, 'repelled', { attacker: a.attacker });
@@ -485,6 +505,7 @@ function advanceAttacks(state, dt) {
         def.troops = Math.max(0, def.troops - Math.min(def.troops, density * 0.9));
       }
       setOwner(state, i, a.attacker);
+      a.lx = i % state.w; a.ly = (i - a.lx) / state.w;
       a.conquered++;
       if (a.attacker === PLAYER) {
         state.stats.conquered++;
@@ -623,7 +644,11 @@ export function step(state, dt = TICK) {
 
   for (const f of state.factions) {
     if (!alive(f)) continue;
-    f.troops = Math.min(maxTroops(state, f) * 1.1, f.troops + regen(state, f) * dt);
+    // Above the cap (survivors coming home) troops stay for a while and
+    // slowly drift back down; growth only resumes below the cap.
+    const cap = maxTroops(state, f);
+    if (f.troops > cap) f.troops = Math.max(cap, f.troops - (f.troops - cap) * 0.02 * dt);
+    else f.troops = Math.min(cap * 1.1, f.troops + regen(state, f) * dt);
     const inc = income(state, f);
     f.minerals += inc.minerals * dt;
     f.energy = Math.min(200, f.energy + inc.energy * dt);

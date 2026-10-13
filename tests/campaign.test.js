@@ -4,7 +4,7 @@ import { PLANETS, AI_PROFILES, skirmishConfig, getPlanet } from '../js/campaign.
 import {
   createBattle, step, advance, spawnPlayer, canSpawnAt, playerAttack, playerBuild, playerDropship,
   playerResearch, useAbility, serialize, deserialize, battleResult, analyzeDefeat, PLAYER,
-  tutorialStep, tutorialUnlocked, skipTutorial, rleEncode, rleDecode,
+  tutorialStep, tutorialUnlocked, skipTutorial, rleEncode, rleDecode, playerRetreat,
 } from '../js/sim/engine.js';
 import {
   world, maxTroops, regen, borders, siteOwner, isShielded, isPowered, tileDefense, eventPhase, setOwner,
@@ -460,6 +460,32 @@ test('planets field many nations with mixed personalities', () => {
     assert.ok(nations.every(f => AI_PROFILES[f.persona] && f.profile), `${id}: personas map to profiles`);
   }
   assert.ok(battle('noctyra').factions.some(f => f && f.persona === 'opportunist'));
+});
+
+test('survivors come home, retreat costs a quarter, and over-cap troops linger', () => {
+  const s = battle('vulkara', { tutorial: false });
+  freezeAI(s);
+  advance(s, 0.5);
+  const me = s.factions[PLAYER];
+  const k = config(s).scale ** 2;
+  let target = -1;
+  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === 0 && isLand(world(s).terrain[i]) && [i - 1, i + 1, i - s.w, i + s.w].some(j => s.owner[j] === PLAYER)) { target = i; break; }
+  me.troops = 4000 * k;
+  assert.ok(playerAttack(s, target, 0.5).ok);
+  advance(s, 0.3);
+  const a = s.attacks.find(x => x.attacker === PLAYER);
+  const left = a.troops, before = me.troops;
+  s.notices.length = 0;
+  assert.ok(playerRetreat(s, 0).ok);
+  assert.equal(s.attacks.filter(x => x.attacker === PLAYER).length, 0);
+  assert.ok(Math.abs(me.troops - before - Math.round(left * 0.75)) <= 1, 'retreat returns 75%');
+  const n = s.notices.find(x => x.kind === 'ended');
+  assert.ok(n && n.retreat && n.returned > 0, 'the HUD hears how it ended');
+  assert.equal(playerRetreat(s, 0).ok, false);
+  // Above the cap, troops drift down slowly instead of being cut off.
+  me.troops = maxTroops(s, me) * 1.5;
+  advance(s, 1);
+  assert.ok(me.troops > maxTroops(s, me) * 1.4, 'over-cap troops linger');
 });
 
 test('ownership maps round-trip through run-length encoding', () => {

@@ -44,7 +44,7 @@ export function newCampaign() {
     civ: 'terran',
     civsUnlocked: ['terran'],
     planets: Object.fromEntries(PLANETS.map(p => [p.id, { completed: false, attempts: 0, defeats: 0, bestTime: null, objectives: [], stars: 0 }])),
-    settings: { difficulty: 'commander', tips: true, sound: true, labels: true, simple: false, motion: false, playerColor: 'civ' },
+    settings: { difficulty: 'commander', tips: true, sound: true, labels: true, simple: false, motion: false, playerColor: 'civ', name: 'Commander' },
     battle: null, // in-progress battle snapshot
   };
 }
@@ -81,6 +81,7 @@ export function normalizeCampaign(raw) {
     if (raw.settings && typeof raw.settings[k] === 'boolean') c.settings[k] = raw.settings[k];
   }
   if (raw.settings && /^(civ|#[0-9a-f]{6})$/i.test(raw.settings.playerColor || '')) c.settings.playerColor = raw.settings.playerColor;
+  if (raw.settings && typeof raw.settings.name === 'string') c.settings.name = cleanName(raw.settings.name);
   if (raw.battle && typeof raw.battle === 'object' && raw.battle.v === 4) c.battle = raw.battle;
   return c;
 }
@@ -131,12 +132,19 @@ export function unlockCiv(campaign, id) {
 }
 
 // Player modifiers derived from upgrades + chosen civilization.
+// Player names: printable characters only, at most 16, never empty.
+export function cleanName(name) {
+  const n = String(name).replace(/[^\p{L}\p{N} ._-]/gu, '').trim().slice(0, 16);
+  return n || 'Commander';
+}
+
 export function playerLoadout(campaign) {
   const u = campaign.upgrades;
   const civ = CIVS.find(c => c.id === campaign.civ) || CIVS[0];
   const m = civ.mods;
   return {
     civ: civ.id,
+    name: cleanName(campaign.settings?.name || 'Commander'),
     color: campaign.settings?.playerColor && campaign.settings.playerColor !== 'civ' ? campaign.settings.playerColor : civ.color,
     growth: (m.growth || 1) * (1 + 0.07 * u.production),
     atk: m.atk || 1,

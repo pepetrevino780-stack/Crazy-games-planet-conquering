@@ -17,6 +17,7 @@
       <div class="title-wrap panel">
         <h1>ALIEN WORLDS<span>PLANETARY CONQUEST</span></h1>
         <p class="subtitle">Five strange worlds. Five lessons. One war.</p>
+        <label class="name-field">Commander name <input id="player-name" maxlength="16" autocomplete="off" spellcheck="false"></label>
         <div class="menu">
           <button id="btn-resume" class="btn primary hidden">Resume battle</button>
           <button id="btn-continue" class="btn primary">Start campaign</button>
@@ -159,6 +160,8 @@
         </label>
       </div>
 
+      <div id="battles" class="hud-box battles hidden" aria-live="polite"></div>
+      <button id="battles-chip" class="btn small battles-chip hidden"></button>
       <div id="inspector" class="hud-box inspector hidden"></div>
       <div id="tutorial" class="hud-box tutorial hidden" aria-live="polite"></div>
 

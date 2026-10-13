@@ -23,7 +23,7 @@ npm start            # http://localhost:8080
 
 1. **Land.** Click open ground on the main continent to choose your landing site. You have 10 seconds; if you don't choose, you land automatically.
 2. **Expand.** Click land next to your border. That sends your *attack ratio* of troops, and the border advances tile by tile until the attack runs out of troops. Unclaimed wilderness is cheap. Mountains, rivers and volcanoes are slow and costly.
-3. **Grow.** You have one troop pool. Its cap grows with your land, and troops regrow fastest when your army is well below the cap, so keep attacking.
+3. **Grow.** You have one troop pool. When an attack ends, its surviving troops march home and rejoin it (even above your cap for a while, shown in amber). Its cap grows with your land, and troops regrow fastest when your army is well below the cap, so keep attacking.
 4. **Fight.** Every rival is a labelled nation blob. Attacking a civilization costs more where its garrison is dense or the land is fortified. **Capture a capital and that civilization collapses.** Lose yours and you are defeated.
 5. **Build and research.** Spend minerals on Habitats (+troop cap), Extractors (+minerals), Starports (dropships across the sea), Bastions (defence) and Research Spires (exotic matter). Use a building tool on one of your own buildings of that type to upgrade it (up to level 3): effects add up per level, Bastions reach further and Starports launch faster dropships. Spend exotic matter on research and energy on special abilities.
 
@@ -38,6 +38,7 @@ npm start            # http://localhost:8080
 | Abilities | `7` `8` `9` | Build bar |
 | Leaderboard / Objectives | `L` / `O` | Top bar |
 | Center on capital / Pause | `C` / `Space` | Top bar |
+| Battle panel (top right) | Your troops vs each country you fight; click a row to glide there, Retreat to recall (−25%) | Tap the battles chip |
 | Explain anything | Hover it (map tiles, tools, resources, buttons) | Long-press |
 | Pin a tile's details | Click it | Tap |
 
