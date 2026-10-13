@@ -109,9 +109,11 @@ export class MapRenderer {
 
   // strict: keep the map covering the whole window (automatic camera moves).
   // Otherwise the player may drag the edge out from under a HUD panel.
-  clamp(strict = false) {
+  // The map always covers the whole window: the space backdrop never shows
+  // past its edge. (HUD insets only shift where "centre" is.)
+  clamp() {
     const { W, H } = this, d = this.dpr;
-    const i = strict ? { top: 0, right: 0, bottom: 0, left: 0 } : this.insets;
+    const i = { top: 0, right: 0, bottom: 0, left: 0 };
     this.cam.zoom = Math.max(this.minZoom(), this.cam.zoom);
     const z = this.cam.zoom;
     const vw = (this.cssW * d) / z, vh = (this.cssH * d) / z;
@@ -373,7 +375,7 @@ export class MapRenderer {
     const ctx = this.ctx, d = this.dpr;
     this.pops = this.pops.filter(p => (p.life -= dt) > 0);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `700 ${Math.round(13 * d)}px "Pixelify Sans", monospace`;
+    ctx.font = `700 ${Math.round(13 * d)}px "Alien Body", monospace`;
     ctx.lineWidth = Math.max(2, 3 * d);
     ctx.strokeStyle = 'rgba(5,4,12,0.9)';
     for (const p of this.pops) {
@@ -414,7 +416,7 @@ export class MapRenderer {
     ctx.strokeStyle = '#12060a'; ctx.stroke();
     ctx.fillStyle = it.color; ctx.fill();
     if (it.label) {
-      ctx.font = `700 ${Math.round(11 * d)}px "Pixelify Sans", monospace`;
+      ctx.font = `700 ${Math.round(11 * d)}px "Alien Body", monospace`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       const mx = Math.round((a.x + b.x) / 2), my = Math.round((a.y + b.y) / 2 - 8 * d);
       ctx.lineWidth = Math.max(2, 3 * d); ctx.strokeStyle = 'rgba(5,4,12,0.9)';
@@ -693,7 +695,7 @@ export class MapRenderer {
       const p = { x: o.x + (pos.x + 0.5) * z, y: o.y + (pos.y + 0.5) * z };
       const name = id === PLAYER ? 'YOU' : f.name;
       const big = id === PLAYER || f.kind === 'enemy';
-      ctx.font = `${big ? 700 : 400} ${Math.round(size)}px "Pixelify Sans", monospace`;
+      ctx.font = `${big ? 700 : 400} ${Math.round(size)}px "Alien Body", monospace`;
       const wHalf = ctx.measureText(name).width / 2 + 4;
       const box = { x0: p.x - wHalf, x1: p.x + wHalf, y0: p.y - size * 1.1, y1: p.y + size * 1.1 };
       if (id !== PLAYER && placed.some(b => b.x0 < box.x1 && b.x1 > box.x0 && b.y0 < box.y1 && b.y1 > box.y0)) continue;
@@ -704,7 +706,7 @@ export class MapRenderer {
       ctx.strokeText(name, p.x, p.y - size * 0.55);
       ctx.fillText(name, p.x, p.y - size * 0.55);
       const troops = fmt(f.troops);
-      ctx.font = `700 ${Math.round(size * 0.95)}px "Pixelify Sans", monospace`;
+      ctx.font = `700 ${Math.round(size * 0.95)}px "Alien Body", monospace`;
       ctx.strokeText(troops, p.x, p.y + size * 0.5);
       ctx.fillStyle = id === PLAYER ? '#7fe8ff' : f.kind === 'enemy' ? mixHex(f.color, '#ffffff', 0.4) : '#ffffff';
       ctx.fillText(troops, p.x, p.y + size * 0.5);

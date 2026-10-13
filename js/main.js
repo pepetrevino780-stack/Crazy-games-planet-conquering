@@ -45,7 +45,6 @@ let seenTips = new Set();
 let seenAttacks = new Set();
 let lastFrame = 0, accumulator = 0, lastSave = 0, lastHud = 0;
 let endTimer = 0;
-let lastPointerTouch = false;
 let inspectorClosed = false;
 let briefingRef = null; // { configId, theme?, worldSeed? }
 let skirmishSeed = 1 + Math.floor(Math.random() * 99999);
@@ -603,7 +602,7 @@ let pressTimer = 0;
 const LONG_PRESS = 450;
 
 const STAT_TIPS = {
-  troops: f => `<b>Troops</b><br>Your army: one pool for attacks and defence. The cap (${fmt(maxTroops(battle, f))}) grows with land and Habitats. Regrows +${fmt(regen(battle, f))}/s, fastest when well below the cap.`,
+  troops: f => `<b>Troops</b><br>Your army: one pool for attacks and defence. The cap (${fmt(maxTroops(battle, f))}) grows with land and Habitats. Regrows +${fmt(regen(battle, f))}/s, fastest when well below the cap.${f.troops > maxTroops(battle, f) ? '<br><span class="warn">Over the cap: growth pauses until you spend the extra troops.</span>' : ''}`,
   minerals: f => `<b>Minerals</b><br>Spend on buildings and dropships. +${income(battle, f).minerals.toFixed(1)}/s from your land, Extractors and vents.`,
   energy: f => `<b>Energy</b><br>Powers abilities (7, 8, 9). +${income(battle, f).energy.toFixed(1)}/s from vents and other sites.`,
   exotic: f => `<b>Exotic matter</b><br>Spend on research (R). +${income(battle, f).exotic.toFixed(1)}/s from Research Spires.`,
@@ -871,7 +870,9 @@ function updateInspector() {
   const el = $('#inspector');
   // Hovering shows a tooltip; the inspector is the pinned card for a clicked tile.
   const i = inspectTile;
-  if (!battle || i < 0 || battle.status === 'spawn' || inspectorClosed) { el.classList.add('hidden'); return; }
+  // One source of truth: while the hover tooltip describes another tile, the pinned card steps aside.
+  const hoveringElsewhere = tipSource === 'map' && hoverTile >= 0 && hoverTile !== i;
+  if (!battle || i < 0 || battle.status === 'spawn' || inspectorClosed || hoveringElsewhere) { el.classList.add('hidden'); return; }
   const w = world(battle);
   const t = w.terrain[i];
   const x = i % battle.w, y = (i - x) / battle.w;
@@ -920,7 +921,10 @@ function updateHud(force = false) {
   const f = battle.factions[PLAYER];
   const max = maxTroops(battle, f);
   const inc = income(battle, f);
-  $('#st-troops').textContent = `${fmt(f.troops)} / ${fmt(max)}`;
+  // Before landing there is no territory yet, so no meaningful cap to show.
+  $('#st-troops').textContent = battle.status === 'spawn' ? fmt(f.troops) : `${fmt(f.troops)} / ${fmt(max)}`;
+  // Over the cap (e.g. survivors coming home): shown in amber, growth pauses.
+  $('#st-troops').classList.toggle('over', battle.status === 'playing' && f.troops > max);
   $('#st-troops-sub').textContent = `+${fmt(regen(battle, f))}/s growth`;
   $('#st-minerals').textContent = fmt(f.minerals);
   $('#st-minerals-rate').textContent = `+${inc.minerals.toFixed(1)}/s`;
@@ -1126,7 +1130,6 @@ function onUp(e) {
   pointers.delete(e.pointerId);
   $('#canvas').classList.remove('panning');
   const g = gesture;
-  lastPointerTouch = e.pointerType === 'touch';
   if (pointers.size === 0) gesture = null;
   // A tap only counts when the finger did not move and no pinch happened:
   // panning the map never launches an attack by accident.
@@ -1151,7 +1154,6 @@ function clickTile(i) {
   else if (battle.owner[i] === PLAYER) { inspectTile = inspectTile === i ? -1 : i; sfx.click(); return; }
   else {
     res = playerAttack(battle, i, ratio);
-    if (!lastPointerTouch) inspectTile = i; // pin the clicked tile's card
     if (res.ok) { sfx.attack(); renderer.pop(x, y, `-${fmt(res.sent)}`, '#ffe9a8'); tip('ratio', 'Troops regrow fastest when your army is well below its cap. Big attacks are not wasted.'); }
   }
   if (res && !res.ok) { sfx.error(); toast(REASONS[res.reason] || 'You cannot do that.', 'bad', 2600); }

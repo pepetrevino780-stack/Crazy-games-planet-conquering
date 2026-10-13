@@ -2,6 +2,14 @@
 @font-face { font-family: 'Pixelify Sans'; src: url('../assets/fonts/PixelifySans.woff2') format('woff2'); font-weight: 400 700; font-display: swap; }
 @font-face { font-family: 'Silkscreen'; src: url('../assets/fonts/Silkscreen-400.woff2') format('woff2'); font-weight: 400; font-display: swap; }
 @font-face { font-family: 'Silkscreen'; src: url('../assets/fonts/Silkscreen-700.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+/* Pixelify's 2, 3 and 5 read as 8, 8 and S at small sizes ("1.05K" looked like "1.0SK"), and
+   bold Silkscreen's 3 is odd: every font the game uses takes its digits from regular Silkscreen. */
+/* (When several faces match a character, the last one defined wins: digit faces go last.) */
+@font-face { font-family: 'Alien Body'; src: url('../assets/fonts/PixelifySans.woff2') format('woff2'); font-weight: 400 700; font-display: swap; }
+@font-face { font-family: 'Alien Body'; src: url('../assets/fonts/Silkscreen-400.woff2') format('woff2'); font-weight: 400 700; unicode-range: U+0030-0039; font-display: swap; }
+@font-face { font-family: 'Alien Head'; src: url('../assets/fonts/Silkscreen-400.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Alien Head'; src: url('../assets/fonts/Silkscreen-700.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Alien Head'; src: url('../assets/fonts/Silkscreen-400.woff2') format('woff2'); font-weight: 400 700; unicode-range: U+0030-0039; font-display: swap; }
 
 /* One dark look by design: deep-space terminal. */
 :root {
@@ -18,8 +26,8 @@
   --good: #7ff0c8;
   --bad: #ff4b3e;
   --violet: #b98bff;
-  --font-body: 'Pixelify Sans', ui-monospace, 'Courier New', monospace;
-  --font-head: 'Silkscreen', 'Pixelify Sans', ui-monospace, monospace;
+  --font-body: 'Alien Body', ui-monospace, 'Courier New', monospace;
+  --font-head: 'Alien Head', 'Alien Body', ui-monospace, monospace;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --px: 2px;
@@ -193,13 +201,13 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .obj .rw { margin-left: auto; color: var(--gold); white-space: nowrap; }
 .obj-sep { border-top: 1px solid var(--line); margin: 5px 0; }
 
-.empire { position: absolute; left: 6px; bottom: var(--hud-bottom); width: 208px; max-height: calc(100% - var(--hud-top) - var(--hud-bottom) - 6px); overflow: visible; display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; transition: transform .15s steps(3); }
+.empire { position: absolute; left: 6px; bottom: var(--hud-bottom); width: 226px; max-height: calc(100% - var(--hud-top) - var(--hud-bottom) - 6px); overflow: visible; display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; transition: transform .15s steps(3); }
 .empire.collapsed { transform: translateX(calc(-100% + 18px)); }
 .empire.collapsed > :not(.drawer-tab) { visibility: hidden; }
 .drawer-tab { position: absolute; right: -20px; top: 4px; width: 20px; height: 34px; background: var(--panel-2); border: var(--px) solid var(--line-hi); color: var(--text); padding: 0; cursor: pointer; }
 .stat { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 6px; font-size: 13px; }
 .stat span { color: var(--muted); }
-.stat b { font-size: 14px; }
+.stat b { font-size: 14px; white-space: nowrap; }
 .stat small { grid-column: 3; font-size: 11px; color: var(--good); text-align: right; }
 .stat.big b { font-size: 16px; color: #e6fbff; }
 .stat.sub { margin-top: -3px; }
@@ -223,6 +231,8 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .tooltip kbd { font-family: var(--font-head); font-size: 10px; padding: 0 4px; border: 1px solid var(--muted); color: var(--gold); }
 .tooltip .ok { color: var(--good); }
 .tooltip .no { color: var(--bad); }
+.tooltip .warn { color: var(--gold); }
+#st-troops.over { color: var(--gold); }
 .tooltip .dim { color: var(--muted); font-size: 12px; }
 
 /* Training card: one short instruction at a time, top centre. */
