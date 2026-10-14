@@ -7,7 +7,7 @@ import { isAllied } from './diplomacy.js';
 export const SHIP_COST = { minerals: 400, energy: 60 };
 export const SHIP_HP = 100;
 const CELL = 4;            // tiles per coarse-grid cell side
-const VOLLEY = 4;          // seconds between volleys
+const VOLLEY = 6;          // seconds between volleys
 const SHIP_SPEED = 16;     // tiles/s x mapScale
 const RANGE = 12;          // tiles x mapScale
 
@@ -177,7 +177,7 @@ function bombard(state, ship, i) {
   const W = state.w, x = i % W, y = Math.floor(i / W);
   const target = state.owner[i];
   const tf = state.factions[target];
-  const rs = Math.max(1, Math.round(1.5 * mapScale(state)));
+  const rs = Math.max(1, Math.round(1.0 * mapScale(state)));
   const density = tf.troops / Math.max(1, tf.tiles);
   let n = 0;
   for (let dy = -rs; dy <= rs; dy++) for (let dx = -rs; dx <= rs; dx++) {
@@ -188,7 +188,7 @@ function bombard(state, ship, i) {
     if (state.sites.some(s => s.x === xx && s.y === yy && (s.type === 'capital' || s.type === 'citadel'))) continue;
     setOwner(state, j, 0); n++;
   }
-  tf.troops = Math.max(0, tf.troops - density * n * 1.5);
+  tf.troops = Math.max(0, tf.troops - density * n);
   tf.attackedBy[ship.owner] = state.time;
   notice(state, 'shell', { owner: ship.owner, x0: ship.x, y0: ship.y, x: x, y: y, target });
 }
@@ -236,10 +236,10 @@ export function advanceShips(state, dt) {
   }
 }
 
-// AI: on worlds that allow it, commanders with a Starport build up to three
+// AI: on worlds that allow it, commanders with a Starport build up to two
 // ships and send them at the player's nearest coast.
 export function aiShips(state, f, rand) {
-  if ((state.ships || []).filter(s => s.owner === f.id).length >= 3) return false;
+  if ((state.ships || []).filter(s => s.owner === f.id).length >= 2) return false;
   if (!ownedPorts(state, f.id).length || f.minerals < SHIP_COST.minerals + 100 || f.energy < SHIP_COST.energy) return false;
   if (rand() > 0.5) return false;
   const me = state.sites.find(s => s.id === 'player-capital');

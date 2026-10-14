@@ -888,7 +888,12 @@ function checkObjective(state, obj) {
 export function condProgress(state, c, i, dt = 0) {
   const cap = state.sites.find(s => s.id === c.site);
   switch (c.type) {
-    case 'capture': return { done: !!cap && siteOwner(state, cap) === PLAYER };
+    case 'capture': {
+      // orDestroyed: the goal is to destroy that site's civilization, so it
+      // also counts once that civilization has collapsed, whoever did it.
+      const gone = c.orDestroyed && cap && cap.faction && !alive(state.factions[cap.faction]);
+      return { done: !!cap && (siteOwner(state, cap) === PLAYER || !!gone) };
+    }
     case 'tutorialDone': return { done: state.tutorial >= tutorialSteps(state).length && tutorialSteps(state).length > 0 };
     case 'capitals': {
       const n = state.sites.filter(s => (s.type === 'capital' || s.type === 'citadel') && s.id !== 'player-capital' && siteOwner(state, s) === PLAYER).length;

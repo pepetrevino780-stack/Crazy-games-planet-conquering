@@ -15,7 +15,7 @@ import { requestAlliance, gift, betray, isAllied, relation, isTraitor } from '..
 import { planRoute } from '../js/sim/path.js';
 import { tryExpedition, tryNavy } from '../js/sim/ai.js';
 import { seaGrid, seaPath, nearestSeaCell, buildShip, advanceShips, SHIP_COST, SHIP_HP } from '../js/sim/ships.js';
-import { coastalTiles, buildPreview } from '../js/sim/engine.js';
+import { coastalTiles, buildPreview, condProgress } from '../js/sim/engine.js';
 import { travelTime, expeditionPlan } from '../js/sim/engine.js';
 import { connectedShare, growthMult, isConnected } from '../js/sim/core.js';
 import { THEMES, THEME_IDS, isLand, T } from '../js/world/themes.js';
@@ -1126,4 +1126,30 @@ test('rewards do not depend on the order worlds are played in', () => {
   const c = newCampaign();
   const r = computeRewards(c, getPlanet('noctyra'), result);
   assert.equal(r.total, getPlanet('noctyra').rewards.base);
+});
+
+// ---------- Balance ----------
+
+test('Mycelion: the Brood Heart counts as destroyed once the Swarm collapses, whoever did it', () => {
+  const cond = getPlanet('mycelion').victory.conds[0];
+  assert.ok(cond.orDestroyed);
+  const s = battle('mycelion', { tutorial: false });
+  freezeAI(s);
+  advance(s, 0.5);
+  assert.equal(condProgress(s, cond, 0).done, false);
+  // A nation takes the Brood Heart: the Swarm is gone, so the goal is met.
+  const heart = site(s, 'enemy-capital');
+  const nation = s.factions.find(f => f && f.kind === 'nation');
+  give(s, heart.x, heart.y, nation.id);
+  advance(s, 0.2);
+  assert.equal(enemyOf(s).alive, false);
+  assert.equal(condProgress(s, cond, 0).done, true);
+  // Other worlds still need the capital in the player's hands.
+  assert.ok(!getPlanet('vulkara').victory.conds.some(c => c.orDestroyed));
+});
+
+test('balance knobs: Mycelion is gentler than Noctyra, and enemy fleets stay small', () => {
+  const m = getPlanet('mycelion'), n = getPlanet('noctyra');
+  assert.ok(m.enemy.troops < n.enemy.troops && m.enemy.startDelay > n.enemy.startDelay && m.nations.count < n.nations.count);
+  assert.ok(!m.aiShips && n.aiShips);
 });
