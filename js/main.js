@@ -695,6 +695,10 @@ const hasPort = () => battle.buildings.some(b => b.type === 'starport' && battle
 
 function updateToolbar() {
   const f = battle.factions[PLAYER];
+  // On narrow screens the bar scrolls sideways: fade its edge while more tools hide there.
+  const bar = $('#toolbar');
+  bar.classList.toggle('more-right', bar.scrollWidth - bar.scrollLeft - bar.clientWidth > 4);
+  bar.classList.toggle('more-left', bar.scrollLeft > 4);
   const open = tutorialUnlocked(battle);
   // During training, tools stay greyed out with a lock until a step introduces
   // them, and Energy and Exotic stay hidden until they matter.

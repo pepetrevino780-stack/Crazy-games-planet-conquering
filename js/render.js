@@ -772,6 +772,7 @@ export class MapRenderer {
     }
     // Drag-and-drop ghost: green where the building can go, red (with the
     // reason) where it cannot; a Bastion shows the reach of its defence.
+    let ghostLabel = null;
     if (ui.ghost) {
       const g = ui.ghost, col = g.ok ? '#7ff0c8' : '#ff4b3e';
       const c = T(g.x + 0.5, g.y + 0.5);
@@ -782,13 +783,8 @@ export class MapRenderer {
       const half = Math.max(3 * d, z * 1.5);
       ctx.strokeStyle = col; ctx.lineWidth = Math.max(2, 2 * d);
       ctx.strokeRect(Math.round(c.x - half), Math.round(c.y - half), Math.round(half * 2), Math.round(half * 2));
-      const top = r && r.h ? r.p.y - r.h - 6 * d : c.y - 18 * d;
-      ctx.font = `700 ${Math.round(12 * d)}px "Alien Body", monospace`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      ctx.lineWidth = Math.max(2, 3 * d); ctx.strokeStyle = 'rgba(5,4,12,0.92)';
-      ctx.strokeText(g.label, Math.round(c.x), Math.round(top));
-      ctx.fillStyle = col;
-      ctx.fillText(g.label, Math.round(c.x), Math.round(top));
+      // Its label goes on top of everything, map labels included.
+      ghostLabel = { text: g.label, x: Math.round(c.x), y: Math.round(r && r.h ? r.p.y - r.h - 6 * d : c.y - 18 * d), col };
     }
     for (const s of st.sites) {
       const so = siteOwner(st, s);
@@ -925,6 +921,14 @@ export class MapRenderer {
     }
 
     if (ui.labels !== false) { this.drawContinents(o, z); this.drawLabels(o, z); }
+    if (ghostLabel) {
+      ctx.font = `700 ${Math.round(12 * d)}px "Alien Body", monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.lineWidth = Math.max(2, 3 * d); ctx.strokeStyle = 'rgba(5,4,12,0.92)';
+      ctx.strokeText(ghostLabel.text, ghostLabel.x, ghostLabel.y);
+      ctx.fillStyle = ghostLabel.col;
+      ctx.fillText(ghostLabel.text, ghostLabel.x, ghostLabel.y);
+    }
   }
 
   // Continent names, large and faint, underneath the nation labels.
