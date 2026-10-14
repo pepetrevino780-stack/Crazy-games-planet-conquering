@@ -46,13 +46,17 @@ npm start            # http://localhost:8080
 
 ## The campaign
 
-| # | World | Lesson | What's new | Victory | Main enemy |
-|---|---|---|---|---|---|
-| 1 | **Vulkara**: Ashen Cradle | Attack | Expansion, attack ratio, magma vents, eruptions | Capture the Ember Throne | Cindari Clans: relaxed |
-| 2 | **Cryonis**: Frozen Frontier | Defend | Terrain defence, bastions, crystal deposits, whiteout storms | Hold 3 crystals for 2:30, or take the Frost Bastion | Glacari Concord: cautious, retaliates |
-| 3 | **Mycelion**: Living World | Disrupt | Network hubs nourish land and shield the Brood Heart; spore blooms | Destroy the Brood Heart | Mycelial Swarm: aggressive expander |
-| 4 | **Xythera**: Ancient Machines | Plan | Relays power automated defences; ancient factories; scarce growth | Core Foundry plus 2 factories | Axiom Directorate: tactical |
-| 5 | **Noctyra**: Eternal Eclipse | Mastery | Command nodes add enemy attack fronts; the eclipse strips the Citadel; everything returns | Conquer the Eclipse Citadel | Umbral Dominion: coordinated |
+Every world is open from the start. The number is the recommended order (each lesson builds on the one
+before) and each card shows a difficulty from 1 to 5. A new player who picks a later world first is
+offered the tutorial.
+
+| # | World | Difficulty | Lesson | What's new | Victory | Main enemy |
+|---|---|---|---|---|---|---|
+| 1 | **Vulkara**: Ashen Cradle | 1 | Attack | Expansion, attack ratio, magma vents, eruptions | Capture the Ember Throne | Cindari Clans: relaxed |
+| 2 | **Cryonis**: Frozen Frontier | 2 | Defend | Terrain defence, bastions, crystal deposits, whiteout storms | Hold 3 crystals for 2:30, or take the Frost Bastion | Glacari Concord: cautious, retaliates |
+| 3 | **Mycelion**: Living World | 4 | Disrupt | Network hubs nourish land and shield the Brood Heart; spore blooms | Destroy the Brood Heart | Mycelial Swarm: aggressive expander |
+| 4 | **Xythera**: Ancient Machines | 3 | Plan | Relays power automated defences; ancient factories; scarce growth; enemy battleships | Core Foundry plus 2 factories | Axiom Directorate: tactical |
+| 5 | **Noctyra**: Eternal Eclipse | 5 | Mastery | Command nodes add enemy attack fronts; the eclipse strips the Citadel; enemy battleships; everything returns | Conquer the Eclipse Citadel | Umbral Dominion: coordinated |
 
 **Tutorial:** a Tutorial button on the title screen (offered once to new players) opens seven short,
 replayable lessons on a small, calm world where nobody attacks you and the game waits for each step: land and

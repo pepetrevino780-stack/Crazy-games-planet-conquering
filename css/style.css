@@ -101,6 +101,9 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .planet.locked { opacity: 0.45; }
 .planet.done .status { color: var(--good); }
 .planet .btn { width: 100%; }
+.planet .difficulty { display: flex; gap: 3px; justify-content: center; }
+.planet .pip { width: 9px; height: 9px; border: 2px solid var(--line); background: transparent; }
+.planet .pip.on { background: var(--gold); border-color: var(--gold); }
 .planet .step { position: absolute; top: 8px; left: 10px; font-size: 12px; color: var(--muted); font-family: var(--font-head); }
 .campaign-side { width: 250px; padding: 14px; display: flex; flex-direction: column; gap: 10px; align-self: start; }
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--muted); margin: 6px 0; }

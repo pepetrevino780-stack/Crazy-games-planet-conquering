@@ -87,6 +87,7 @@ export function normalizeCampaign(raw) {
     c.tutorial.done = [...new Set(raw.tutorial.done.filter(n => Number.isInteger(n) && n >= 1 && n <= TUTORIAL_REWARD.lessons))];
     c.tutorial.rewarded = !!raw.tutorial.rewarded;
     c.tutorial.offered = !!raw.tutorial.offered;
+    c.tutorial.offeredWorld = !!raw.tutorial.offeredWorld;
   }
   if (raw.battle && typeof raw.battle === 'object' && raw.battle.v === 4) c.battle = raw.battle;
   return c;
@@ -111,8 +112,28 @@ export function saveCampaign(storage, campaign) {
   }
 }
 
-export function isUnlocked(campaign, index) {
-  return index === 0 || campaign.planets[PLANETS[index - 1].id].completed;
+// Every world is open from the start. The cards show a recommended order
+// (each world's lesson builds on the one before) and a difficulty rating.
+export function isUnlocked(_campaign, index) {
+  return index >= 0 && index < PLANETS.length;
+}
+
+// The world to suggest after finishing `id`: the next unconquered one in the
+// recommended order (wrapping around), or null when all are conquered.
+export function nextWorld(campaign, id) {
+  const i = PLANETS.findIndex(p => p.id === id);
+  for (let k = 1; k <= PLANETS.length; k++) {
+    const p = PLANETS[(i + k) % PLANETS.length];
+    if (p.id !== id && !campaign.planets[p.id].completed) return p;
+  }
+  return null;
+}
+
+// Offer the tutorial to a brand-new player who picks a world other than the
+// first: no lessons done, nothing conquered, and not asked this way before.
+export function shouldOfferTutorial(campaign, id) {
+  if (id === PLANETS[0].id || campaign.tutorial.done.length || campaign.tutorial.offeredWorld) return false;
+  return !PLANETS.some(p => campaign.planets[p.id].completed);
 }
 
 export function upgradeCost(campaign, id) {

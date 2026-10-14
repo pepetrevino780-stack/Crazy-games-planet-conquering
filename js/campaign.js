@@ -87,6 +87,7 @@ export const RESEARCH = {
 export const PLANETS = [
   {
     id: 'vulkara',
+    difficulty: 1, // 1-5, shown on the world card
     name: 'Vulkara',
     title: 'The Ashen Cradle',
     lesson: 'Learn to Attack',
@@ -137,6 +138,7 @@ export const PLANETS = [
   },
   {
     id: 'cryonis',
+    difficulty: 2, // 1-5, shown on the world card
     name: 'Cryonis',
     title: 'The Frozen Frontier',
     lesson: 'Learn to Defend',
@@ -168,6 +170,7 @@ export const PLANETS = [
   },
   {
     id: 'mycelion',
+    difficulty: 4, // 1-5, shown on the world card
     name: 'Mycelion',
     title: 'The Living World',
     lesson: 'Learn to Disrupt',
@@ -197,6 +200,7 @@ export const PLANETS = [
   },
   {
     id: 'xythera',
+    difficulty: 3, // 1-5, shown on the world card
     name: 'Xythera',
     title: 'The World of Ancient Machines',
     lesson: 'Learn to Plan',
@@ -231,6 +235,7 @@ export const PLANETS = [
   },
   {
     id: 'noctyra',
+    difficulty: 5, // 1-5, shown on the world card
     name: 'Noctyra',
     title: 'The Eternal Eclipse',
     lesson: 'Prove Your Mastery',

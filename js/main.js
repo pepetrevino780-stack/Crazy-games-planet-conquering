@@ -2,7 +2,7 @@
 import { PLANETS, getPlanet, skirmishConfig, BUILDINGS, RESEARCH, SITE_TYPES, PERSONAS, SKIRMISH_MODES, TUTORIAL_LESSONS } from './campaign.js';
 import {
   newCampaign, loadCampaign, saveCampaign, isUnlocked, UPGRADES, CIVS, ABILITIES, upgradeCost,
-  buyUpgrade, unlockCiv, playerLoadout, cleanName, completeLesson, TUTORIAL_REWARD, computeRewards, applyVictory, applyDefeat, assistLevel, starsFor,
+  buyUpgrade, unlockCiv, playerLoadout, cleanName, nextWorld, shouldOfferTutorial, completeLesson, TUTORIAL_REWARD, computeRewards, applyVictory, applyDefeat, assistLevel, starsFor,
 } from './progression.js';
 import {
   createBattle, step, spawnPlayer, canSpawnAt, playerAttack, playerDropship, playerBuild,
@@ -189,13 +189,22 @@ function renderCampaign() {
     const li = document.createElement('li');
     li.className = 'planet panel' + (unlocked ? '' : ' locked') + (rec.completed ? ' done' : '');
     const objs = `${rec.objectives.length}/${p.objectives.length} objectives`;
-    const status = !unlocked ? `Conquer ${PLANETS[i - 1].name} to unlock`
-      : rec.completed ? `Conquered · best ${fmtTime(rec.bestTime)}<br>${objs}`
+    const status = rec.completed ? `Conquered · best ${fmtTime(rec.bestTime)}<br>${objs}`
       : rec.attempts ? `${rec.defeats} defeat${rec.defeats === 1 ? '' : 's'} · ${objs}` : esc(p.title);
-    li.innerHTML = `<span class="step">${i + 1}/5</span>${rec.completed ? starRow(rec.stars || 1) : ''}<h3>${esc(p.name)}</h3><div class="lesson">${esc(p.lesson)}</div><div class="status">${status}</div>
+    const pips = '<span class="pip on"></span>'.repeat(p.difficulty) + '<span class="pip"></span>'.repeat(5 - p.difficulty);
+    li.innerHTML = `<span class="step" title="Recommended order">#${i + 1}</span>${rec.completed ? starRow(rec.stars || 1) : ''}<h3>${esc(p.name)}</h3><div class="lesson">${esc(p.lesson)}</div>
+      <div class="difficulty" aria-label="Difficulty ${p.difficulty} of 5" title="Difficulty ${p.difficulty} of 5">${pips}</div><div class="status">${status}</div>
       <button class="btn ${unlocked && !rec.completed ? 'primary' : ''}" ${unlocked ? '' : 'disabled'}>${rec.completed ? 'Replay' : 'Invade'}</button>`;
     li.insertBefore(orbCanvas(p.theme), li.querySelector('h3'));
-    li.querySelector('button').onclick = () => openBriefing({ configId: p.id });
+    li.querySelector('button').onclick = async () => {
+      // A brand-new player picking a later world first is offered the tutorial.
+      if (shouldOfferTutorial(campaign, p.id)) {
+        campaign.tutorial.offeredWorld = true;
+        persist();
+        if (await confirmBox(`Play the tutorial first? ${p.name} is world ${i + 1} of 5 (difficulty ${p.difficulty}/5); the 5-minute tutorial teaches the basics.`, 'Play the tutorial', `Go to ${p.name}`)) { show('tutorial'); return; }
+      }
+      openBriefing({ configId: p.id });
+    };
     list.appendChild(li);
   });
 }
@@ -289,7 +298,7 @@ function openBriefing(ref) {
   const idx = PLANETS.indexOf(p);
   $('#brief-title').textContent = ref.configId === 'skirmish' ? `Skirmish — ${THEMES[ref.theme].name} · ${SKIRMISH_MODES[p.mode].name}` : `${p.name}: ${p.title}`;
   $('#brief-back').dataset.nav = ref.configId === 'skirmish' ? 'skirmish' : 'campaign';
-  $('#brief-lesson').textContent = idx >= 0 ? `Lesson ${idx + 1}: ${p.lesson}` : `World seed ${ref.worldSeed}`;
+  $('#brief-lesson').textContent = idx >= 0 ? `Lesson ${idx + 1}: ${p.lesson} · difficulty ${p.difficulty}/5` : `World seed ${ref.worldSeed}`;
   $('#brief-tagline').textContent = p.tagline;
   const orb = planetOrb(p.theme, 64);
   const bc = $('#brief-orb');
@@ -478,7 +487,7 @@ function endBattle() {
     persist();
     happytime();
     const idx = PLANETS.indexOf(cfg);
-    const next = idx >= 0 ? PLANETS[idx + 1] : null;
+    const next = idx >= 0 ? nextWorld(campaign, cfg.id) : null;
     $('#debrief-title').textContent = `${cfg.skirmish ? 'World' : cfg.name} conquered`;
     $('#debrief-sub').textContent = `${cfg.lesson} · ${fmtTime(result.time)}`;
     const bonus = Math.ceil(rewards.total / 2);

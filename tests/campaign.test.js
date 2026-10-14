@@ -21,7 +21,7 @@ import { connectedShare, growthMult, isConnected } from '../js/sim/core.js';
 import { THEMES, THEME_IDS, isLand, T } from '../js/world/themes.js';
 import {
   newCampaign, normalizeCampaign, loadCampaign, saveCampaign, playerLoadout, computeRewards,
-  applyVictory, applyDefeat, assistLevel, buyUpgrade, unlockCiv, isUnlocked, SAVE_KEY, starsFor, parTime,
+  applyVictory, applyDefeat, assistLevel, buyUpgrade, unlockCiv, isUnlocked, nextWorld, shouldOfferTutorial, SAVE_KEY, starsFor, parTime,
   completeLesson, TUTORIAL_REWARD,
 } from '../js/progression.js';
 
@@ -321,7 +321,7 @@ test('rewards: first clear pays in full, objectives once, replays less; skirmish
   const r1 = computeRewards(c, p, result);
   assert.equal(r1.total, 30 + 5 + 5 + 6 + 5);
   applyVictory(c, p, result, r1);
-  assert.ok(c.planets.vulkara.completed && isUnlocked(c, 1) && !isUnlocked(c, 2));
+  assert.ok(c.planets.vulkara.completed && isUnlocked(c, 1) && isUnlocked(c, 2));
   assert.equal(computeRewards(c, p, { ...result, time: 9999 }).total, 9 + 5);
   const sk = skirmishConfig('noctyra', 5);
   const r3 = computeRewards(c, sk, { time: 9999, objectivesDone: [], capitalThreatened: true });
@@ -1069,4 +1069,61 @@ test('battle effects: a clash where a front reaches a capital', async () => {
   for (let k = 0; k < 40; k++) spawnBattleFx(s, { x0: 0, y0: 0, x1: s.w, y1: s.h }, fx, 0.1, () => '#fff', rand);
   assert.ok(fx.some(p => p.ring), 'clash rings at the capital');
   assert.ok(fx.filter(p => p.kind === 'spark').length > fx.filter(p => p.kind === 'flash').length, 'explosions dominate at a fort');
+});
+
+// ---------- All worlds open ----------
+
+test('every world is open, with a recommended order and a 1-5 difficulty', () => {
+  const c = newCampaign();
+  PLANETS.forEach((p, i) => {
+    assert.ok(isUnlocked(c, i), `${p.id} open from the start`);
+    assert.ok(Number.isInteger(p.difficulty) && p.difficulty >= 1 && p.difficulty <= 5, `${p.id} difficulty`);
+  });
+  assert.equal(PLANETS[0].difficulty, 1);
+  assert.ok(getPlanet('mycelion').difficulty < getPlanet('noctyra').difficulty, 'Mycelion rated easier than Noctyra');
+  // Suggest the next unconquered world in the recommended order.
+  assert.equal(nextWorld(c, 'vulkara').id, 'cryonis');
+  c.planets.cryonis.completed = true;
+  assert.equal(nextWorld(c, 'vulkara').id, 'mycelion');
+  assert.equal(nextWorld(c, 'noctyra').id, 'vulkara', 'wraps around');
+  for (const p of PLANETS) c.planets[p.id].completed = true;
+  assert.equal(nextWorld(c, 'noctyra'), null);
+});
+
+test('a new player who picks a later world is offered the tutorial once', () => {
+  const c = newCampaign();
+  assert.ok(!shouldOfferTutorial(c, 'vulkara'), 'not for the first world');
+  assert.ok(shouldOfferTutorial(c, 'noctyra'));
+  c.tutorial.offeredWorld = true;
+  assert.ok(!shouldOfferTutorial(c, 'noctyra'), 'only once');
+  const saved = memoryStorage();
+  saveCampaign(saved, c);
+  assert.ok(loadCampaign(saved).tutorial.offeredWorld, 'remembered across sessions');
+  const done = newCampaign();
+  done.tutorial.done = [1];
+  assert.ok(!shouldOfferTutorial(done, 'xythera'), 'not after a lesson');
+  const vet = newCampaign();
+  vet.planets.cryonis.completed = true;
+  assert.ok(!shouldOfferTutorial(vet, 'xythera'), 'not after a conquest');
+});
+
+test('rewards do not depend on the order worlds are played in', () => {
+  const result = { time: 9999, objectivesDone: [], capitalThreatened: true };
+  const play = order => {
+    const c = newCampaign();
+    for (const id of order) {
+      const p = getPlanet(id);
+      const r = computeRewards(c, p, result);
+      applyVictory(c, p, result, r);
+    }
+    return c.cores;
+  };
+  const ids = PLANETS.map(p => p.id);
+  const inOrder = play(ids);
+  assert.equal(play([...ids].reverse()), inOrder);
+  assert.equal(play(['noctyra', 'mycelion', 'vulkara', 'xythera', 'cryonis']), inOrder);
+  // A hard world first pays its own base once, no more.
+  const c = newCampaign();
+  const r = computeRewards(c, getPlanet('noctyra'), result);
+  assert.equal(r.total, getPlanet('noctyra').rewards.base);
 });
