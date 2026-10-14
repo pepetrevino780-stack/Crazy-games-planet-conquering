@@ -118,7 +118,7 @@ export const PLANETS = [
       { id: 'ratio', label: 'Attack with a 50% ratio', point: 'ratio', waitFor: { type: 'ratioAttack' },
         text: 'Drag the attack ratio to 50% or more, then attack again. Big attacks are not wasted: troops regrow fastest when your army is low.' },
       { id: 'habitat', label: 'Build a Habitat', point: 'tool:habitat', unlock: ['habitat'], waitFor: { type: 'build', building: 'habitat' },
-        text: 'Minerals pile up as you grow. Press 1 or tap Habitat, then click your own land. Habitats raise your troop cap.' },
+        text: 'Minerals pile up as you grow. Drag a Habitat onto your land (or press 1 and click). Habitats raise your troop cap.' },
       { id: 'vent', label: 'Seize a magma vent', point: 'site:vent', unlock: ['energy', 'abilities'], waitFor: { type: 'ownType', site: 'vent', n: 1 },
         text: 'Take the marked magma vent. Vents give energy, which powers special abilities. Unlock those with Stellar Cores between battles.' },
       { id: 'tools', label: 'Build an Extractor', point: 'tool:extractor', unlock: ['extractor', 'starport', 'bastion', 'spire', 'dropship', 'ship', 'research', 'exotic'],
@@ -322,7 +322,7 @@ export const TUTORIAL_LESSONS = [
     ] },
   { id: 3, name: 'Build and upgrade', desc: 'Place buildings, then stack them to level 2 and 3.', setup: { minerals: 3000 },
     steps: [
-      step('build', 'Build a Habitat', { type: 'build', building: 'habitat' }, 'Press 1 or tap Habitat, then click your own land. Habitats raise your troop cap.', { point: 'tool:habitat' }),
+      step('build', 'Build a Habitat', { type: 'build', building: 'habitat' }, 'Drag a Habitat onto your land (or press 1 and click). Habitats raise your troop cap.', { point: 'tool:habitat' }),
       step('upgrade', 'Upgrade the Habitat', flag('upgraded_habitat'), 'Select Habitat again and click the Habitat you built: it goes to level 2. Each level adds its bonus again.', { point: 'tool:habitat' }),
       step('extract', 'Build an Extractor', { type: 'build', building: 'extractor' }, 'Extractors raise your mineral income. Build one.', { point: 'tool:extractor' }),
     ] },
@@ -333,7 +333,7 @@ export const TUTORIAL_LESSONS = [
     ] },
   { id: 5, name: 'Across the sea', desc: 'Expeditions reach other continents; Starports speed them up.', setup: { minerals: 2000 },
     steps: [
-      step('port', 'Build a Starport', { type: 'build', building: 'starport' }, 'Starports must be near the coast. Press 3, then click your land by the sea.', { point: 'tool:starport' }),
+      step('port', 'Build a Starport', { type: 'build', building: 'starport' }, 'Starports must be near the coast. Drag a Starport onto your land by the sea: the ghost turns green where it fits.', { point: 'tool:starport' }),
       step('drop', 'Send an expedition', flag('dropship'), 'Click land across the water: an expedition sails your attack ratio of troops there. Watch its countdown.', { point: 'tool:dropship' }),
     ] },
   { id: 6, name: 'Research and abilities', desc: 'Spend exotic matter on research, energy on abilities.', setup: { exotic: 120, energy: 120, abilities: ['strike', 'rally', 'emp'] },

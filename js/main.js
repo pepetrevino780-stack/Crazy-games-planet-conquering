@@ -8,12 +8,12 @@ import {
   createBattle, step, spawnPlayer, canSpawnAt, playerAttack, playerDropship, playerBuild,
   playerResearch, useAbility, abilityReady, ABILITY_ENERGY, DROPSHIP_COST, canDropship, currentObjective, playerRetreat, expeditionPlan,
   condProgress, battleResult, serialize, deserialize, analyzeDefeat, TICK, PLAYER,
-  tutorialStep, tutorialSteps, tutorialUnlocked, skipTutorial, playerBuildShip, playerMoveFleet,
+  tutorialStep, tutorialSteps, tutorialUnlocked, skipTutorial, playerBuildShip, playerMoveFleet, buildPreview,
 } from './sim/engine.js';
 import { SHIP_COST } from './sim/ships.js';
 import {
   config, world, maxTroops, regen, income, buildCost, siteOwner, isShielded, isPowered, countSites,
-  eventPhase, tileDefense, attackFronts, sitesOf, borders, graceLeft, upgradeCost as levelUpCost, mapScale,
+  eventPhase, tileDefense, attackFronts, sitesOf, borders, graceLeft, upgradeCost as levelUpCost, mapScale, bastionRadius,
 } from './sim/core.js';
 import { isAllied, attitude, requestAlliance, gift, betray, isTraitor } from './sim/diplomacy.js';
 import { planRoute } from './sim/path.js';
@@ -575,10 +575,86 @@ function buildToolbar() {
     b.dataset.kind = t.kind; b.dataset.id = t.id;
     b.dataset.tipFn = 'tool';
     b.setAttribute('aria-label', t.kind === 'build' ? `${BUILDINGS[t.id].name}: ${BUILDINGS[t.id].desc}` : t.label);
-    b.innerHTML = `<span class="key">${t.key}</span><img src="${t.icon}" alt=""><span class="label">${esc(t.label)}</span><span class="cost"></span>${t.kind === 'ability' ? '<span class="cd"></span>' : ''}<img class="lockmark" src="${iconURL('lock', 2)}" alt="">`;
-    b.onclick = () => activateTool(t.kind, t.id);
+    b.innerHTML = `<span class="key">${t.key}</span><img src="${t.icon}" alt="" draggable="false"><span class="label">${esc(t.label)}</span><span class="cost"></span>${t.kind === 'ability' ? '<span class="cd"></span>' : ''}<img class="lockmark" src="${iconURL('lock', 2)}" alt="">`;
+    b.onclick = () => { if (performance.now() - dragEndedAt > 350) activateTool(t.kind, t.id); };
+    if (t.kind === 'build') b.addEventListener('pointerdown', e => startDrag(e, t.id));
     bar.appendChild(b);
   }
+}
+
+// ---------- Drag-and-drop building ----------
+// Press a building in the toolbar and drag it onto the map: a ghost follows
+// the pointer, green where it can go and red (with the reason) where it
+// cannot. Dropping on your own building of the same type upgrades it.
+// Esc, or dropping back on the toolbar, cancels. Hotkeys + click still work.
+let drag = null;      // { type, pid, x0, y0, cx, cy, active, touch, tile, preview }
+let dragEndedAt = 0;
+
+function startDrag(e, type) {
+  if (!battle || battle.status !== 'playing' || e.button > 0) return;
+  drag = { type, pid: e.pointerId, x0: e.clientX, y0: e.clientY, cx: e.clientX, cy: e.clientY, active: false, touch: e.pointerType !== 'mouse', tile: -1, preview: null };
+}
+
+function updateDrag() {
+  if (!drag?.active) return;
+  const el = document.elementFromPoint(drag.cx, drag.cy);
+  if (el !== $('#canvas')) { drag.tile = -1; drag.preview = null; return; }
+  const r = $('#canvas').getBoundingClientRect();
+  // On touch, the ghost floats above the finger so it stays visible.
+  const lift = drag.touch ? 36 : 0;
+  drag.tile = renderer.screenToTile(drag.cx - r.left, drag.cy - r.top - lift);
+  drag.preview = drag.tile >= 0 ? buildPreview(battle, drag.type, drag.tile) : null;
+}
+
+// While a finger drags a building near the screen edge, the map slides.
+// It only starts once the finger has been well inside the map, so leaving
+// the toolbar never scrolls by accident.
+function dragAutoPan(dt) {
+  if (!drag?.active || !drag.touch) return;
+  const r = $('#canvas').getBoundingClientRect(), m = 48, v = 420 * dt;
+  const bottom = Math.min(r.bottom, $('#toolbar').getBoundingClientRect().top);
+  let dx = 0, dy = 0;
+  if (drag.cx < r.left + m) dx = v; else if (drag.cx > r.right - m) dx = -v;
+  if (drag.cy < r.top + m) dy = v; else if (drag.cy > bottom - m && drag.cy < bottom) dy = -v;
+  if (!dx && !dy) { drag.inside = true; return; }
+  if (drag.inside) { renderer.panBy(dx, dy); updateDrag(); }
+}
+
+function endDrag(e, cancel = false) {
+  const d = drag;
+  drag = null;
+  if (!d || !d.active) return;
+  dragEndedAt = performance.now();
+  if (cancel || !battle) return;
+  const overBar = document.elementFromPoint(e.clientX, e.clientY)?.closest('#toolbar');
+  if (overBar || d.tile < 0) { toast('Building cancelled.', 'tip', 1400); return; }
+  const res = playerBuild(battle, d.type, d.tile);
+  if (!res.ok) { sfx.error(); toast(REASONS[res.reason] || 'You cannot build there.', 'bad', 2600); }
+}
+
+function ghostLabel(p, type) {
+  if (!p) return '';
+  if (p.ok) return p.upgrade ? `Upgrade to level ${p.level} · ${fmt(p.cost)}` : `${BUILDINGS[type].name} · ${fmt(p.cost)}`;
+  if (p.reason === 'maxLevel') return 'Already level 3';
+  if (p.reason === 'minerals') return `Need ${fmt(p.cost)} minerals`;
+  return { terrain: 'Only on your own flat land', crowded: 'Too close to another structure', coast: 'Must be near the coast' }[p.reason] || 'Cannot build here';
+}
+
+function bindDrag() {
+  document.addEventListener('pointermove', e => {
+    if (!drag || e.pointerId !== drag.pid) return;
+    drag.cx = e.clientX; drag.cy = e.clientY;
+    if (!drag.active && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 8) {
+      if (!toolUnlocked('build', drag.type)) { drag = null; return; }
+      drag.active = true;
+      armed = null;
+      clearTimeout(pressTimer);
+      hideTooltip();
+    }
+    updateDrag();
+  });
+  document.addEventListener('pointerup', e => { if (drag && e.pointerId === drag.pid) endDrag(e); });
+  document.addEventListener('pointercancel', e => { if (drag && e.pointerId === drag.pid) endDrag(e, true); });
 }
 
 function toolUnlocked(kind, id) {
@@ -623,7 +699,7 @@ function updateToolbar() {
     b.classList.toggle('armed', !!armed && armed.kind === kind && armed.id === id);
     if (kind === 'build') { const c = buildCost(battle, PLAYER, id); cost.textContent = fmt(c); b.disabled = f.minerals < c; }
     else if (kind === 'dropship') { cost.textContent = DROPSHIP_COST; b.disabled = !canDropship(battle) || f.minerals < DROPSHIP_COST; }
-    else if (kind === 'ship') { cost.textContent = `${SHIP_COST.minerals}+${SHIP_COST.energy}E`; b.disabled = !hasPort() || f.minerals < SHIP_COST.minerals || f.energy < SHIP_COST.energy; }
+    else if (kind === 'ship') { cost.textContent = SHIP_COST.minerals; b.disabled = !hasPort() || f.minerals < SHIP_COST.minerals || f.energy < SHIP_COST.energy; }
     else if (kind === 'research') { cost.textContent = fmt(f.exotic); }
     else if (kind === 'ability') {
       cost.textContent = `${ABILITY_ENERGY[id]}E`;
@@ -1204,7 +1280,7 @@ function updateInspector() {
     html += `<div class="tags">${esc(site.name)} — ${esc(st.desc)}${extra}${so ? '' : ' (unclaimed)'}</div>`;
   }
   if (o !== PLAYER && isLand(t) && battle.status === 'playing') html += `<div class="tags">Click to attack with ${fmt(me.troops * ratio)} troops.</div>`;
-  if (o === PLAYER) html += '<div class="tags">Your land. Press 1–5 to build here.</div>';
+  if (o === PLAYER) html += '<div class="tags">Your land. Drag a building here, or press 1–5.</div>';
   el.innerHTML = '<button class="close" aria-label="Close">x</button>' + html;
   el.querySelector('.close').onclick = () => { inspectTile = -1; inspectorClosed = true; el.classList.add('hidden'); };
   el.classList.remove('hidden');
@@ -1491,6 +1567,16 @@ function clickTile(i) {
   else if (res && res.ok && armed?.kind === 'dropship') armed = null;
 }
 
+function dragGhost() {
+  if (!drag?.active || drag.tile < 0 || !drag.preview) return null;
+  const p = drag.preview, x = p.upgrade ? p.x : drag.tile % battle.w, y = p.upgrade ? p.y : Math.floor(drag.tile / battle.w);
+  const level = p.upgrade ? p.level : 1;
+  return {
+    type: drag.type, x, y, level, ok: p.ok, label: ghostLabel(p, drag.type),
+    radius: drag.type === 'bastion' ? bastionRadius(battle, { level }) : 0,
+  };
+}
+
 function setRatio(r) {
   ratio = Math.max(0.05, Math.min(1, r));
   $('#ratio').value = Math.round(ratio * 100);
@@ -1596,6 +1682,8 @@ function frame(ts) {
   const dt = Math.min(0.25, (ts - (lastFrame || ts)) / 1000);
   lastFrame = ts;
   if (!battle) return;
+  dragAutoPan(dt);
+  if (drag?.active) updateDrag();
   if (!paused && !adPlaying && (battle.status === 'playing' || battle.status === 'spawn')) {
     accumulator += dt * speed;
     while (accumulator >= TICK) { step(battle, TICK); accumulator -= TICK; }
@@ -1619,7 +1707,8 @@ function frame(ts) {
     inspectOwner: inspectTile >= 0 ? battle.owner[inspectTile] : 0,
     highlights: new Set(cur?.highlight ? [cur.highlight] : []),
     intents,
-    route: (updateRoutePreview(), routePath),
+    route: drag?.active ? null : (updateRoutePreview(), routePath),
+    ghost: dragGhost(),
     pointer: battle.status === 'playing' && !renderer.holdOwner && tutorialStep(battle) ? tutPointer : null,
   });
   updateHud();
@@ -1713,6 +1802,7 @@ async function init() {
   $('#ratio').oninput = e => setRatio(Number(e.target.value) / 100);
   if (campaign && !campaign.settings.sound) $('#btn-sound img').src = iconURL('mute', 3);
 
+  bindDrag();
   const c = $('#canvas');
   c.addEventListener('pointerdown', onDown);
   c.addEventListener('pointermove', onMove);
@@ -1743,7 +1833,7 @@ async function init() {
     else if (k === '0') activateTool('ship', 'ship');
     else if (k === 'r') activateTool('research', 'research');
     else if (k === ' ') togglePause();
-    else if (k === 'escape') { armed = null; inspectTile = -1; closeRadial(); }
+    else if (k === 'escape') { if (drag?.active) dragEndedAt = performance.now(); drag = null; armed = null; inspectTile = -1; closeRadial(); }
     else if (k === 'l') $('#btn-board').click();
     else if (k === 'o') $('#objectives').classList.toggle('hidden');
     else if (k === 'c') centerOnCapital();

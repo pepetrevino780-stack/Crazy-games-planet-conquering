@@ -769,6 +769,26 @@ export class MapRenderer {
       }
       drawStructure(lvl > 1 ? `${b.type}_${lvl}` : b.type, b.x, b.y, bo ? st.factions[bo].color : NEUTRAL, { badge: b.type, rise, level: lvl });
     }
+    // Drag-and-drop ghost: green where the building can go, red (with the
+    // reason) where it cannot; a Bastion shows the reach of its defence.
+    if (ui.ghost) {
+      const g = ui.ghost, col = g.ok ? '#7ff0c8' : '#ff4b3e';
+      const c = T(g.x + 0.5, g.y + 0.5);
+      if (g.radius) this.dotCircle(c, g.radius * z, col, Math.max(2, Math.round(3 * d)));
+      ctx.globalAlpha = 0.65;
+      const r = drawStructure(g.level > 1 ? `${g.type}_${g.level}` : g.type, g.x, g.y, g.ok ? st.factions[PLAYER].color : '#7a7a8a', { badge: g.type, level: g.level });
+      ctx.globalAlpha = 1;
+      const half = Math.max(3 * d, z * 1.5);
+      ctx.strokeStyle = col; ctx.lineWidth = Math.max(2, 2 * d);
+      ctx.strokeRect(Math.round(c.x - half), Math.round(c.y - half), Math.round(half * 2), Math.round(half * 2));
+      const top = r && r.h ? r.p.y - r.h - 6 * d : c.y - 18 * d;
+      ctx.font = `700 ${Math.round(12 * d)}px "Alien Body", monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.lineWidth = Math.max(2, 3 * d); ctx.strokeStyle = 'rgba(5,4,12,0.92)';
+      ctx.strokeText(g.label, Math.round(c.x), Math.round(top));
+      ctx.fillStyle = col;
+      ctx.fillText(g.label, Math.round(c.x), Math.round(top));
+    }
     for (const s of st.sites) {
       const so = siteOwner(st, s);
       const color = so ? st.factions[so].color : NEUTRAL;
@@ -814,7 +834,10 @@ export class MapRenderer {
 
     // Battleships with a hit-point bar; shells in flight.
     for (const sh of st.ships || []) {
-      drawSprite('ship', sh.x, sh.y, st.factions[sh.owner].color);
+      // Never smaller than a badge, so a fleet is visible zoomed out.
+      const spr = spriteCanvas('ship', st.factions[sh.owner].color), ss = Math.max(Math.round(3 * d), sc);
+      const sp = T(sh.x + 0.5, sh.y + 0.5);
+      ctx.drawImage(spr, Math.round(sp.x - (spr.width * ss) / 2), Math.round(sp.y - (spr.height * ss) / 2), spr.width * ss, spr.height * ss);
       if (sh.hp < 100) {
         const p = T(sh.x + 0.5, sh.y + 0.5), bw = Math.round(12 * d), bh = Math.max(2, Math.round(2 * d));
         ctx.fillStyle = 'rgba(5,4,12,0.9)';

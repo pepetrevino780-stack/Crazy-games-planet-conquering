@@ -15,7 +15,7 @@ import { requestAlliance, gift, betray, isAllied, relation, isTraitor } from '..
 import { planRoute } from '../js/sim/path.js';
 import { tryExpedition, tryNavy } from '../js/sim/ai.js';
 import { seaGrid, seaPath, nearestSeaCell, buildShip, advanceShips, SHIP_COST, SHIP_HP } from '../js/sim/ships.js';
-import { coastalTiles } from '../js/sim/engine.js';
+import { coastalTiles, buildPreview } from '../js/sim/engine.js';
 import { travelTime, expeditionPlan } from '../js/sim/engine.js';
 import { connectedShare, growthMult, isConnected } from '../js/sim/core.js';
 import { THEMES, THEME_IDS, isLand, T } from '../js/world/themes.js';
@@ -951,4 +951,58 @@ test('enemy commanders on Xythera and Noctyra build a navy; other worlds do not'
   const e = enemyOf(v);
   e.minerals = 5000; e.energy = 200;
   assert.equal(tryNavy(v, e.id, () => 0.1), false);
+});
+
+// ---------- Drag-and-drop building ----------
+
+test('drag-and-drop preview: green where a building fits, red with a reason, upgrade on own building', () => {
+  const s = battle('vulkara', { tutorial: false });
+  freezeAI(s);
+  advance(s, 0.5);
+  const me = s.factions[PLAYER];
+  me.minerals = 10000;
+  const w = world(s);
+  const spots = [];
+  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === PLAYER && [T.PLAINS, T.WILD, T.HIGHLAND, T.RUINS].includes(w.terrain[i])) spots.push(i);
+  const ok = spots.find(i => buildPreview(s, 'habitat', i).ok);
+  assert.ok(ok !== undefined, 'some own flat land accepts a Habitat');
+  const p = buildPreview(s, 'habitat', ok);
+  assert.equal(p.upgrade, false);
+  assert.equal(p.cost, buildCost(s, PLAYER, 'habitat'));
+  // The preview agrees with what dropping actually does.
+  for (const i of spots.slice(0, 400)) {
+    const pr = buildPreview(s, 'extractor', i);
+    const before = JSON.stringify(s.buildings);
+    const res = playerBuild(s, 'extractor', i);
+    assert.equal(res.ok, pr.ok, `tile ${i}: preview ${pr.reason} vs drop ${res.reason}`);
+    if (!res.ok) { assert.equal(res.reason, pr.reason); assert.equal(JSON.stringify(s.buildings), before); }
+    if (res.ok && res.upgraded) break;
+  }
+  // Wilderness and other people's land are red, with the reason.
+  const wild = s.owner.findIndex((o, i) => o === 0 && isLand(w.terrain[i]));
+  assert.deepEqual([buildPreview(s, 'habitat', wild).ok, buildPreview(s, 'habitat', wild).reason], [false, 'terrain']);
+  // Over our own Habitat: "Upgrade to level 2", then 3, then max.
+  const spot = spots.find(i => buildPreview(s, 'habitat', i).ok);
+  assert.ok(playerBuild(s, 'habitat', spot).ok);
+  const hab = s.buildings.find(b => b.type === 'habitat');
+  const up = buildPreview(s, 'habitat', hab.y * s.w + hab.x);
+  assert.ok(up.ok && up.upgrade && up.level === 2 && up.x === hab.x && up.y === hab.y);
+  assert.equal(up.cost, upgradeCost(hab, s));
+  playerBuild(s, 'habitat', hab.y * s.w + hab.x);
+  assert.equal(buildPreview(s, 'habitat', hab.y * s.w + hab.x).level, 3);
+  playerBuild(s, 'habitat', hab.y * s.w + hab.x);
+  assert.equal(buildPreview(s, 'habitat', hab.y * s.w + hab.x).reason, 'maxLevel');
+  // A different type over it is just crowded.
+  assert.equal(buildPreview(s, 'bastion', hab.y * s.w + hab.x).reason, 'crowded');
+  // Not enough minerals: red.
+  me.minerals = 0;
+  const poor = spots.find(i => buildPreview(s, 'spire', i).reason === 'minerals');
+  assert.ok(poor !== undefined, 'shows when you cannot afford it');
+});
+
+test('training text teaches dragging buildings', () => {
+  const vul = getPlanet('vulkara');
+  const steps = JSON.stringify(vul.tutorial) + JSON.stringify(TUTORIAL_LESSONS);
+  assert.ok(!/Press 1 or tap Habitat/.test(steps));
+  assert.ok(/Drag a Habitat onto your land/.test(steps));
 });

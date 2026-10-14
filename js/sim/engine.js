@@ -506,6 +506,24 @@ export function npcUpgrade(state, fid, type) {
   return upgradeBuilding(state, fid, own[0]).ok;
 }
 
+// What dropping a building of `type` on tile i would do, for the drag ghost:
+// { ok, reason, upgrade, level, cost }.
+export function buildPreview(state, type, i) {
+  if (!BUILDINGS[type] || i < 0) return { ok: false, reason: 'invalid' };
+  const f = state.factions[PLAYER];
+  const up = upgradeTarget(state, PLAYER, type, i);
+  if (up) {
+    const level = (up.level || 1) + 1;
+    if (level > MAX_LEVEL) return { ok: false, reason: 'maxLevel', upgrade: true, level: MAX_LEVEL };
+    const cost = upgradeCost(up, state);
+    return { ok: f.minerals >= cost, reason: f.minerals >= cost ? null : 'minerals', upgrade: true, level, cost, x: up.x, y: up.y };
+  }
+  const why = canBuildAt(state, type, i);
+  const cost = buildCost(state, PLAYER, type);
+  if (why) return { ok: false, reason: why, cost };
+  return { ok: f.minerals >= cost, reason: f.minerals >= cost ? null : 'minerals', upgrade: false, level: 1, cost };
+}
+
 export function playerBuild(state, type, i) {
   if (state.status !== 'playing' || !BUILDINGS[type]) return { ok: false, reason: 'invalid' };
   const f = state.factions[PLAYER];
