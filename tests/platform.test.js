@@ -87,3 +87,29 @@ test('an ignored ad request times out and the game carries on', async () => {
   assert.equal(await midgameAd(), false);
   assert.ok(Date.now() - t0 < 6000);
 });
+
+// ---------- One look on every planet ----------
+
+test('one look on every planet: every UI icon lives in js/art/sprites.js and nothing tints the HUD per theme', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { ICONS, SPRITES } = await import('../js/art/sprites.js');
+  const { ABILITIES } = await import('../js/progression.js');
+  const main = readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../css/style.css', import.meta.url), 'utf8');
+  const used = new Set([
+    ...[...main.matchAll(/iconURL\('([a-z_]+)'/g)].map(m => m[1]),
+    ...[...html.matchAll(/data-icon="([a-z_]+)"/g)].map(m => m[1]),
+    ...Object.keys(ABILITIES),
+  ]);
+  for (const name of used) assert.ok(ICONS[name], `icon "${name}" is drawn in sprites.js`);
+  // Toolbar building icons come from the shared building sprites, in one fixed colour.
+  assert.ok(SPRITES.ship && SPRITES.fleet);
+  assert.match(main, /spriteCanvas\(type, '#3fd0ff'\)/);
+  // No image files or inline SVG icons outside the sprite sheet.
+  assert.doesNotMatch(html, /<svg|\.png"|\.svg"/);
+  assert.doesNotMatch(css, /\.(png|svg|gif)\b/);
+  // Nothing styles the HUD by planet: no theme classes or attributes, no theme colours in CSS.
+  assert.doesNotMatch(main, /(classList\.(add|toggle)|dataset)\.?[^;\n]*\btheme\b/);
+  assert.doesNotMatch(css, /\b(vulkara|cryonis|mycelion|xythera|noctyra)\b|\[data-theme/i);
+});
