@@ -63,10 +63,32 @@ function boom(f0 = 180, f1 = 40, dur = 0.5, vol = 0.07) {
   n.start(t);
 }
 
+// A short rattle of gunfire: filtered noise with a sharp attack.
+function crack(vol = 0.035) {
+  if (!enabled || suspended) return;
+  const a = ac();
+  if (!a) return;
+  const t = a.currentTime, dur = 0.07 + Math.random() * 0.05;
+  const len = Math.floor(a.sampleRate * dur);
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 3;
+  const n = a.createBufferSource();
+  const f = a.createBiquadFilter();
+  const g = a.createGain();
+  n.buffer = buf;
+  f.type = 'bandpass'; f.frequency.value = 1400 + Math.random() * 1400; f.Q.value = 0.8;
+  g.gain.setValueAtTime(vol, t);
+  n.connect(f).connect(g).connect(a.destination);
+  n.start(t);
+}
+
 let lastTick = 0;
 
 export const sfx = {
   crash: () => boom(180, 40, 0.6, 0.08),
+  // Gunfire on the fronts (the caller limits it to about 4 a second).
+  skirmish: () => crack(),
   thud: () => boom(140, 50, 0.3, 0.05),
   rumble: () => boom(90, 30, 0.9, 0.06),
   // A quiet tick while your border advances; rate-limited and slightly varied.

@@ -17,6 +17,7 @@ import {
 } from './sim/core.js';
 import { isAllied, attitude, requestAlliance, gift, betray, isTraitor } from './sim/diplomacy.js';
 import { planRoute } from './sim/path.js';
+import { rateLimiter } from './battlefx.js';
 import { MapRenderer, fmt } from './render.js';
 import { THEMES, TERRAIN, THEME_IDS, isLand } from './world/themes.js';
 import { iconURL, spriteCanvas, mixHex } from './art/sprites.js';
@@ -1731,6 +1732,9 @@ async function init() {
   });
   renderer = new MapRenderer($('#canvas'));
   renderer.onImpact = small => (small ? sfx.thud() : sfx.crash());
+  // Gunfire on the fronts you can see: at most 4 cracks a second.
+  const skirmishOk = rateLimiter(4);
+  renderer.onSkirmish = () => { if (skirmishOk(performance.now())) sfx.skirmish(); };
   applyIcons();
   initTooltips();
   initBattlePanel();

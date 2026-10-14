@@ -6,6 +6,7 @@ import { isLand } from './world/themes.js';
 import { SITE_TYPES } from './campaign.js';
 import { spriteCanvas, spriteCanvasHi, glyphCanvas, spriteAccent, CAPITAL_SPRITE, mixHex, shadeHex } from './art/sprites.js';
 import { backdropCanvas } from './art/backdrop.js';
+import { spawnBattleFx, pushCapped } from './battlefx.js';
 import { rt, world, siteOwner, isShielded, isPowered, empActive, eventPhase, mapScale, PLAYER } from './sim/core.js';
 
 const NEUTRAL = '#8a8478';
@@ -304,7 +305,7 @@ export class MapRenderer {
   burst(x, y, color, n = 14) {
     for (let k = 0; k < n; k++) {
       const a = Math.random() * Math.PI * 2, v = 6 + Math.random() * 14;
-      this.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.8 + Math.random() * 0.5, color });
+      pushCapped(this.particles, { x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.8 + Math.random() * 0.5, color });
     }
   }
 
@@ -628,7 +629,7 @@ export class MapRenderer {
   }
 
   ring(x, y, color, r = 10) {
-    this.particles.push({ ring: true, x, y, r0: 1, r, life: 0.9, max: 0.9, color });
+    pushCapped(this.particles, { ring: true, x, y, r0: 1, r, life: 0.9, max: 0.9, color });
   }
 
   render(ui) {
@@ -856,18 +857,50 @@ export class MapRenderer {
       ctx.fillRect(Math.round(q.x - u / 2), Math.round(q.y - u / 2), u, u);
     }
 
-    // Particles and rings.
+    // Battle on the fronts: soldiers, muzzle flashes, explosions, smoke.
+    // Only fronts on screen spawn anything; reduced motion turns it all off.
+    if (motion) {
+      const a = this.screenToTileF(0, 0), b = this.screenToTileF(this.canvas.width / d, this.canvas.height / d);
+      const view = { x0: a.x - 2, y0: a.y - 2, x1: b.x + 2, y1: b.y + 2 };
+      const shots = spawnBattleFx(st, view, this.particles, dt, owner => st.factions[owner]?.color || NEUTRAL);
+      if (shots) this.onSkirmish?.(shots);
+    } else this.particles = this.particles.filter(p => !p.kind);
+
+    // Particles and rings (capped at 600; off-screen ones are not drawn).
     this.particles = this.particles.filter(p => (p.life -= dt) > 0);
+    const cw = this.canvas.width, chh = this.canvas.height;
+    const u = Math.max(Math.round(d), Math.round(z / 3));
     for (const p of this.particles) {
       if (p.ring) {
         const k = 1 - p.life / p.max;
         this.dotCircle(T(p.x + 0.5, p.y + 0.5), (p.r0 + (p.r - p.r0) * k) * z, p.color, Math.max(1, z / 2));
         continue;
       }
-      p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 10 * dt;
-      ctx.fillStyle = p.color;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      if (!p.kind || p.kind === 'spark') p.vy += 10 * dt;
       const q = T(p.x, p.y);
-      ctx.fillRect(Math.round(q.x), Math.round(q.y), Math.max(1, z), Math.max(1, z));
+      if (q.x < -20 || q.y < -20 || q.x > cw + 20 || q.y > chh + 20) continue;
+      const qx = Math.round(q.x), qy = Math.round(q.y);
+      if (p.kind === 'soldier') {
+        // A tiny trooper: head, body in the attacker's colour, stepping legs.
+        const step = Math.floor(p.life * 10) % 2;
+        ctx.fillStyle = '#05040a';
+        ctx.fillRect(qx - u, qy - 4 * u, u * 3, u * 5);
+        ctx.fillStyle = '#ffe2c4'; ctx.fillRect(qx, qy - 4 * u, u, u);
+        ctx.fillStyle = p.color; ctx.fillRect(qx, qy - 3 * u, u, u * 2);
+        ctx.fillStyle = '#c9d4e8'; ctx.fillRect(qx - (step ? u : 0), qy - u, u, u); ctx.fillRect(qx + (step ? u : 0), qy - u, u, u);
+      } else if (p.kind === 'flash') {
+        ctx.fillStyle = p.color; ctx.fillRect(qx - u, qy - u, u * 3, u * 3);
+        ctx.fillStyle = '#ffd25e'; ctx.fillRect(qx - 2 * u, qy, u * 5, u);
+      } else if (p.kind === 'smoke') {
+        ctx.globalAlpha = Math.max(0, Math.min(0.6, p.life / p.max));
+        const sz = Math.max(u * 2, Math.round(z * (1.8 - p.life / p.max)));
+        ctx.fillStyle = p.color; ctx.fillRect(qx - (sz >> 1), qy - (sz >> 1), sz, sz);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(qx, qy, Math.max(1, z), Math.max(1, z));
+      }
     }
 
     this.drawFx(T, z, dt, motion);

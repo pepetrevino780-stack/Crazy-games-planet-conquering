@@ -1006,3 +1006,67 @@ test('training text teaches dragging buildings', () => {
   assert.ok(!/Press 1 or tap Habitat/.test(steps));
   assert.ok(/Drag a Habitat onto your land/.test(steps));
 });
+
+// ---------- Battle animations ----------
+
+test('battle effects: soldiers and flashes on visible fronts only, capped at 600, sound limited', async () => {
+  const { spawnBattleFx, rateLimiter, pushCapped, MAX_PARTICLES } = await import('../js/battlefx.js');
+  // Sound: at most 4 cracks in any second.
+  const ok = rateLimiter(4);
+  let n = 0;
+  for (let t = 0; t < 1000; t += 10) if (ok(t)) n++;
+  assert.equal(n, 4);
+  assert.ok(ok(1200), 'allowed again a second later');
+  const capped = [];
+  for (let k = 0; k < 900; k++) pushCapped(capped, { k });
+  assert.equal(capped.length, MAX_PARTICLES);
+
+  const s = battle('vulkara', { tutorial: false });
+  freezeAI(s);
+  advance(s, 0.5);
+  s.factions[PLAYER].troops = 50000;
+  const w = world(s);
+  const edge = borders(s, PLAYER, 0) ? [...Array(s.owner.length).keys()].find(i => s.owner[i] === 0 && isLand(w.terrain[i]) && [1, -1, s.w, -s.w].some(d => s.owner[i + d] === PLAYER)) : -1;
+  assert.ok(playerAttack(s, edge, 0.5).ok);
+  advance(s, 0.3);
+  const all = { x0: 0, y0: 0, x1: s.w, y1: s.h };
+  const color = () => '#ff0000';
+  let r = 0;
+  const rand = () => (r = (r * 9301 + 49297) % 233280) / 233280;
+  // Off screen: nothing.
+  const none = [];
+  assert.equal(spawnBattleFx(s, { x0: -50, y0: -50, x1: -10, y1: -10 }, none, 0.5, color, rand), 0);
+  assert.equal(none.length, 0);
+  // On screen: soldiers walk and muzzles flash; shots are counted for the sound.
+  const fx = [];
+  const shots = spawnBattleFx(s, all, fx, 0.5, color, rand);
+  assert.ok(shots > 0 && fx.some(p => p.kind === 'soldier') && fx.some(p => p.kind === 'flash'));
+  // Many frames never exceed the cap.
+  for (let k = 0; k < 400; k++) spawnBattleFx(s, all, fx, 0.5, color, rand);
+  assert.ok(fx.length <= MAX_PARTICLES);
+  // The simulation is untouched by effects.
+  const before = serialize(s);
+  spawnBattleFx(s, all, [], 0.5, color, rand);
+  assert.deepEqual(serialize(s), before);
+});
+
+test('battle effects: a clash where a front reaches a capital', async () => {
+  const { spawnBattleFx } = await import('../js/battlefx.js');
+  const s = battle('vulkara', { tutorial: false });
+  freezeAI(s);
+  advance(s, 0.5);
+  const cap = site(s, 'player-capital');
+  // A fake enemy front pressing right against the player capital.
+  const e = enemyOf(s);
+  const tiles = [];
+  for (let dx = -3; dx <= 3; dx++) tiles.push(cap.y * s.w + cap.x + dx);
+  for (const i of tiles) setOwner(s, i, PLAYER);
+  give(s, cap.x - 5, cap.y, e.id);
+  s.attacks.push({ id: 999, attacker: e.id, target: PLAYER, troops: 5000, initial: 5000, conquered: 0, focus: null, progress: 0, frontier: { v: tiles, k: tiles.map(() => 0) } });
+  let r = 0;
+  const rand = () => (r = (r * 9301 + 49297) % 233280) / 233280;
+  const fx = [];
+  for (let k = 0; k < 40; k++) spawnBattleFx(s, { x0: 0, y0: 0, x1: s.w, y1: s.h }, fx, 0.1, () => '#fff', rand);
+  assert.ok(fx.some(p => p.ring), 'clash rings at the capital');
+  assert.ok(fx.filter(p => p.kind === 'spark').length > fx.filter(p => p.kind === 'flash').length, 'explosions dominate at a fort');
+});
