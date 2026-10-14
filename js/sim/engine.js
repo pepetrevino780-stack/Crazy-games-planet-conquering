@@ -12,6 +12,7 @@ import {
 import { isAllied, relation, onPlayerAttack, driftTrust } from './diplomacy.js';
 import { planRoute } from './path.js';
 import { think } from './ai.js';
+import { advanceShips, buildShip, orderFleet } from './ships.js';
 
 export const STATE_VERSION = 4;
 export { TICK, PLAYER };
@@ -106,7 +107,7 @@ export function createBattle(configId, loadout, opts = {}) {
     time: 0, rng: (opts.seed ?? 12345) | 0, status: 'spawn', spawnLeft: opts.spawnTime ?? 10,
     difficulty: opts.difficulty || 'commander', assist,
     owner: new Uint8Array(state.w * state.h),
-    factions: [null], sites: [], buildings: [], attacks: [], dropships: [], nextId: 1,
+    factions: [null], sites: [], buildings: [], attacks: [], dropships: [], ships: [], nextId: 1,
     cooldowns: { strike: 0, rally: 0, emp: 0 }, hold: cfg.victory.conds.map(() => 0),
     objectivesDone: [], flags: {}, notices: [], ai: {}, eventWasActive: false,
     tutorial: cfg.tutorial && opts.tutorial !== false ? 0 : -1,
@@ -432,6 +433,20 @@ export function playerDropship(state, tileIndex, ratio) {
   if (tileLocked(state, tileIndex)) return { ok: false, reason: 'shielded' };
   if (state.owner[tileIndex] && isAllied(state, PLAYER, state.owner[tileIndex])) return { ok: false, reason: 'allied' };
   return launchExpedition(state, PLAYER, tileIndex, f.troops * ratio);
+}
+
+// Battleships: build one at the Starport nearest the clicked tile and send it
+// there; or move the whole fleet.
+export function playerBuildShip(state, tileIndex) {
+  if (state.status !== 'playing') return { ok: false, reason: 'notStarted' };
+  const res = buildShip(state, PLAYER, tileIndex);
+  if (res.ok) state.flags.ship = true;
+  return res;
+}
+
+export function playerMoveFleet(state, tileIndex) {
+  if (state.status !== 'playing') return { ok: false, reason: 'notStarted' };
+  return orderFleet(state, PLAYER, tileIndex);
 }
 
 // The player's own tile nearest to tile i (or -1).
@@ -818,6 +833,7 @@ function collapse(state, fid, by) {
     else if (a.target === fid) endAttack(state, a, k);
   }
   state.dropships = state.dropships.filter(d => d.owner !== fid);
+  state.ships = (state.ships || []).filter(s => s.owner !== fid);
   if (fid === PLAYER) state.stats.lostTo = by;
   else if (by === PLAYER) state.stats.defeated = (state.stats.defeated || 0) + 1;
   notice(state, 'collapse', { faction: fid, by });
@@ -924,6 +940,7 @@ export function step(state, dt = TICK) {
   }
   advanceAttacks(state, dt);
   advanceDropships(state, dt);
+  advanceShips(state, dt);
 
   for (const f of state.factions) {
     if (!alive(f) || !f.profile) continue;
@@ -1102,6 +1119,7 @@ export function deserialize(data) {
       }
     }
     if (!Array.isArray(state.history)) { state.history = []; state.historyAt = state.time; }
+    if (!Array.isArray(state.ships)) state.ships = [];
     state.attacks = (state.attacks || []).map(a => {
       if (!a.frontier || !Array.isArray(a.frontier.k)) return { ...a, frontier: null };
       const h = new TileHeap();

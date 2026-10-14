@@ -32,6 +32,7 @@ export class MapRenderer {
     this.pops = [];     // floating numbers
     this.marches = [];  // survivors walking home
     this.aims = [];     // short-lived arrows showing where a push is headed
+    this.shells = [];   // battleship shells in flight
     this.shakeT = 0; this.shakeAmp = 0;
     this.holdOwner = 0; // territory hidden until a landing ship touches down...
     this.landing = 0;   // ...and its capital and label until the impact
@@ -468,6 +469,11 @@ export class MapRenderer {
     this.aims = [{ x0, y0, x1, y1, color, life: 1.2 }];
   }
 
+  // A battleship shell arcing from (x0, y0) to (x1, y1); bursts on arrival.
+  shell(x0, y0, x1, y1) {
+    this.shells.push({ x0, y0, x1, y1, t: 0, dur: 0.5 });
+  }
+
   // A small column of survivors walking from a front back to the capital.
   march(x0, y0, x1, y1, color) {
     const dur = Math.min(1.8, 0.6 + Math.hypot(x1 - x0, y1 - y0) / (60 * mapScale(this.state)));
@@ -806,8 +812,28 @@ export class MapRenderer {
       }
     }
 
-    // Particles and rings.
+    // Battleships with a hit-point bar; shells in flight.
+    for (const sh of st.ships || []) {
+      drawSprite('ship', sh.x, sh.y, st.factions[sh.owner].color);
+      if (sh.hp < 100) {
+        const p = T(sh.x + 0.5, sh.y + 0.5), bw = Math.round(12 * d), bh = Math.max(2, Math.round(2 * d));
+        ctx.fillStyle = 'rgba(5,4,12,0.9)';
+        ctx.fillRect(Math.round(p.x - bw / 2) - 1, Math.round(p.y - 8 * d) - 1, bw + 2, bh + 2);
+        ctx.fillStyle = sh.hp > 50 ? '#7ff0c8' : sh.hp > 25 ? '#ffd25e' : '#ff4b3e';
+        ctx.fillRect(Math.round(p.x - bw / 2), Math.round(p.y - 8 * d), Math.round(bw * Math.max(0, sh.hp) / 100), bh);
+      }
+    }
     const dt = ui.dt || 0.016;
+    this.shells = this.shells.filter(s => (s.t += dt) < s.dur || (this.burst(s.x1, s.y1, '#ff9a3c', 8), false));
+    for (const s of this.shells) {
+      const k = s.t / s.dur;
+      const x = s.x0 + (s.x1 - s.x0) * k, y = s.y0 + (s.y1 - s.y0) * k - Math.sin(k * Math.PI) * 4;
+      const q = T(x + 0.5, y + 0.5), u = Math.max(2, Math.round(z / 2));
+      ctx.fillStyle = '#fff2a8';
+      ctx.fillRect(Math.round(q.x - u / 2), Math.round(q.y - u / 2), u, u);
+    }
+
+    // Particles and rings.
     this.particles = this.particles.filter(p => (p.life -= dt) > 0);
     for (const p of this.particles) {
       if (p.ring) {

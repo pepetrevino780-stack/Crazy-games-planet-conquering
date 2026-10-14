@@ -13,7 +13,9 @@ import {
 import { generateWorld, components } from '../js/world/generate.js';
 import { requestAlliance, gift, betray, isAllied, relation, isTraitor } from '../js/sim/diplomacy.js';
 import { planRoute } from '../js/sim/path.js';
-import { tryExpedition } from '../js/sim/ai.js';
+import { tryExpedition, tryNavy } from '../js/sim/ai.js';
+import { seaGrid, seaPath, nearestSeaCell, buildShip, advanceShips, SHIP_COST, SHIP_HP } from '../js/sim/ships.js';
+import { coastalTiles } from '../js/sim/engine.js';
 import { travelTime, expeditionPlan } from '../js/sim/engine.js';
 import { connectedShare, growthMult, isConnected } from '../js/sim/core.js';
 import { THEMES, THEME_IDS, isLand, T } from '../js/world/themes.js';
@@ -835,4 +837,118 @@ test('config lookups resolve for campaign and skirmish states', () => {
   assert.equal(s.theme, 'cryonis');
   assert.ok(countSites(s, 'crystal', 0) >= 1);
   assert.ok(siteOwner(s, site(s, 'enemy-capital')) > 1);
+});
+
+// ---------- Battleships ----------
+
+// A Cryonis battle with a player Starport on the coast (AI frozen).
+function navalBattle() {
+  const s = battle('cryonis', { tutorial: false });
+  freezeAI(s);
+  advance(s, 0.5);
+  const me = s.factions[PLAYER];
+  me.minerals = 5000; me.energy = 200;
+  const coast = coastalTiles(s, PLAYER).find(i => nearestSeaCell(s, i % s.w, Math.floor(i / s.w), 6) >= 0);
+  assert.ok(coast !== undefined, 'the player holds open coast');
+  s.buildings.push({ id: s.nextId++, type: 'starport', x: coast % s.w, y: Math.floor(coast / s.w), level: 1 });
+  return s;
+}
+
+const isSeaAt = (s, x, y) => { const g = seaGrid(s); return g.sea[Math.floor(y / 4) * g.cw + Math.floor(x / 4)] === 1; };
+
+test('battleships: built at a Starport for minerals and energy, sail only by sea, survive a save', () => {
+  const s0 = battle('cryonis', { tutorial: false });
+  advance(s0, 0.5);
+  s0.factions[PLAYER].minerals = 5000;
+  assert.equal(buildShip(s0, PLAYER, 0).reason, 'noStarport');
+  const s = navalBattle();
+  const me = s.factions[PLAYER];
+  // A far-away sea goal.
+  const g = seaGrid(s);
+  let goal = -1;
+  for (let k = g.sea.length - 1; k >= 0 && goal < 0; k--) {
+    if (!g.sea[k]) continue;
+    const c = { x: (k % g.cw) * 4 + 2, y: Math.floor(k / g.cw) * 4 + 2 };
+    if (seaPath(s, nearestSeaCell(s, s.buildings[0].x, s.buildings[0].y, 6), k)?.length > 20) goal = c.y * s.w + c.x;
+  }
+  assert.ok(goal >= 0, 'found a reachable far sea spot');
+  const m0 = me.minerals, e0 = me.energy;
+  const res = buildShip(s, PLAYER, goal);
+  assert.ok(res.ok, res.reason);
+  assert.equal(me.minerals, m0 - SHIP_COST.minerals);
+  assert.ok(Math.abs(me.energy - (e0 - SHIP_COST.energy)) < 1e-9);
+  const ship = res.ship;
+  assert.equal(ship.hp, SHIP_HP);
+  for (const k of ['id', 'owner', 'x', 'y', 'tx', 'ty', 'hp', 'cooldown']) assert.ok(k in ship, k);
+  // Every waypoint is open sea, and the ship stays on water as it sails.
+  for (const wp of ship.path) assert.ok(isSeaAt(s, wp.x, wp.y), 'waypoint at sea');
+  const x0 = ship.x, y0 = ship.y;
+  for (let t = 0; t < 20; t++) { advance(s, 0.25); if (s.ships[0]) assert.ok(isSeaAt(s, s.ships[0].x, s.ships[0].y), 'ship on water'); }
+  assert.ok(Math.hypot(s.ships[0].x - x0, s.ships[0].y - y0) > 5, 'it moved');
+  const back = deserialize(JSON.parse(JSON.stringify(serialize(s))));
+  assert.deepEqual(back.ships, s.ships);
+  assert.ok(Array.isArray(deserialize({ ...JSON.parse(JSON.stringify(serialize(s))), ships: undefined }).ships), 'old saves get an empty fleet');
+});
+
+test('battleships bombard enemy coast, fight ships, cut expeditions and sink at 0 hp', () => {
+  const s = navalBattle();
+  // An enemy-held coastal tile with sea next to it.
+  let coast = -1, foe = 0;
+  for (const f of s.factions) {
+    if (!f || f.id === PLAYER || !f.alive) continue;
+    const c = coastalTiles(s, f.id).find(i => nearestSeaCell(s, i % s.w, Math.floor(i / s.w), 2) >= 0);
+    if (c !== undefined) { coast = c; foe = f.id; break; }
+  }
+  assert.ok(coast >= 0, 'found enemy coast');
+  const cell = nearestSeaCell(s, coast % s.w, Math.floor(coast / s.w), 2);
+  const g = seaGrid(s);
+  const at = { x: (cell % g.cw) * 4 + 2, y: Math.floor(cell / g.cw) * 4 + 2 };
+  const ship = { id: s.nextId++, owner: PLAYER, x: at.x, y: at.y, tx: at.x, ty: at.y, hp: SHIP_HP, cooldown: 0, path: [] };
+  s.ships.push(ship);
+  const before = s.factions.map(f => (f ? f.tiles + f.troops : 0));
+  advanceShips(s, 0.01);
+  const shell = s.notices.find(n => n.kind === 'shell' && n.owner === PLAYER);
+  assert.ok(shell, 'a volley was fired');
+  const hit = s.factions[shell.target];
+  assert.ok(hit.tiles + hit.troops < before[shell.target], 'the coast lost land or troops');
+  assert.ok(ship.cooldown > 1, 'then it reloads');
+
+  // A passing enemy expedition loses troops.
+  ship.cooldown = 0;
+  s.dropships.push({ id: s.nextId++, owner: foe, troops: 1000, x: at.x + 2, y: at.y, tx: 0, ty: 0, px: 0, py: 0, targetOwner: 0, bonus: 1, eta: 30 });
+  advanceShips(s, 0.01);
+  assert.equal(s.dropships.at(-1).troops, 800, 'expedition cut by a fifth');
+
+  // Ship against ship: enemy ships are shot first; at 0 hp one sinks.
+  ship.cooldown = 0;
+  const enemyShip = { id: s.nextId++, owner: foe, x: at.x + 1, y: at.y, tx: at.x + 1, ty: at.y, hp: 25, cooldown: 99, path: [] };
+  s.ships.push(enemyShip);
+  advanceShips(s, 0.01);
+  assert.ok(!s.ships.includes(enemyShip), 'the enemy ship sank');
+  assert.ok(s.notices.some(n => n.kind === 'sunk' && n.owner === foe));
+  assert.equal(ship.hp, SHIP_HP, 'ours is untouched');
+});
+
+test('enemy commanders on Xythera and Noctyra build a navy; other worlds do not', () => {
+  assert.ok(getPlanet('xythera').aiShips && getPlanet('noctyra').aiShips);
+  assert.ok(!getPlanet('vulkara').aiShips && !getPlanet('mycelion').aiShips);
+  for (const id of ['xythera', 'noctyra']) {
+    const s = battle(id, { tutorial: false });
+    advance(s, 1);
+    const e = enemyOf(s);
+    // Give the enemy a stretch of coast and plenty to spend.
+    const coast = coastalTiles(s, PLAYER).find(i => nearestSeaCell(s, i % s.w, Math.floor(i / s.w), 6) >= 0)
+      ?? (() => { for (let i = 0; i < s.owner.length; i++) if (isLand(world(s).terrain[i]) && nearestSeaCell(s, i % s.w, Math.floor(i / s.w), 1) >= 0 && s.owner[i] === 0) return i; return -1; })();
+    if (coastalTiles(s, e.id).length === 0) setOwner(s, coast, e.id);
+    let r = 0;
+    const rand = () => (r = (r * 9301 + 49297) % 233280) / 233280;
+    for (let k = 0; k < 40 && !s.ships.some(x => x.owner === e.id); k++) { e.minerals = 5000; e.energy = 200; tryNavy(s, e.id, rand); }
+    assert.ok(s.buildings.some(b => b.type === 'starport' && s.owner[b.y * s.w + b.x] === e.id), `${id}: enemy Starport`);
+    assert.ok(s.ships.some(x => x.owner === e.id), `${id}: enemy battleship`);
+  }
+  const v = battle('vulkara', { tutorial: false });
+  advance(v, 1);
+  const e = enemyOf(v);
+  e.minerals = 5000; e.energy = 200;
+  assert.equal(tryNavy(v, e.id, () => 0.1), false);
 });

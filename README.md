@@ -35,6 +35,7 @@ npm start            # http://localhost:8080
 | Attack ratio | Slider, `[` / `]` | Slider |
 | Build | `1`–`5`, then click your land | Build bar |
 | Expedition / Research | `6` / `R` (or just click land across the sea) | Build bar |
+| Battleship | `0` (built at your nearest Starport; right-click the sea to move the fleet) | Build bar |
 | Abilities | `7` `8` `9` | Build bar |
 | Leaderboard / Objectives | `L` / `O` | Top bar |
 | Center on capital / Pause | `C` / `Space` | Top bar |

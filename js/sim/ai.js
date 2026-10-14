@@ -3,10 +3,11 @@
 // how much to keep home, whether they retaliate, how many fronts they run.
 import { isLand, T } from '../world/themes.js';
 import {
-  maxTroops, borderMap, launchAttack, attackFronts, siteOwner, buildCost, world, PLAYER, mapScale, areaScale, graceLeft,
+  maxTroops, borderMap, launchAttack, attackFronts, siteOwner, buildCost, world, PLAYER, mapScale, areaScale, graceLeft, config,
 } from './core.js';
 import { npcBuild, npcUpgrade, launchExpedition, coastalTiles } from './engine.js';
 import { isAllied } from './diplomacy.js';
+import { aiShips, nearestSeaCell } from './ships.js';
 
 const VALUE = { capital: 3, citadel: 3, hub: 2.5, relay: 2.2, command: 2.2, factory: 1.6, crystal: 1.4, vent: 1.2, turret: 0.6, ruin: 0.6 };
 
@@ -27,6 +28,8 @@ export function think(state, fid, rand) {
 
   // Spend minerals on structures.
   if (rand() < p.build) tryBuild(state, fid, rand);
+  // On sea worlds the enemy commander raises a navy.
+  if (rand() < 0.25) tryNavy(state, fid, rand);
 
   if (f.troops < max * p.attackAt) return;
   // Smart commanders send expeditions against weak, isolated civilizations.
@@ -113,6 +116,20 @@ function randomOwnTile(state, fid, rand, accept) {
     if (state.owner[i] === fid && accept(i)) return i;
   }
   return -1;
+}
+
+// Enemy commanders on worlds with navies (Xythera, Noctyra) build a Starport
+// on their coast, then battleships that sail for the player's capital.
+export function tryNavy(state, fid, rand) {
+  const f = state.factions[fid];
+  if (!config(state).aiShips || f.kind !== 'enemy') return false;
+  const hasPort = state.buildings.some(b => b.type === 'starport' && state.owner[b.y * state.w + b.x] === fid);
+  if (hasPort) return aiShips(state, f, rand);
+  if (f.minerals < buildCost(state, fid, 'starport')) return false;
+  const coast = coastalTiles(state, fid).filter(i => nearestSeaCell(state, i % state.w, Math.floor(i / state.w), 6) >= 0);
+  if (!coast.length) return false;
+  const i = coast[Math.floor(rand() * coast.length)];
+  return npcBuild(state, fid, 'starport', i);
 }
 
 function tryBuild(state, fid, rand) {

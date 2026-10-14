@@ -8,8 +8,9 @@ import {
   createBattle, step, spawnPlayer, canSpawnAt, playerAttack, playerDropship, playerBuild,
   playerResearch, useAbility, abilityReady, ABILITY_ENERGY, DROPSHIP_COST, canDropship, currentObjective, playerRetreat, expeditionPlan,
   condProgress, battleResult, serialize, deserialize, analyzeDefeat, TICK, PLAYER,
-  tutorialStep, tutorialSteps, tutorialUnlocked, skipTutorial,
+  tutorialStep, tutorialSteps, tutorialUnlocked, skipTutorial, playerBuildShip, playerMoveFleet,
 } from './sim/engine.js';
+import { SHIP_COST } from './sim/ships.js';
 import {
   config, world, maxTroops, regen, income, buildCost, siteOwner, isShielded, isPowered, countSites,
   eventPhase, tileDefense, attackFronts, sitesOf, borders, graceLeft, upgradeCost as levelUpCost, mapScale,
@@ -40,7 +41,7 @@ let paused = false;
 let speed = 1;
 let adPlaying = false;
 let battlesEnded = 0;
-let armed = null; // { kind: 'build'|'ability'|'dropship', id }
+let armed = null; // { kind: 'build'|'ability'|'dropship'|'ship', id }
 let hoverTile = -1;
 let inspectTile = -1;
 let seenTips = new Set();
@@ -88,7 +89,9 @@ const REASONS = {
   crowded: 'Too close to another structure.',
   maxLevel: 'That building is already at its highest level (3).',
   coast: 'Starports must be built within 3 tiles of the coast.',
-  noStarport: 'Build a Starport first.',
+  noStarport: 'Build a Starport first: battleships are launched from one.',
+  noSea: 'That Starport has no open sea nearby for a battleship.',
+  noShips: 'You have no battleships.',
   target: 'Target enemy land.',
   notStarted: 'Choose your landing site first.',
   invalid: 'You cannot do that there.',
@@ -559,6 +562,7 @@ function buildToolbar() {
     ...Object.entries(BUILDINGS).map(([id, b]) => ({ kind: 'build', id, key: b.key, label: b.name, icon: spriteIcon(id) })),
     'sep',
     { kind: 'dropship', id: 'dropship', key: '6', label: 'Expedition', icon: iconURL('fleet', 3) },
+    { kind: 'ship', id: 'ship', key: '0', label: 'Battleship', icon: iconURL('ship', 3) },
     { kind: 'research', id: 'research', key: 'R', label: 'Research', icon: iconURL('research', 3) },
     'sep',
     ...Object.entries(ABILITIES).map(([id, a]) => ({ kind: 'ability', id, key: a.key, label: a.name.split(' ')[1], icon: iconURL(id, 3), locked: !f.abilities.includes(id) })),
@@ -594,11 +598,14 @@ function activateTool(kind, id) {
   armed = { kind, id };
   const hints = {
     build: `Click your land to build a ${BUILDINGS[id]?.name}. Right-click or Esc to cancel.`,
+    ship: 'Click the sea (or any spot) to build a battleship at your nearest Starport and send it there.',
     dropship: canDropship(battle) ? 'Click land anywhere to send an expedition from your nearest coast.' : 'You need land on a coast to launch expeditions.',
     ability: { strike: 'Click enemy land to bombard it.', rally: 'Click anywhere to muster troops.', emp: 'Click near enemy hubs, relays, defenses or buildings.' }[id],
   };
   toast(hints[kind], 'tip', 2600);
 }
+
+const hasPort = () => battle.buildings.some(b => b.type === 'starport' && battle.owner[b.y * battle.w + b.x] === PLAYER);
 
 function updateToolbar() {
   const f = battle.factions[PLAYER];
@@ -616,6 +623,7 @@ function updateToolbar() {
     b.classList.toggle('armed', !!armed && armed.kind === kind && armed.id === id);
     if (kind === 'build') { const c = buildCost(battle, PLAYER, id); cost.textContent = fmt(c); b.disabled = f.minerals < c; }
     else if (kind === 'dropship') { cost.textContent = DROPSHIP_COST; b.disabled = !canDropship(battle) || f.minerals < DROPSHIP_COST; }
+    else if (kind === 'ship') { cost.textContent = `${SHIP_COST.minerals}+${SHIP_COST.energy}E`; b.disabled = !hasPort() || f.minerals < SHIP_COST.minerals || f.energy < SHIP_COST.energy; }
     else if (kind === 'research') { cost.textContent = fmt(f.exotic); }
     else if (kind === 'ability') {
       cost.textContent = `${ABILITY_ENERGY[id]}E`;
@@ -696,7 +704,7 @@ const TIP_FNS = {
     const { kind, id } = el.dataset;
     const f = battle.factions[PLAYER];
     if (!toolUnlocked(kind, id) && !(kind === 'ability' && !f.abilities.includes(id))) {
-      const name = kind === 'build' ? BUILDINGS[id].name : kind === 'ability' ? ABILITIES[id].name : kind === 'dropship' ? 'Dropship' : 'Research';
+      const name = kind === 'build' ? BUILDINGS[id].name : kind === 'ability' ? ABILITIES[id].name : kind === 'dropship' ? 'Expedition' : kind === 'ship' ? 'Battleship' : 'Research';
       return `<b>${esc(name)}</b><br><span class="no">Locked: your training unlocks it in a later step.</span>`;
     }
     if (kind === 'build') {
@@ -704,6 +712,10 @@ const TIP_FNS = {
       return `<b>${esc(b.name)}</b> <kbd>${b.key}</kbd><br>${esc(b.desc)}<br><span class="${f.minerals >= c ? 'ok' : 'no'}">Cost ${fmt(c)} minerals</span> (you have ${fmt(f.minerals)}). Each one you own costs more.<br><span class="dim">Use it on one of your own ${esc(b.name)}s to upgrade it (up to level 3).</span>`;
     }
     if (kind === 'dropship') return `<b>Expedition</b> <kbd>6</kbd><br>Send your attack ratio of troops to land anywhere, even across the sea. Launches from your fastest coast; each Starport level makes it 40% faster.${canDropship(battle) ? '' : ' <span class="no">You hold no coast.</span>'}<br>Cost ${DROPSHIP_COST} minerals. Clicking land on another continent sends one automatically.`;
+    if (kind === 'ship') {
+      const n = battle.ships.filter(x => x.owner === PLAYER).length;
+      return `<b>Battleship</b> <kbd>0</kbd><br>Built at your Starport nearest the spot you click, then sails there by sea. Every few seconds it shells enemy coast in range, fights enemy ships and cuts down passing enemy expeditions.${hasPort() ? '' : ' <span class="no">Build a Starport first.</span>'}<br>Cost ${SHIP_COST.minerals} minerals + ${SHIP_COST.energy} energy. You have ${n}. Right-click the sea to move your fleet.`;
+    }
     if (kind === 'research') return `<b>Research</b> <kbd>R</kbd><br>Spend exotic matter on upgrades that last this battle. You have ${fmt(f.exotic)} exotic.`;
     const a = ABILITIES[id], u = UPGRADES.find(x => x.id === id);
     const owned = f.abilities.includes(id);
@@ -870,6 +882,7 @@ function radialItems(i) {
   const act = (kind, id) => () => { armed = kind ? { kind, id } : null; clickTile(i); armed = null; };
   if (land && o !== PLAYER && !allied) items.push({ icon: iconURL('attack', 3), label: 'Attack', act: act(null) });
   if (land && o !== PLAYER && !allied && canDropship(battle) && toolUnlocked('dropship', 'dropship')) items.push({ icon: iconURL('fleet', 3), label: 'Expedition', act: act('dropship', 'dropship') });
+  if (!land && battle.ships.some(s => s.owner === PLAYER)) items.push({ icon: iconURL('ship', 3), label: 'Move fleet', act: () => { const r = playerMoveFleet(battle, i); if (!r.ok) toast(REASONS[r.reason] || 'No sea route there.', 'bad', 2500); } });
   if (o === PLAYER) {
     for (const [id, b] of Object.entries(BUILDINGS)) {
       if (!toolUnlocked('build', id)) continue;
@@ -1331,6 +1344,19 @@ function processNotices() {
       case 'landed':
         if (n.owner === PLAYER) { toast('Expedition landed. Beachhead established.', 'good'); renderer.crashLanding(n.x, n.y, { small: true, color: battle.factions[PLAYER].color }); }
         break;
+      case 'shipBuilt':
+        if (n.owner === PLAYER) { sfx.build(); renderer.ring(n.x, n.y, '#3fd0ff', 5); }
+        else toast(`<b>${esc(battle.factions[n.owner].name)}</b> launched a battleship.`, 'bad', 3000);
+        break;
+      case 'shell':
+        renderer.shell(n.x0, n.y0, n.x, n.y);
+        if (n.owner === PLAYER || n.target === PLAYER) sfx.thud();
+        break;
+      case 'sunk':
+        renderer.burst(n.x, n.y, '#ff9a3c', 20); renderer.ring(n.x, n.y, '#ffd25e', 6);
+        if (n.owner === PLAYER) { toast('One of your battleships was sunk.', 'bad', 2500); sfx.lost(); }
+        else toast(`An enemy battleship went down.`, 'good', 2200);
+        break;
       case 'dropFailed': if (n.owner === PLAYER) toast('The expedition was beaten back on landing. Send more troops.', 'bad'); break;
       case 'strike': renderer.burst(n.x, n.y, '#ff7a1f', 40); renderer.ring(n.x, n.y, '#ffd25e', 8); sfx.ability(); break;
       case 'emp': renderer.ring(n.x, n.y, '#7fd8ff', 10); sfx.ability(); break;
@@ -1451,6 +1477,7 @@ function clickTile(i) {
   let res;
   if (armed?.kind === 'build') res = playerBuild(battle, armed.id, i);
   else if (armed?.kind === 'ability') res = useAbility(battle, armed.id, i);
+  else if (armed?.kind === 'ship') { res = playerBuildShip(battle, i); if (res.ok) toast('Battleship launched. Right-click the sea to move your fleet.', 'good', 2500); }
   else if (armed?.kind === 'dropship') { res = playerDropship(battle, i, ratio); if (res.ok) { toast(`Expedition of ${fmt(res.sent)} troops launched: arrives in ${Math.ceil(res.eta)} s.`, 'good', 2500); sfx.attack(); } }
   else if (battle.owner[i] === PLAYER) { inspectTile = inspectTile === i ? -1 : i; sfx.click(); return; }
   else {
@@ -1713,6 +1740,7 @@ async function init() {
     if (b) activateTool('build', b[0]);
     else if (a) activateTool('ability', a[0]);
     else if (k === '6') activateTool('dropship', 'dropship');
+    else if (k === '0') activateTool('ship', 'ship');
     else if (k === 'r') activateTool('research', 'research');
     else if (k === ' ') togglePause();
     else if (k === 'escape') { armed = null; inspectTile = -1; closeRadial(); }

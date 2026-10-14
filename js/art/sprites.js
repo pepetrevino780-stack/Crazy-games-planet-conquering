@@ -249,6 +249,14 @@ export const SPRITES = {
     '.oxyxyxyxo.',
     'oooooooooo.',
   ] },
+  ship: { accent: ['#ffffff', '#000000'], rows: [
+    '....o....',
+    '...ooo...',
+    '..oahaoo.',
+    'ooaaaaaoo',
+    '.oaaaaao.',
+    '..ooooo..',
+  ] },
   fleet: { accent: ['#ffffff', '#000000'], rows: [
     '..o..',
     '.oho.',
@@ -273,6 +281,7 @@ export const ICONS = {
   build: { c: ['#e3b45e', '#ffe7b0'], rows: ['.ooooo...', 'oahaaao..', 'oaaaaao..', '.oooaao..', '....oao..', '....oao..', '....oaao.', '.....oaao', '......oo.'] },
   research: { c: ['#7ff0c8', '#e0fff4'], rows: ['..ooooo..', '..oahao..', '...oao...', '...oao...', '..oaaao..', '.oaaaaao.', 'oaahaaaao', 'oaaaaaaao', '.ooooooo.'] },
   fleet: { c: ['#3fd0ff', '#bff2ff'], rows: ['o........', 'oao......', 'oahao..o.', 'oaaaaooao', 'oahao.oaa', 'oao...oao', 'o......o.', '.........', '.........'] },
+  ship: { c: ['#3fd0ff', '#bff2ff'], rows: ['....o....', '....o....', '...ooo...', '..oahao.o', '.oooaoooo', 'oaaaaaaao', 'oahaaaaao', '.oaaaaao.', '..ooooo..'] },
   defense: { c: ['#9aa8c0', '#e9f1ff'], rows: ['ooooooooo', 'oaaahaaao', 'oaaahaaao', 'oaaahaaao', 'oaaahaaao', '.oaahaao.', '.oaaaaao.', '..oaaao..', '...ooo...'] },
   attack: { c: ['#ff4b3e', '#ffc4be'], rows: ['......ooo', '.....oaho', '....oaao.', 'o..oaao..', 'oo.oao...', '.ooao....', '.oaoo....', 'oao..o...', 'oo.......'] },
   event: { c: ['#ffd25e', '#fff3c4'], rows: ['....o....', '...oao...', '...oao...', '..oahao..', '..oahao..', '.oaaaaao.', '.oaoooao.', 'oaaaaaaao', 'ooooooooo'] },
