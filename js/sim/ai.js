@@ -3,7 +3,7 @@
 // how much to keep home, whether they retaliate, how many fronts they run.
 import { isLand, T } from '../world/themes.js';
 import {
-  maxTroops, borderMap, launchAttack, attackFronts, siteOwner, buildCost, world, PLAYER, mapScale, areaScale, graceLeft, config,
+  maxTroops, borderMap, launchAttack, attackFronts, siteOwner, buildCost, world, PLAYER, mapScale, areaScale, graceLeft, config, capitalOf,
 } from './core.js';
 import { npcBuild, npcUpgrade, launchExpedition, coastalTiles } from './engine.js';
 import { isAllied } from './diplomacy.js';
@@ -88,7 +88,7 @@ export function think(state, fid, rand) {
 export function tryExpedition(state, f, rand) {
   if (f.minerals < 100) return false;
   const w = world(state);
-  const capOf = id => state.sites.find(s => s.faction === id && (s.type === 'capital' || s.type === 'citadel') && siteOwner(state, s) === id);
+  const capOf = id => capitalOf(state, id);
   const mine = capOf(f.id);
   if (!mine) return false;
   const myComp = w.comp[mine.y * state.w + mine.x];

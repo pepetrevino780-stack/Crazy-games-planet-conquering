@@ -118,12 +118,40 @@ export function buildCost(state, owner, type) {
   return Math.round(BUILDINGS[type].cost * Math.pow(1.4, buildingsOf(state, owner, type)) * (config(state).costScale || 1));
 }
 
+// ---------- Capitals ----------
+// Losing your capital no longer ends you (small nations still fall). The
+// empire is thrown into disarray instead: an immediate shock, then weaker
+// growth, income, troop cap and fewer attack fronts until it retakes its
+// capital. After a short disarray it sets up a provisional capital (its seat)
+// deep inside its remaining land, which anchors its supply lines.
+export const EXILE = {
+  shock: 0.4,       // share of troops lost when the capital falls
+  plunder: 0.5,     // share of minerals the captor carries off
+  attackLoss: 0.5,  // running attacks lose this share of their troops
+  disarray: 20,     // seconds without any capital before a seat is set up
+  growth: 0.6, income: 0.6, cap: 0.8, fronts: 1,
+};
+
+export const isCapitalSite = s => s.type === 'capital' || s.type === 'citadel';
+// A civilization's original capital site (wherever it stands now).
+export const homeCapital = (state, fid) => state.sites.find(s => s.faction === fid && isCapitalSite(s)) || null;
+
+// Where a civilization governs from right now: its capital if it holds it,
+// else its provisional seat, else nowhere (disarray).
+export function capitalOf(state, fid) {
+  const home = homeCapital(state, fid);
+  if (home && siteOwner(state, home) === fid) return home;
+  const f = state.factions[fid];
+  if (f?.seat && state.owner[f.seat.y * state.w + f.seat.x] === fid) return f.seat;
+  return null;
+}
+
 // ---------- Faction numbers ----------
 
 export function maxTroops(state, f) {
   const hab = Math.min(5, buildingLevels(state, f.id, 'habitat'));
   const logistics = f.research.includes('logistics') ? 0.1 : 0;
-  return Math.round((400 * areaScale(state) + f.tiles * 5) * (1 + 0.12 * hab + logistics) * (f.maxMult || 1));
+  return Math.round((400 * areaScale(state) + f.tiles * 5) * (1 + 0.12 * hab + logistics) * (f.maxMult || 1) * (f.exile ? EXILE.cap : 1));
 }
 
 export function growthMult(state, f) {
@@ -135,6 +163,7 @@ export function growthMult(state, f) {
   if (f.research.includes('logistics')) g *= 1.1;
   // Cut-off land grows at half rate.
   g *= 0.5 + 0.5 * connectedShare(state, f);
+  if (f.exile) g *= EXILE.growth;
   return g;
 }
 
@@ -158,11 +187,13 @@ export function income(state, f) {
   minerals += 4 * buildingLevels(state, f.id, 'extractor');
   exotic += 0.5 * buildingLevels(state, f.id, 'spire');
   const scale = config(state).incomeScale || 1;
-  return { minerals: minerals * (f.income || 1) * scale, energy: energy * scale, exotic: exotic * scale };
+  const ex = f.exile ? EXILE.income : 1;
+  return { minerals: minerals * (f.income || 1) * scale * ex, energy: energy * scale * ex, exotic: exotic * scale };
 }
 
 export function attackFronts(state, f) {
-  return (f.profile ? f.profile.fronts : 3) + countSites(state, 'command', f.id);
+  const n = (f.profile ? f.profile.fronts : 3) + countSites(state, 'command', f.id);
+  return f.exile ? Math.max(1, n - EXILE.fronts) : n;
 }
 
 export function atkMult(state, f) {
@@ -261,6 +292,13 @@ export function connectedLand(state) {
     if ((s.type !== 'capital' && s.type !== 'citadel') || !s.faction) continue;
     const i = s.y * W + s.x;
     if (owner[i] !== s.faction || mask[i]) continue;
+    mask[i] = 1; queue[tail++] = i;
+  }
+  // Provisional capitals anchor supply lines too.
+  for (const f of state.factions) {
+    if (!f || !f.seat) continue;
+    const i = f.seat.y * W + f.seat.x;
+    if (owner[i] !== f.id || mask[i]) continue;
     mask[i] = 1; queue[tail++] = i;
   }
   const counts = new Map();

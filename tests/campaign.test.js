@@ -17,7 +17,7 @@ import { tryExpedition, tryNavy } from '../js/sim/ai.js';
 import { seaGrid, seaPath, nearestSeaCell, buildShip, advanceShips, SHIP_COST, SHIP_HP } from '../js/sim/ships.js';
 import { coastalTiles, buildPreview, condProgress } from '../js/sim/engine.js';
 import { travelTime, expeditionPlan } from '../js/sim/engine.js';
-import { connectedShare, growthMult, isConnected } from '../js/sim/core.js';
+import { connectedShare, growthMult, isConnected, capitalOf } from '../js/sim/core.js';
 import { THEMES, THEME_IDS, isLand, T } from '../js/world/themes.js';
 import {
   newCampaign, normalizeCampaign, loadCampaign, saveCampaign, playerLoadout, computeRewards,
@@ -151,23 +151,95 @@ test('mountains, rivers and fortifications make tiles dearer to take', () => {
   assert.ok(tileDefense(s, near) > tileDefense(s, far), 'capital surroundings are fortified');
 });
 
-test('capturing a capital collapses that civilization', () => {
+test('capturing an empire capital wins the world; the empire survives in disarray', () => {
   const s = battle('vulkara');
   const e = enemyOf(s);
   const cap = site(s, 'enemy-capital');
   give(s, cap.x, cap.y, PLAYER);
   advance(s, 1);
-  assert.equal(e.alive, false);
-  assert.equal(e.tiles, 0);
   assert.equal(s.status, 'won');
+  assert.equal(e.alive, true, 'not wiped out');
+  assert.ok(e.exile, 'but in disarray');
 });
 
-test('losing your capital is a defeat with an explanation', () => {
+test('capturing a small nation capital still collapses that nation', () => {
+  const s = battle('vulkara', { tutorial: false });
+  freezeAI(s);
+  advance(s, 0.5);
+  const n = s.factions.find(f => f && f.kind === 'nation');
+  const cap = s.sites.find(x => x.faction === n.id);
+  give(s, cap.x, cap.y, PLAYER);
+  advance(s, 0.2);
+  assert.equal(n.alive, false);
+  assert.equal(n.tiles, 0);
+});
+
+test('losing your capital is not a defeat: shock, disarray, a provisional capital, and recovery', () => {
+  const s = battle('vulkara', { tutorial: false });
+  freezeAI(s);
+  advance(s, 1);
+  const me = s.factions[PLAYER], e = enemyOf(s);
+  // Grow a big empire first so there is land left to govern from.
+  const w = world(s);
+  const cap = site(s, 'player-capital');
+  for (let dy = -40; dy <= 40; dy++) for (let dx = -60; dx <= 60; dx++) {
+    const x = cap.x + dx, y = cap.y + dy, i = y * s.w + x;
+    if (x >= 0 && y >= 0 && x < s.w && y < s.h && isLand(w.terrain[i]) && s.owner[i] === 0) setOwner(s, i, PLAYER);
+  }
+  advance(s, 1.1);
+  me.troops = 10000; me.minerals = 1000;
+  const g0 = growthMult(s, me), m0 = maxTroops(s, me), inc0 = income(s, me).minerals, f0 = attackFronts(s, me), eMin = e.minerals;
+  give(s, cap.x, cap.y, e.id);
+  advance(s, 0.3);
+  assert.equal(s.status, 'playing', 'still in the game');
+  assert.ok(me.alive && me.exile);
+  assert.ok(Math.abs(me.troops - 6000) < 300, `about 40% of troops lost (${Math.round(me.troops)})`);
+  assert.ok(Math.abs(me.minerals - 500) < 30, 'half the minerals plundered');
+  assert.ok(e.minerals > eMin + 450, 'the captor carries them off');
+  assert.ok(s.notices.some(n => n.kind === 'capitalFell' && n.faction === PLAYER));
+  assert.equal(s.stats.lostTo, e.id);
+  // Disarray: no capital at all, so everything is cut off.
+  advance(s, 1.1);
+  assert.equal(capitalOf(s, PLAYER), null);
+  assert.ok(growthMult(s, me) < g0 * 0.5, 'growth crushed in disarray');
+  assert.ok(maxTroops(s, me) < m0, 'troop cap down');
+  assert.ok(income(s, me).minerals < inc0, 'income down');
+  assert.equal(attackFronts(s, me), Math.max(1, f0 - 1), 'one front fewer');
+  // A provisional capital deep inside the remaining land.
+  advance(s, 20);
+  assert.ok(me.seat, 'provisional capital set up');
+  const seat = capitalOf(s, PLAYER);
+  assert.equal(s.owner[seat.y * s.w + seat.x], PLAYER);
+  assert.ok(s.notices.some(n => n.kind === 'seatFounded'));
+  advance(s, 1.1);
+  assert.ok(connectedShare(s, me) > 0.5, 'supply lines hold again');
+  // Losing the seat means disarray again.
+  give(s, seat.x, seat.y, e.id);
+  advance(s, 0.3);
+  assert.equal(me.seat, null);
+  assert.ok(s.notices.some(n => n.kind === 'seatLost'));
+  give(s, seat.x, seat.y, PLAYER);
+  // Survives a save while in exile.
+  const back = deserialize(JSON.parse(JSON.stringify(serialize(s))));
+  assert.deepEqual(back.factions[PLAYER].exile, me.exile);
+  // Retaking the capital ends it all.
+  give(s, cap.x, cap.y, PLAYER);
+  advance(s, 0.3);
+  assert.equal(me.exile, null);
+  assert.equal(me.seat, null);
+  assert.ok(s.notices.some(n => n.kind === 'capitalRestored'));
+  assert.equal(attackFronts(s, me), f0);
+});
+
+test('you are defeated only when you lose all your land, with an explanation', () => {
   const s = battle('vulkara');
   const e = enemyOf(s);
   const cap = site(s, 'player-capital');
   give(s, cap.x, cap.y, e.id);
   advance(s, 1);
+  assert.equal(s.status, 'playing');
+  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === PLAYER) setOwner(s, i, e.id);
+  advance(s, 0.2);
   assert.equal(s.status, 'lost');
   const tips = analyzeDefeat(s);
   assert.match(tips[0], /capital/);
@@ -1130,7 +1202,7 @@ test('rewards do not depend on the order worlds are played in', () => {
 
 // ---------- Balance ----------
 
-test('Mycelion: the Brood Heart counts as destroyed once the Swarm collapses, whoever did it', () => {
+test('Mycelion: the Brood Heart counts as destroyed once the Swarm loses it, whoever took it', () => {
   const cond = getPlanet('mycelion').victory.conds[0];
   assert.ok(cond.orDestroyed);
   const s = battle('mycelion', { tutorial: false });
@@ -1141,8 +1213,8 @@ test('Mycelion: the Brood Heart counts as destroyed once the Swarm collapses, wh
   const heart = site(s, 'enemy-capital');
   const nation = s.factions.find(f => f && f.kind === 'nation');
   give(s, heart.x, heart.y, nation.id);
-  advance(s, 0.2);
-  assert.equal(enemyOf(s).alive, false);
+  advance(s, 0.3);
+  assert.ok(enemyOf(s).exile, 'the Swarm lost its heart');
   assert.equal(condProgress(s, cond, 0).done, true);
   // Other worlds still need the capital in the player's hands.
   assert.ok(!getPlanet('vulkara').victory.conds.some(c => c.orDestroyed));

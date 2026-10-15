@@ -1,7 +1,7 @@
 // Battleships: built at a Starport, they sail the seas on a coarse grid,
 // bombard enemy coasts, fight enemy ships and cut down passing expeditions.
 import { isLand } from '../world/themes.js';
-import { world, rt, TileHeap, mapScale, notice, setOwner, tileLocked, siteOwner, PLAYER, alive } from './core.js';
+import { world, rt, TileHeap, mapScale, notice, setOwner, tileLocked, PLAYER, alive, capitalOf } from './core.js';
 import { isAllied } from './diplomacy.js';
 
 export const SHIP_COST = { minerals: 400, energy: 60 };
@@ -242,7 +242,7 @@ export function aiShips(state, f, rand) {
   if ((state.ships || []).filter(s => s.owner === f.id).length >= 2) return false;
   if (!ownedPorts(state, f.id).length || f.minerals < SHIP_COST.minerals + 100 || f.energy < SHIP_COST.energy) return false;
   if (rand() > 0.5) return false;
-  const me = state.sites.find(s => s.id === 'player-capital');
-  if (!me || siteOwner(state, me) !== PLAYER) return false;
+  const me = capitalOf(state, PLAYER);
+  if (!me) return false;
   return buildShip(state, f.id, me.y * state.w + me.x).ok;
 }

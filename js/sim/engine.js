@@ -8,6 +8,7 @@ import {
   TICK, PLAYER, world, config, setOwner, launchAttack, notice, siteOwner, isShielded, isPowered,
   maxTroops, regen, income, tileCost, tileLocked, neighbors4, TileHeap, eventPhase, sitesOf, countSites, buildCost,
   alive, borders, upgradeCost, mapScale, areaScale, attackFronts, rt, isConnected, connectedLand,
+  EXILE, capitalOf, isCapitalSite,
 } from './core.js';
 import { isAllied, relation, onPlayerAttack, driftTrust } from './diplomacy.js';
 import { planRoute } from './path.js';
@@ -642,7 +643,7 @@ function endAttack(state, a, i, loss = 0) {
 function attackOrigin(state, a) {
   const W = state.w;
   if (a.focus !== null && a.focus !== undefined) return { x: a.focus % W, y: Math.floor(a.focus / W) };
-  const cap = state.sites.find(s => s.faction === a.attacker && (s.type === 'capital' || s.type === 'citadel'));
+  const cap = capitalOf(state, a.attacker);
   if (cap) return { x: cap.x, y: cap.y };
   const f = state.factions[a.attacker];
   return { x: f.sx / Math.max(1, f.tiles), y: f.sy / Math.max(1, f.tiles) };
@@ -852,20 +853,94 @@ function collapse(state, fid, by) {
   }
   state.dropships = state.dropships.filter(d => d.owner !== fid);
   state.ships = (state.ships || []).filter(s => s.owner !== fid);
-  if (fid === PLAYER) state.stats.lostTo = by;
+  if (fid === PLAYER) state.stats.lostTo = by || state.stats.lostTo;
   else if (by === PLAYER) state.stats.defeated = (state.stats.defeated || 0) + 1;
   notice(state, 'collapse', { faction: fid, by });
 }
 
+// ---------- Capitals ----------
+// Small nations collapse when their capital falls. Empires (the player and
+// the main enemy) survive it, badly hurt: see EXILE in core.js. They fall
+// only when they hold no land at all.
+
+function capitalFalls(state, f, by, site) {
+  const shock = f.troops * EXILE.shock;
+  f.troops -= shock;
+  const loot = f.minerals * EXILE.plunder;
+  f.minerals -= loot;
+  if (by && state.factions[by]) state.factions[by].minerals += loot;
+  // The armies in the field lose heart.
+  for (const a of state.attacks) if (a.attacker === f.id) a.troops *= 1 - EXILE.attackLoss;
+  f.exile = { since: state.time, seatAt: state.time + EXILE.disarray, by };
+  f.seat = null;
+  f.capitalFalls = (f.capitalFalls || 0) + 1;
+  if (f.id === PLAYER) state.stats.lostTo = by;
+  else if (by === PLAYER) state.stats.capitalsTaken = (state.stats.capitalsTaken || 0) + 1;
+  rt(state).ownerVersion++;
+  notice(state, 'capitalFell', { faction: f.id, by, troops: Math.round(shock), loot: Math.round(loot), x: site.x, y: site.y, name: site.name });
+}
+
+function capitalRestored(state, f, site) {
+  f.exile = null;
+  f.seat = null;
+  rt(state).ownerVersion++;
+  notice(state, 'capitalRestored', { faction: f.id, x: site.x, y: site.y, name: site.name });
+}
+
+// The best place for a provisional capital: the own tile deepest inside the
+// civilization's land (farthest from any border), found by a breadth-first
+// sweep inward from the border. Ties go to the lowest tile index.
+export function pickSeat(state, fid) {
+  const { owner, w: W } = state, N = owner.length;
+  const depth = new Int32Array(N).fill(-1);
+  const queue = new Int32Array(N);
+  let head = 0, tail = 0;
+  for (let i = 0; i < N; i++) {
+    if (owner[i] !== fid) continue;
+    const x = i % W;
+    if (x === 0 || x === W - 1 || i < W || i >= N - W || owner[i - 1] !== fid || owner[i + 1] !== fid || owner[i - W] !== fid || owner[i + W] !== fid) {
+      depth[i] = 0; queue[tail++] = i;
+    }
+  }
+  let best = -1;
+  while (head < tail) {
+    const i = queue[head++];
+    if (best < 0 || depth[i] > depth[best]) best = i;
+    const x = i % W;
+    for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, i - W, i + W]) {
+      if (j < 0 || j >= N || owner[j] !== fid || depth[j] >= 0) continue;
+      depth[j] = depth[i] + 1; queue[tail++] = j;
+    }
+  }
+  return best < 0 ? null : { x: best % W, y: Math.floor(best / W), name: 'Provisional capital' };
+}
+
 function checkCapitals(state) {
   for (const s of state.sites) {
-    if (!s.faction || (s.type !== 'capital' && s.type !== 'citadel')) continue;
+    if (!s.faction || !isCapitalSite(s)) continue;
     const f = state.factions[s.faction];
     if (!alive(f)) continue;
     const o = siteOwner(state, s);
-    if (o !== s.faction) collapse(state, s.faction, o);
+    if (o === s.faction) { if (f.exile) capitalRestored(state, f, s); continue; }
+    if (f.kind === 'nation') collapse(state, s.faction, o);
+    else if (!f.exile) capitalFalls(state, f, o, s);
   }
   for (const f of state.factions) if (f && alive(f) && f.tiles === 0 && state.status === 'playing') collapse(state, f.id, 0);
+  // Empires in exile: lose the seat and it is disarray again; after the
+  // disarray a new seat is set up.
+  for (const f of state.factions) {
+    if (!f || !alive(f) || !f.exile) continue;
+    if (f.seat && state.owner[f.seat.y * state.w + f.seat.x] !== f.id) {
+      notice(state, 'seatLost', { faction: f.id, x: f.seat.x, y: f.seat.y });
+      f.seat = null;
+      f.exile.seatAt = state.time + EXILE.disarray;
+      rt(state).ownerVersion++;
+    }
+    if (!f.seat && state.time >= f.exile.seatAt) {
+      f.seat = pickSeat(state, f.id);
+      if (f.seat) { rt(state).ownerVersion++; notice(state, 'seatFounded', { faction: f.id, x: f.seat.x, y: f.seat.y }); }
+    }
+  }
 }
 
 function checkObjective(state, obj) {
@@ -889,9 +964,9 @@ export function condProgress(state, c, i, dt = 0) {
   const cap = state.sites.find(s => s.id === c.site);
   switch (c.type) {
     case 'capture': {
-      // orDestroyed: the goal is to destroy that site's civilization, so it
-      // also counts once that civilization has collapsed, whoever did it.
-      const gone = c.orDestroyed && cap && cap.faction && !alive(state.factions[cap.faction]);
+      // orDestroyed: the goal is to destroy the site, so it also counts once
+      // its civilization has lost it, whoever took it.
+      const gone = c.orDestroyed && cap && cap.faction && siteOwner(state, cap) !== cap.faction;
       return { done: !!cap && (siteOwner(state, cap) === PLAYER || !!gone) };
     }
     case 'tutorialDone': return { done: state.tutorial >= tutorialSteps(state).length && tutorialSteps(state).length > 0 };
@@ -1165,7 +1240,7 @@ export function analyzeDefeat(state) {
   const cfg = config(state);
   const tips = [];
   const by = s.lostTo ? state.factions[s.lostTo] : null;
-  if (by) tips.push(`${by.name} captured your capital. Keep a strong border around your landing zone and don't send your whole army away when an enemy is next to it.`);
+  if (by) tips.push(`${by.name} captured your capital and your empire never recovered. Losing it costs 40% of your troops and slows everything until you retake it: keep a strong border around your landing zone, and if it falls, win it back fast.`);
   if (s.failedAttacks >= 3) tips.push(`${s.failedAttacks} of your attacks stalled almost at once. Attack where the enemy is thin, use a higher ratio, or wait until your army has regrown.`);
   if (s.cappedSeconds > state.time * 0.25) tips.push('Your army sat at its cap for a long time. Troops at the cap stop growing — keep attacking to stay below it.');
   const k = areaScale(state);

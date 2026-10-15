@@ -804,6 +804,18 @@ export class MapRenderer {
         ctx.strokeRect(r.p.x - r.w / 2 - pad, r.p.y - r.h - pad, r.w + pad * 2, r.h + pad * 2);
       }
     }
+    // Provisional capitals of empires that lost theirs: a smaller capital with
+    // a flashing outline, so it reads as temporary.
+    for (const f of st.factions) {
+      if (!f || !f.alive || !f.seat || st.owner[f.seat.y * st.w + f.seat.x] !== f.id) continue;
+      const r = drawStructure('normal', f.seat.x, f.seat.y, f.color, { badge: 'capital' });
+      if (!motion || Math.floor(now * 2) % 2) {
+        ctx.strokeStyle = '#ffd25e'; ctx.lineWidth = Math.max(1, d);
+        ctx.setLineDash([Math.max(2, 3 * d), Math.max(2, 3 * d)]);
+        ctx.strokeRect(r.p.x - r.w / 2 - 2, r.p.y - r.h - 2, r.w + 4, r.h + 4);
+        ctx.setLineDash([]);
+      }
+    }
     const drawSprite = (name, x, y, color) => {
       const spr = spriteCanvas(name, color);
       const p = T(x + 0.5, y + 0.5);

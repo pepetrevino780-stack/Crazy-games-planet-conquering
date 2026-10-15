@@ -14,6 +14,7 @@ import { SHIP_COST } from './sim/ships.js';
 import {
   config, world, maxTroops, regen, income, buildCost, siteOwner, isShielded, isPowered, countSites,
   eventPhase, tileDefense, attackFronts, sitesOf, borders, graceLeft, upgradeCost as levelUpCost, mapScale, bastionRadius,
+  EXILE, capitalOf, homeCapital,
 } from './sim/core.js';
 import { isAllied, attitude, requestAlliance, gift, betray, isTraitor } from './sim/diplomacy.js';
 import { planRoute } from './sim/path.js';
@@ -304,7 +305,7 @@ function openBriefing(ref) {
   const bc = $('#brief-orb');
   bc.getContext('2d').clearRect(0, 0, 64, 64);
   bc.getContext('2d').drawImage(orb, 0, 0);
-  $('#brief-victory').innerHTML = p.victory.conds.map(c => `<li>${esc(c.label)}</li>`).join('') + '<li>Defeat: lose your capital or all your land.</li>';
+  $('#brief-victory').innerHTML = p.victory.conds.map(c => `<li>${esc(c.label)}</li>`).join('') + '<li>Defeat: lose all your land. Losing your capital costs troops and slows your empire until you retake it.</li>';
   $('#brief-enemy').innerHTML = `<b style="color:${p.enemy.color}">${esc(p.enemy.name)}</b> — ${esc(PROFILE_TEXT[p.enemy.profile] || '')} Plus ${p.nations.count} independent nations: ${[...new Set((p.nations.profiles || [p.nations.profile]).map(id => PERSONAS[id].name.toLowerCase()))].join(', ')}.`;
   $('#brief-notes').innerHTML = p.briefing.map(b => `<li>${esc(b)}</li>`).join('');
   const assist = idx >= 0 ? assistLevel(campaign, p.id) : 0;
@@ -812,6 +813,12 @@ const TIP_FNS = {
     return `<b>${esc(a.name)}</b> <kbd>${a.key}</kbd><br>${esc(u.desc.replace(/^Ability: (.)/, (_, c) => c.toUpperCase()))}<br>Cooldown ${Math.round(a.cooldown * (f.cooldown || 1))}s.${owned ? '' : ' <span class="no">Unlock it in Command upgrades.</span>'}`;
   },
   stat(el) { return STAT_TIPS[el.dataset.stat](battle.factions[PLAYER]); },
+  exile() {
+    const f = battle.factions[PLAYER], home = homeCapital(battle, PLAYER);
+    const holder = home ? battle.factions[battle.owner[home.y * battle.w + home.x]] : null;
+    const pct = k => `${Math.round((1 - k) * 100)}%`;
+    return `<b>Capital lost</b><br>${holder ? `${esc(holder.name)} holds ${esc(home.name)}. ` : ''}Until you retake it: troop growth −${pct(EXILE.growth)}, income −${pct(EXILE.income)}, troop cap −${pct(EXILE.cap)}, one attack front fewer.<br>${f.seat ? 'Your provisional capital keeps your supply lines together. If it falls too, you are in disarray again.' : `Disarray: no capital at all, so all your land counts as cut off. A provisional capital is set up in ${Math.max(0, Math.ceil(f.exile.seatAt - battle.time))} s.`}<br><span class="dim">You are defeated only when you lose all your land.</span>`;
+  },
   event() {
     const ev = eventPhase(battle);
     return ev.type ? `<b>${esc(EVENT_TEXT[ev.type].name)}</b><br>${esc(EVENT_TEXT[ev.type].start)}` : '';
@@ -1074,7 +1081,7 @@ function battleEnded(n) {
     cls = n.won && !n.retreat ? 'won' : 'lost';
     if (n.returned > 0 && n.x !== null) {
       renderer.pop(n.x, n.y, `+${fmt(n.returned)} returned`, '#7fe8ff');
-      const cap = battle.sites.find(s => s.id === 'player-capital');
+      const cap = capitalOf(battle, PLAYER);
       if (cap) renderer.march(n.x, n.y, cap.x, cap.y, battle.factions[PLAYER].color);
       const row = $('#st-troops').closest('.stat');
       row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash');
@@ -1327,6 +1334,10 @@ function updateHud(force = false) {
   const grace = battle.status === 'playing' && !config(battle).tutorialWorld ? graceLeft(battle) : 0;
   $('#hud-grace').classList.toggle('hidden', !grace);
   if (grace) $('#hud-grace').textContent = `Ceasefire ${fmtTime(Math.ceil(grace))}`;
+  // Capital lost: a red chip until it is retaken.
+  const ex = battle.factions[PLAYER].exile;
+  $('#hud-exile').classList.toggle('hidden', !ex || battle.status !== 'playing');
+  if (ex) $('#hud-exile').textContent = battle.factions[PLAYER].seat ? 'Capital lost · retake it' : `Disarray · new seat in ${Math.max(0, Math.ceil(ex.seatAt - battle.time))}s`;
   const ev = eventPhase(battle);
   const chip = $('#hud-event');
   if (ev.type && battle.status === 'playing') {
@@ -1378,6 +1389,31 @@ function processNotices() {
         } else if (n.prev === PLAYER) { toast(`${esc(s.name)} lost!`, 'bad'); sfx.lost(); }
         break;
       }
+      case 'capitalFell': {
+        const f = battle.factions[n.faction], by = battle.factions[n.by];
+        renderer.ring(n.x, n.y, '#ff4b3e', 16); renderer.burst(n.x, n.y, '#ff9a3c', 24); renderer.burst(n.x, n.y, '#6a6070', 12);
+        if (n.faction === PLAYER) {
+          banner('Your capital has fallen', `${by ? by.name : 'The enemy'} took ${n.name}`, true);
+          toast(`<b>Capital lost!</b> ${fmt(n.troops)} troops lost${n.loot ? ` and ${fmt(n.loot)} minerals plundered` : ''}. Growth, income and your troop cap are down until you retake it. A provisional capital is set up in ${EXILE.disarray} s.`, 'bad', 7000);
+          sfx.lost(); renderer.shake(0.5, 5);
+        } else if (n.by === PLAYER) {
+          banner(`${n.name} captured`, `${f.name} is in disarray`, f.kind === 'enemy');
+          if (n.loot) renderer.pop(n.x, n.y - 3, `+${fmt(n.loot)} minerals`, '#c9b8ff');
+          sfx.fanfare(); renderer.ring(n.x, n.y, '#ffffff', 28); renderer.shake(0.3, 3);
+        } else toast(`${esc(f.name)} lost its capital to ${by ? esc(by.name) : 'raiders'}.`);
+        break;
+      }
+      case 'capitalRestored':
+        renderer.ring(n.x, n.y, '#7ff0c8', 14);
+        if (n.faction === PLAYER) { banner('Capital retaken', 'Your empire recovers', true); toast(`You retook ${esc(n.name)}: full growth, income and fronts are back.`, 'good', 4000); sfx.objective(); }
+        else toast(`${esc(battle.factions[n.faction].name)} retook its capital.`, 'tip', 3000);
+        break;
+      case 'seatFounded':
+        if (n.faction === PLAYER) { renderer.ring(n.x, n.y, '#ffd25e', 10); toast('Provisional capital set up deep in your land: your supply lines hold again. Retake your capital to recover fully.', 'tip', 5000); }
+        break;
+      case 'seatLost':
+        if (n.faction === PLAYER) { toast('Your provisional capital fell: disarray again until a new one is set up.', 'bad', 4000); sfx.alarm(); }
+        break;
       case 'collapse': {
         const f = battle.factions[n.faction];
         if (n.faction === PLAYER) break;
@@ -1396,7 +1432,7 @@ function processNotices() {
       case 'objective': {
         const o = cfg.objectives.find(x => x.id === n.id);
         toast(`Objective complete: ${esc(o.label)} <b>+${o.reward}</b>`, 'good'); sfx.objective();
-        const cap = battle.sites.find(s => s.id === 'player-capital');
+        const cap = capitalOf(battle, PLAYER) || homeCapital(battle, PLAYER);
         if (cap) renderer.pop(cap.x, cap.y - 3, `+${o.reward} cores`, '#ffd25e');
         break;
       }
@@ -1604,7 +1640,7 @@ function togglePause(force) {
 }
 
 function centerOnCapital() {
-  const cap = battle.sites.find(s => s.id === 'player-capital');
+  const cap = capitalOf(battle, PLAYER) || homeCapital(battle, PLAYER);
   if (cap) renderer.centerOn(cap.x, cap.y);
 }
 
@@ -1623,6 +1659,9 @@ function openHelp() {
       <li>1–5 build, 6 expedition, 0 battleship, R research, 7–9 abilities, Space pause, L leaderboard, O objectives.</li>
       <li>On touch screens, a drag never attacks: only a clean tap does.</li>
       <li>Oceans separate the continents. Click land across the sea to send an expedition from your nearest coast (Starports make them faster). Cut-off land grows troops at half rate.</li></ul>
+    <h4>Capitals</h4><ul>
+      <li>Take a small nation's capital and it collapses. Empires (you and the main enemy) survive losing theirs, but it hurts: 40% of troops and half the minerals lost at once, then slower growth, less income, a lower troop cap and one attack front fewer until the capital is retaken.</li>
+      <li>After ${EXILE.disarray} s of disarray, a provisional capital is set up deep in the remaining land. You are defeated only when you lose all your land.</li></ul>
     <h4>Terrain (attack cost · defense)</h4><ul>${['plains', 'wild', 'highland', 'mountain', 'river', 'volcano', 'ruins'].map(k => { const t = TERRAIN.find(x => x.id === k); return `<li>${esc(names[k])}: ×${t.cost} · ×${t.defense}</li>`; }).join('')}</ul>
     <h4>Sites on this world</h4><ul>${sitesHere.map(t => `<li><b>${esc(SITE_TYPES[t].label)}</b>: ${esc(SITE_TYPES[t].desc)}</li>`).join('')}</ul>`;
   $('#overlay-help').classList.remove('hidden');
