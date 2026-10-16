@@ -469,10 +469,13 @@ test('Vulkara training advances step by step, unlocks tools, and survives a save
   for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === 0 && isLand(world(s).terrain[i]) && [i - 1, i + 1, i - s.w, i + s.w].some(j => s.owner[j] === PLAYER)) { target = i; break; }
   assert.ok(playerAttack(s, target, 0.2).ok);
   advance(s, 0.5);
-  assert.equal(tutorialStep(s).id, 'grow');
-  advance(s, 30);
-  if (s.factions[PLAYER].tiles >= 2250) assert.notEqual(tutorialStep(s).id, 'grow');
-  s.tutorial = 3;
+  assert.equal(tutorialStep(s).id, 'ratio');
+  s.factions[PLAYER].minerals = 0;
+  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === 0 && isLand(world(s).terrain[i]) && [i - 1, i + 1, i - s.w, i + s.w].some(j => s.owner[j] === PLAYER)) { target = i; break; }
+  assert.ok(playerAttack(s, target, 0.6).ok);
+  advance(s, 0.5);
+  assert.equal(tutorialStep(s).id, 'habitat');
+  assert.ok(s.factions[PLAYER].minerals >= buildCost(s, PLAYER, 'habitat'), 'the build step tops up minerals');
   assert.ok(tutorialUnlocked(s).has('habitat') && !tutorialUnlocked(s).has('energy'));
   const b = deserialize(serialize(s));
   assert.equal(tutorialStep(b).id, 'habitat', 'resuming continues the training');
@@ -707,7 +710,11 @@ test('every tutorial lesson can be finished, and finishing all pays a bonus once
       for (let i = 0; i < s.owner.length && !ok; i += 7) if (w.comp[i] === main && canSpawnAt(s, i % s.w, Math.floor(i / s.w))) ok = spawnPlayer(s, i % s.w, Math.floor(i / s.w));
       s.spawnLeft = 0.01; advance(s, 0.5);
       playerAttack(s, borderTiles(s, 0)[0], 0.6);
-      for (let t = 0; t < 60 && s.status === 'playing'; t++) { const b = borderTiles(s, 0); if (b.length) playerAttack(s, b[t % b.length], 0.6); advance(s, 2); }
+      advance(s, 1);
+      const spots = [];
+      for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === PLAYER && [T.PLAINS, T.WILD, T.HIGHLAND, T.RUINS].includes(world(s).terrain[i])) spots.push(i);
+      assert.ok(spots.some(i => playerBuild(s, 'habitat', i).ok), 'lesson 1: a Habitat fits');
+      advance(s, 1);
     } else if (L.id === 2) {
       advance(s, 0.5);
       const cap = site(s, 'player-capital');
@@ -777,7 +784,7 @@ test('Vulkara training is shorter after the standalone tutorial', () => {
   const s = createBattle('vulkara', loadout(), { seed: 7, autoSpawn: true, tutorial: 'short' });
   advance(s, 0.5);
   assert.deepEqual(TUTORIAL_LESSONS.length, 7);
-  assert.equal(tutorialStep(s).id, 'expand');
+  assert.equal(tutorialStep(s).id, 'habitat');
   assert.equal(tutorialUnlocked(s), null, 'nothing locked in the short version');
 });
 
@@ -1226,4 +1233,24 @@ test('balance knobs: Mycelion is gentler than Noctyra, and enemy fleets stay sma
   const m = getPlanet('mycelion'), n = getPlanet('noctyra');
   assert.ok(m.enemy.troops < n.enemy.troops && m.enemy.startDelay > n.enemy.startDelay && m.nations.count < n.nations.count);
   assert.ok(!m.aiShips && n.aiShips);
+});
+
+// ---------- Visual onboarding ----------
+
+test('training is one short line plus a picture per step; Vulkara teaches only the three core actions', () => {
+  const all = [...getPlanet('vulkara').tutorial, ...TUTORIAL_LESSONS.flatMap(L => L.steps)];
+  for (const st of all) {
+    const words = st.text.split(/\s+/).length;
+    assert.ok(words <= 10, `"${st.text}" is ${words} words`);
+    assert.ok(st.icon, `"${st.id}" has a picture`);
+  }
+  const v = getPlanet('vulkara').tutorial;
+  assert.deepEqual(v.filter(st => st.waitFor).map(st => st.id), ['expand', 'ratio', 'habitat']);
+  const last = v[v.length - 1];
+  for (const u of ['extractor', 'starport', 'research', 'energy', 'abilities']) assert.ok(last.unlock.includes(u), `${u} unlocks after the core actions`);
+  assert.deepEqual(TUTORIAL_LESSONS[0].steps.map(st => st.id), ['attack', 'ratio', 'build'], 'the first lesson is the same three actions');
+  // Every icon the training uses is drawn in the sprite sheet.
+  return import('../js/art/sprites.js').then(({ ICONS }) => {
+    for (const name of ['mouse', 'hand', 'drag', 'slider', 'eye', 'wheel']) assert.ok(ICONS[name] && ICONS[name].rows.every(r => r.length === 9), name);
+  });
 });

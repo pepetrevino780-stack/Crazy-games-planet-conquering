@@ -232,14 +232,10 @@ function renderTutorial() {
   }
 }
 
-// quick: land at once (the very first launch drops straight into play).
-function startTutorial(lesson, quick = false) {
+// Lessons land at once: the very first launch drops straight into play.
+function startTutorial(lesson) {
   sfx.click();
-  const L = TUTORIAL_LESSONS[lesson - 1];
-  const manual = L.setup.manualLanding && !quick;
-  battle = createBattle('tutorial', playerLoadout(campaign), {
-    lesson, seed: 77 + lesson, autoSpawn: !manual, spawnTime: manual ? 600 : 10,
-  });
+  battle = createBattle('tutorial', playerLoadout(campaign), { lesson, seed: 77 + lesson, autoSpawn: true });
   enterBattle();
 }
 
@@ -541,9 +537,9 @@ function banner(title, sub = '', major = false) {
 function tip(key, text) {
   if (!campaign.settings.tips || seenTips.has(key)) return;
   // The training card already explains things step by step.
-  if (battle && tutorialStep(battle) && !key.startsWith('warn-')) return;
+  if (battle && tutorialStep(battle)?.waitFor && !key.startsWith('warn-')) return;
   seenTips.add(key);
-  toast(`<b>Tip:</b> ${esc(text)}`, 'tip', 7000);
+  toast(esc(text), 'tip', 6000);
 }
 
 function buildToolbar() {
@@ -1179,6 +1175,47 @@ function persona(f) {
 
 let tutPointer = null, tutPointerAt = 0, tutKey = '';
 
+// Touch-first devices get tap pictures and no key caps.
+const touchFirst = () => !!window.matchMedia?.('(pointer: coarse)').matches;
+
+// One-time controls card: a drawing of the mouse (or finger) and keys. It
+// fades out after the first attack and never comes back.
+function updateControlsHelp() {
+  const el = $('#controls-help');
+  if (!campaign || campaign.settings.controlsSeen || battle.status !== 'playing') { el.classList.add('hidden'); return; }
+  if (battle.flags.attacked) {
+    campaign.settings.controlsSeen = true; persist();
+    el.classList.add('fade');
+    setTimeout(() => el.classList.add('hidden'), 700);
+    return;
+  }
+  if (!el.dataset.built) {
+    el.dataset.built = '1';
+    const item = (icon, label) => `<span class="ctl"><img src="${iconURL(icon, 3)}" alt="">${label}</span>`;
+    el.innerHTML = touchFirst()
+      ? item('hand', 'Tap: attack') + item('drag', 'Drag: move') + item('wheel', 'Pinch: zoom')
+      : item('mouse', 'Click: attack') + item('drag', 'Drag: move') + item('wheel', 'Wheel: zoom') + '<span class="ctl"><kbd class="cap">1</kbd>–<kbd class="cap">5</kbd> build</span><span class="ctl"><kbd class="cap">␣</kbd> pause</span>';
+  }
+  el.classList.remove('hidden', 'fade');
+}
+
+// One-line hints the first time a feature becomes useful (after the
+// training has unlocked everything).
+const HINTS = [
+  { key: 'hint-extractor', when: (b, f) => f.minerals >= buildCost(b, PLAYER, 'extractor') * 1.6, text: () => `Spare minerals: drag an Extractor${touchFirst() ? '' : ' (2)'} for more income.` },
+  { key: 'hint-defend', when: b => b.attacks.some(a => a.target === PLAYER && a.attacker && b.factions[a.attacker].kind !== 'player'), text: () => `Under attack! A Bastion${touchFirst() ? '' : ' (4)'} makes nearby land much harder to take.` },
+  { key: 'hint-sea', when: b => b.time > 90 && canDropship(b), text: () => 'Click land across the sea to send an expedition.' },
+  { key: 'hint-ability', when: (b, f) => f.abilities.length > 0 && f.energy >= Math.min(...f.abilities.map(id => ABILITY_ENERGY[id])), text: () => `Ability ready${touchFirst() ? ': tap Strike, Muster or Pulse.' : ': press 7, 8 or 9.'}` },
+  { key: 'hint-research', when: (b, f) => f.exotic >= 40, text: () => `Research ready${touchFirst() ? ': tap Research.' : ': press R.'}` },
+];
+let hintAt = 0;
+function contextHints() {
+  if (!battle || battle.status !== 'playing' || config(battle).tutorialWorld || performance.now() - hintAt < 1000) return;
+  hintAt = performance.now();
+  const f = battle.factions[PLAYER];
+  for (const h of HINTS) if (!seenTips.has(h.key) && toolUnlocked('build', 'extractor') && h.when(battle, f)) { tip(h.key, h.text()); return; }
+}
+
 function findPointer(step) {
   const st = battle, W = st.w;
   const cap = st.sites.find(s => s.id === 'player-capital');
@@ -1194,13 +1231,17 @@ function findPointer(step) {
   const touches = i => st.owner[i - 1] === PLAYER || st.owner[i + 1] === PLAYER || st.owner[i - W] === PLAYER || st.owner[i + W] === PLAYER;
   const terrain = world(st).terrain;
   if (tutPointer) { const i = tutPointer.y * W + tutPointer.x; if (st.owner[i] === 0 && touches(i)) return tutPointer; }
-  // Otherwise the nearest unclaimed land on the border, preferring land away from the map edge.
+  // Otherwise unclaimed land on the border near the middle of the visible map
+  // (never under a HUD panel), preferring cheap terrain.
+  const r = $('#canvas').getBoundingClientRect(), ins = renderer.insets;
+  const mid = renderer.screenToTileF((ins.left + r.width - ins.right) / 2, (ins.top + r.height - ins.bottom) / 2);
+  const ax = (cap.x + mid.x) / 2, ay = (cap.y + mid.y) / 2;
   let best = -1, bd = Infinity;
   for (let y = 1; y < st.h - 1; y++) {
     for (let x = 1; x < W - 1; x++) {
       const i = y * W + x;
       if (st.owner[i] !== 0 || !isLand(terrain[i]) || !touches(i)) continue;
-      const dd = Math.hypot(x - cap.x, y - cap.y) + (TERRAIN[terrain[i]].cost - 1) * 6;
+      const dd = Math.hypot(x - ax, y - ay) + (TERRAIN[terrain[i]].cost - 1) * 6;
       if (dd < bd) { bd = dd; best = i; }
     }
   }
@@ -1211,17 +1252,22 @@ function updateTutorial() {
   const card = $('#tutorial');
   const step = battle.status === 'playing' ? tutorialStep(battle) : null;
   document.querySelectorAll('.glow').forEach(el => el.classList.remove('glow'));
-  if (!step) { card.classList.add('hidden'); tutPointer = null; return; }
+  if (!step) { if (!card.classList.contains('hidden')) { card.classList.add('hidden'); resize(); } tutPointer = null; return; }
   const steps = tutorialSteps(battle);
   const key = `${battle.tutorial}`;
   if (key !== tutKey) {
     tutKey = key;
-    card.innerHTML = `<div class="tut-head"><span>TRAINING ${battle.tutorial + 1}/${steps.length}</span><button class="btn small ghost" id="btn-tut-skip" data-tip="Unlock every tool and stop the training.">Skip</button></div><p>${esc(step.text)}</p>`;
+    // One short line plus a picture: an animated mouse or finger, and the key caps.
+    const icon = step.icon === 'click' && touchFirst() ? 'hand' : step.icon === 'click' ? 'mouse' : step.icon;
+    const keys = touchFirst() ? [] : step.keys || [];
+    const visual = icon || keys.length ? `<span class="tut-visual">${icon ? `<img class="tut-icon anim-${step.icon}" src="${iconURL(icon, 4)}" alt="">` : ''}${keys.map(k => `<kbd class="cap">${esc(k)}</kbd>`).join('')}</span>` : '';
+    const text = touchFirst() ? step.text.replace(/^Click/, 'Tap').replace(/, then click/, ', then tap') : step.text;
+    card.innerHTML = `<div class="tut-head"><span>TRAINING ${battle.tutorial + 1}/${steps.length}</span><button class="btn small ghost" id="btn-tut-skip" data-tip="Unlock every tool and stop the training.">Skip</button></div><div class="tut-row">${visual}<p>${esc(text)}</p></div>`;
     $('#btn-tut-skip').onclick = () => { skipTutorial(battle); sfx.click(); toast('Training skipped. Everything is unlocked; the field manual (?) has the details.', 'tip', 4000); updateHud(true); };
     card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash');
     tutPointer = null; tutPointerAt = 0;
   }
-  card.classList.remove('hidden');
+  if (card.classList.contains('hidden') || key !== card.dataset.laid) { card.classList.remove('hidden'); card.dataset.laid = key; resize(); }
   const now = performance.now();
   if (now - tutPointerAt > 1000) { tutPointerAt = now; tutPointer = findPointer(step); }
   const p = step.point || '';
@@ -1288,6 +1334,7 @@ function updateInspector() {
 }
 
 function updateHud(force = false) {
+  if (battle) { updateControlsHelp(); contextHints(); }
   const now = performance.now();
   if (!force && now - lastHud < 120) return;
   lastHud = now;
@@ -1692,6 +1739,10 @@ function layoutHud() {
   const bottom = bar.classList.contains('hidden') ? 8 : Math.round(H - bar.getBoundingClientRect().top + 6);
   scr.style.setProperty('--hud-top', `${top}px`);
   scr.style.setProperty('--hud-bottom', `${bottom}px`);
+  // On narrow screens the battle chip and panel sit below the training card.
+  const tut = $('#tutorial');
+  const tutBottom = tut.classList.contains('hidden') ? top : Math.round(tut.getBoundingClientRect().bottom + 6);
+  scr.style.setProperty('--below-tut', `${tutBottom}px`);
   const emp = $('#empire');
   const empRect = emp.getBoundingClientRect();
   const empOpen = !emp.classList.contains('collapsed');
@@ -1793,7 +1844,7 @@ async function init() {
     const t = playTarget(campaign);
     if (!campaign) { campaign = newCampaign(); persist(); }
     if (t.kind === 'resume') resumeBattle();
-    else if (t.kind === 'tutorial') startTutorial(t.lesson, true);
+    else if (t.kind === 'tutorial') startTutorial(t.lesson);
     else launch({ configId: t.id });
   };
   $('#btn-continue').onclick = () => { if (!campaign) { campaign = newCampaign(); persist(); } sfx.click(); show('campaign'); };
@@ -1884,7 +1935,7 @@ async function init() {
   window.addEventListener('pagehide', saveBattle);
 
   // The very first launch skips every menu: the first lesson lands at once.
-  if (!campaign) { campaign = newCampaign(); persist(); startTutorial(1, true); } else show('title');
+  if (!campaign) { campaign = newCampaign(); persist(); startTutorial(1); } else show('title');
   requestAnimationFrame(frame);
   loadingStop();
 }

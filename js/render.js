@@ -117,14 +117,16 @@ export class MapRenderer {
     return { x: Math.round((this.cssW * d) / 2 - this.cam.cx * this.cam.zoom), y: Math.round((this.cssH * d) / 2 - this.cam.cy * this.cam.zoom) };
   }
 
-  // Keep a camera ({zoom, cx, cy}) inside the map: the space backdrop never
-  // shows past its edge.
+  // Keep a camera ({zoom, cx, cy}) inside the map. The map edge may slide
+  // under a HUD panel's width, never further: land near the edge can always
+  // be brought out from under the panels, and the backdrop only shows there.
   clampCam(cam) {
-    const { W, H } = this, d = this.dpr;
+    const { W, H } = this, d = this.dpr, i = this.insets;
     cam.zoom = Math.max(this.minZoom(), Math.min(this.maxZoom(), cam.zoom));
     const vw = (this.cssW * d) / cam.zoom, vh = (this.cssH * d) / cam.zoom;
-    cam.cx = Math.max(vw / 2, Math.min(W - vw / 2, cam.cx));
-    cam.cy = Math.max(vh / 2, Math.min(H - vh / 2, cam.cy));
+    const l = (i.left * d) / cam.zoom, r = (i.right * d) / cam.zoom, t = (i.top * d) / cam.zoom, b = (i.bottom * d) / cam.zoom;
+    cam.cx = Math.max(vw / 2 - l, Math.min(W - vw / 2 + r, cam.cx));
+    cam.cy = Math.max(vh / 2 - t, Math.min(H - vh / 2 + b, cam.cy));
   }
 
   clamp() {
@@ -613,19 +615,25 @@ export class MapRenderer {
     }
   }
 
+  // The training pointer: a pixel hand tapping the target, with a ripple on
+  // each tap (works as a mouse click or a finger tap).
   drawPointer(p, now, motion) {
     const ctx = this.ctx, d = this.dpr;
     const u = Math.max(3, Math.round(3 * d));
-    const bob = motion ? Math.round(Math.abs(Math.sin(now * 4)) * 4) * u : 0;
-    const r = (6 + (motion ? (now * 1.5) % 1 * 6 : 3)) * u;
-    this.dotCircle(p, r, '#ffe066', u, true);
-    // Pixel arrow pointing down at the target.
-    const rows = ['0111110', '0111110', '0111110', '1111111', '0111110', '0011100', '0001000'];
-    const x0 = Math.round(p.x - 3.5 * u), y0 = Math.round(p.y - (rows.length + 4) * u - bob);
-    ctx.fillStyle = '#1a1020';
-    for (let y = 0; y < rows.length; y++) for (let x = 0; x < 7; x++) if (rows[y][x] === '1') ctx.fillRect(x0 + x * u - u, y0 + y * u, u * 3, u + u);
-    ctx.fillStyle = '#ffe066';
-    for (let y = 0; y < rows.length; y++) for (let x = 0; x < 7; x++) if (rows[y][x] === '1') ctx.fillRect(x0 + x * u, y0 + y * u, u, u);
+    const phase = motion ? (now * 1.1) % 1 : 0.3;
+    const press = phase > 0.45 && phase < 0.6;
+    if (motion && phase > 0.5) this.dotCircle(p, (2 + (phase - 0.5) * 22) * u, '#ffe066', u, true);
+    else if (!motion) this.dotCircle(p, 6 * u, '#ffe066', u, true);
+    const rows = ['...oo....', '..oho....', '..oao....', '..oaoooo.', '.ooaoaoao', 'oaoaaaaao', 'oaaaaaaao', '.oaaaaao.', '..ooooo..'];
+    // Fingertip on the target, hand below it; it dips when it taps.
+    const x0 = Math.round(p.x - 3.5 * u), y0 = Math.round(p.y - (press ? 0 : 1.5) * u);
+    const col = { o: '#1a1020', a: '#ffe2c4', h: '#ffffff' };
+    for (let y = 0; y < rows.length; y++) for (let x = 0; x < 9; x++) {
+      const c = col[rows[y][x]];
+      if (!c) continue;
+      ctx.fillStyle = c;
+      ctx.fillRect(x0 + x * u, y0 + y * u, u, u);
+    }
   }
 
   ring(x, y, color, r = 10) {

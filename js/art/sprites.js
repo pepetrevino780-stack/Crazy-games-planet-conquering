@@ -282,6 +282,14 @@ export const ICONS = {
   research: { c: ['#7ff0c8', '#e0fff4'], rows: ['..ooooo..', '..oahao..', '...oao...', '...oao...', '..oaaao..', '.oaaaaao.', 'oaahaaaao', 'oaaaaaaao', '.ooooooo.'] },
   fleet: { c: ['#3fd0ff', '#bff2ff'], rows: ['o........', 'oao......', 'oahao..o.', 'oaaaaooao', 'oahao.oaa', 'oao...oao', 'o......o.', '.........', '.........'] },
   ship: { c: ['#3fd0ff', '#bff2ff'], rows: ['....o....', '....o....', '...ooo...', '..oahao.o', '.oooaoooo', 'oaaaaaaao', 'oahaaaaao', '.oaaaaao.', '..ooooo..'] },
+  // Onboarding pictures: a mouse (left button lit), a tapping hand, the ratio
+  // slider, a dragging hand and an eye.
+  mouse: { c: ['#c9d4e8', '#ffe066'], rows: ['..ooooo..', '.ohhoaao.', '.ohhoaao.', '.ooooooo.', '.oaaaaao.', '.oaaaaao.', '.oaaaaao.', '..oaaao..', '...ooo...'] },
+  hand: { c: ['#ffe2c4', '#ffffff'], rows: ['...oo....', '..oho....', '..oao....', '..oaoooo.', '.ooaoaoao', 'oaoaaaaao', 'oaaaaaaao', '.oaaaaao.', '..ooooo..'] },
+  drag: { c: ['#ffe2c4', '#ffe066'], rows: ['...oo..h.', '..oao.hh.', '..oaohhhh', '..oaoohh.', '.ooaoaoh.', 'oaoaaaaao', 'oaaaaaaao', '.oaaaaao.', '..ooooo..'] },
+  slider: { c: ['#7ff0c8', '#ffe066'], rows: ['.........', '.....ooo.', '.....oho.', 'oooooohoo', 'oaaaaohao', 'oooooohoo', '.....oho.', '.....ooo.', '.........'] },
+  eye: { c: ['#e9f1ff', '#3fd0ff'], rows: ['.........', '..ooooo..', '.oaaaaao.', 'oaaoooaao', 'oaaohoaao', 'oaaoooaao', '.oaaaaao.', '..ooooo..', '.........'] },
+  wheel: { c: ['#c9d4e8', '#ffe066'], rows: ['..ooooo..', '.oaaoaao.', '.oaahaao.', '.oaahaao.', '.ooooooo.', '.oaaaaao.', '.oaaaaao.', '..oaaao..', '...ooo...'] },
   defense: { c: ['#9aa8c0', '#e9f1ff'], rows: ['ooooooooo', 'oaaahaaao', 'oaaahaaao', 'oaaahaaao', 'oaaahaaao', '.oaahaao.', '.oaaaaao.', '..oaaao..', '...ooo...'] },
   attack: { c: ['#ff4b3e', '#ffc4be'], rows: ['......ooo', '.....oaho', '....oaao.', 'o..oaao..', 'oo.oao...', '.ooao....', '.oaoo....', 'oao..o...', 'oo.......'] },
   event: { c: ['#ffd25e', '#fff3c4'], rows: ['....o....', '...oao...', '...oao...', '..oahao..', '..oahao..', '.oaaaaao.', '.oaoooao.', 'oaaaaaaao', 'ooooooooo'] },

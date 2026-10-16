@@ -1095,6 +1095,11 @@ function advanceTutorial(state) {
     state.tutorial++;
     notice(state, 'tutorial', { index: state.tutorial });
     step = tutorialStep(state);
+    // A building step never stalls for lack of minerals.
+    if (step?.ensureBuild) {
+      const f = state.factions[PLAYER];
+      f.minerals = Math.max(f.minerals, buildCost(state, PLAYER, step.ensureBuild));
+    }
   }
 }
 

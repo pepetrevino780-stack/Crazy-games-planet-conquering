@@ -109,24 +109,21 @@ export const PLANETS = [
         tip: 'Spend minerals on buildings. Habitats raise your troop cap.' },
     ],
     // After the standalone tutorial, only these steps run here.
-    tutorialShort: ['expand', 'habitat', 'capital'],
-    // Learn-by-doing tutorial: tools and resources unlock as each step introduces them.
+    tutorialShort: ['habitat', 'capital'],
+    // Learn by doing, three core actions only: attack, the ratio, drag a
+    // building. Each step is one short line plus a picture (icon, keys).
+    // Everything else unlocks with the last step, and one-line hints appear
+    // the first time each feature becomes useful.
     tutorial: [
       { id: 'expand', label: 'Attack the land next to your border', point: 'frontier', waitFor: { type: 'attack' },
-        text: 'Click the land next to your border to attack it. Your border advances tile by tile until the attack runs out of troops.' },
-      { id: 'grow', label: 'Expand to 2,250 tiles', point: 'frontier', waitFor: { type: 'tiles', n: 2250 },
-        text: 'Keep going. More land raises your troop cap. Unclaimed wilderness is cheap; mountains and rivers cost more.' },
+        icon: 'click', text: 'Click the land next to your border.' },
       { id: 'ratio', label: 'Attack with a 50% ratio', point: 'ratio', waitFor: { type: 'ratioAttack' },
-        text: 'Drag the attack ratio to 50% or more, then attack again. Big attacks are not wasted: troops regrow fastest when your army is low.' },
+        icon: 'slider', text: 'Slide the ratio to 50%, then attack.' },
       { id: 'habitat', label: 'Build a Habitat', point: 'tool:habitat', unlock: ['habitat'], waitFor: { type: 'build', building: 'habitat' },
-        text: 'Minerals pile up as you grow. Drag a Habitat onto your land (or press 1 and click). Habitats raise your troop cap.' },
-      { id: 'vent', label: 'Seize a magma vent', point: 'site:vent', unlock: ['energy', 'abilities'], waitFor: { type: 'ownType', site: 'vent', n: 1 },
-        text: 'Take the marked magma vent. Vents give energy, which powers special abilities. Unlock those with Stellar Cores between battles.' },
-      { id: 'tools', label: 'Build an Extractor', point: 'tool:extractor', unlock: ['extractor', 'starport', 'bastion', 'spire', 'dropship', 'ship', 'research', 'exotic'],
-        waitFor: { type: 'build', building: 'extractor' },
-        text: 'Every building is now unlocked. Extractors raise your mineral income: build one.' },
+        icon: 'drag', keys: ['1'], ensureBuild: 'habitat', text: 'Drag a Habitat onto your land.' },
       { id: 'capital', label: 'Capture the Ember Throne', point: 'site:enemy-capital',
-        text: 'You know the basics. Now break the Cindari: capture the Ember Throne, their capital, to conquer Vulkara.' },
+        unlock: ['extractor', 'starport', 'bastion', 'spire', 'dropship', 'ship', 'research', 'exotic', 'energy', 'abilities'],
+        icon: 'click', text: 'Capture the Ember Throne to win.' },
     ],
     briefing: [
       'Pick your landing site, then click land next to your border to attack it. Your border advances tile by tile until the attack runs out of troops.',
@@ -314,41 +311,41 @@ const step = (id, label, waitFor, text, extra = {}) => ({ id, label, waitFor, te
 const flag = name => ({ type: 'flag', flag: name });
 
 export const TUTORIAL_LESSONS = [
-  { id: 1, name: 'Land and expand', desc: 'Choose a landing site, attack the wilderness, use the attack ratio.', setup: { manualLanding: true },
+  { id: 1, name: 'Attack and build', desc: 'Attack, set the ratio, drag a building.', setup: { minerals: 400 },
     steps: [
-      step('attack', 'Attack next to your border', { type: 'attack' }, 'You have landed. Click the wilderness next to your border to attack it.', { point: 'frontier' }),
-      step('ratio', 'Attack with a 50% ratio', { type: 'ratioAttack' }, 'Drag the attack ratio to 50% or more, then attack again. Bigger attacks take more land at once.', { point: 'ratio' }),
-      step('grow', 'Reach 400 tiles', { type: 'tiles', n: 400 }, 'Keep expanding. More land raises your troop cap.', { point: 'frontier' }),
+      step('attack', 'Attack next to your border', { type: 'attack' }, 'Click the land next to your border.', { point: 'frontier', icon: 'click' }),
+      step('ratio', 'Attack with a 50% ratio', { type: 'ratioAttack' }, 'Slide the ratio to 50%, then attack.', { point: 'ratio', icon: 'slider' }),
+      step('build', 'Build a Habitat', { type: 'build', building: 'habitat' }, 'Drag a Habitat onto your land.', { point: 'tool:habitat', icon: 'drag', keys: ['1'] }),
     ] },
   { id: 2, name: 'Direction and survivors', desc: 'Troops push where you click, and survivors come home.', setup: {},
     steps: [
-      step('spear', 'Click far from your border', flag('spearhead'), 'Click wilderness well away from your border. Your troops push in a spearhead toward that spot.', { point: 'frontier' }),
-      step('returned', 'Let an attack finish', flag('returned'), 'When an attack runs its course, the surviving troops march home and rejoin your army. Watch the Troops number.', { point: 'el:#empire .stat.big' }),
+      step('spear', 'Click far from your border', flag('spearhead'), 'Click land far from your border.', { point: 'frontier', icon: 'click' }),
+      step('returned', 'Let an attack finish', flag('returned'), 'Survivors march home: watch your Troops.', { point: 'el:#empire .stat.big', icon: 'eye' }),
     ] },
   { id: 3, name: 'Build and upgrade', desc: 'Place buildings, then stack them to level 2 and 3.', setup: { minerals: 3000 },
     steps: [
-      step('build', 'Build a Habitat', { type: 'build', building: 'habitat' }, 'Drag a Habitat onto your land (or press 1 and click). Habitats raise your troop cap.', { point: 'tool:habitat' }),
-      step('upgrade', 'Upgrade the Habitat', flag('upgraded_habitat'), 'Select Habitat again and click the Habitat you built: it goes to level 2. Each level adds its bonus again.', { point: 'tool:habitat' }),
-      step('extract', 'Build an Extractor', { type: 'build', building: 'extractor' }, 'Extractors raise your mineral income. Build one.', { point: 'tool:extractor' }),
+      step('build', 'Build a Habitat', { type: 'build', building: 'habitat' }, 'Drag a Habitat onto your land.', { point: 'tool:habitat', icon: 'drag', keys: ['1'] }),
+      step('upgrade', 'Upgrade the Habitat', flag('upgraded_habitat'), 'Drop another Habitat on it: level 2.', { point: 'tool:habitat', icon: 'drag', keys: ['1'] }),
+      step('extract', 'Build an Extractor', { type: 'build', building: 'extractor' }, 'Drag an Extractor for more minerals.', { point: 'tool:extractor', icon: 'drag', keys: ['2'] }),
     ] },
   { id: 4, name: 'The battle panel', desc: 'Read your troops against theirs, and retreat.', setup: {},
     steps: [
-      step('war', 'Attack the neighbouring nation', flag('attackedNation'), 'Attack the nation next to you. The battle panel (top right) shows your troops against theirs.', { point: 'el:#battles' }),
-      step('retreat', 'Retreat from the battle', flag('retreated'), 'Press Retreat on the battle row. Your troops come home, minus a quarter.', { point: 'el:#battles' }),
+      step('war', 'Attack the neighbouring nation', flag('attackedNation'), 'Attack the nation next to you.', { point: 'el:#battles', icon: 'click' }),
+      step('retreat', 'Retreat from the battle', flag('retreated'), 'Press Retreat on the battle row.', { point: 'el:#battles', icon: 'click' }),
     ] },
   { id: 5, name: 'Across the sea', desc: 'Expeditions reach other continents; Starports speed them up.', setup: { minerals: 2000 },
     steps: [
-      step('port', 'Build a Starport', { type: 'build', building: 'starport' }, 'Starports must be near the coast. Drag a Starport onto your land by the sea: the ghost turns green where it fits.', { point: 'tool:starport' }),
-      step('drop', 'Send an expedition', flag('dropship'), 'Click land across the water: an expedition sails your attack ratio of troops there. Watch its countdown.', { point: 'tool:dropship' }),
+      step('port', 'Build a Starport', { type: 'build', building: 'starport' }, 'Drag a Starport onto your coast.', { point: 'tool:starport', icon: 'drag', keys: ['3'] }),
+      step('drop', 'Send an expedition', flag('dropship'), 'Click land across the sea.', { point: 'tool:dropship', icon: 'click', keys: ['6'] }),
     ] },
   { id: 6, name: 'Research and abilities', desc: 'Spend exotic matter on research, energy on abilities.', setup: { exotic: 120, energy: 120, abilities: ['strike', 'rally', 'emp'] },
     steps: [
-      step('research', 'Research something', flag('researched'), 'Press R and pick a research. It lasts for the rest of the battle.', { point: 'tool:research' }),
-      step('muster', 'Use Rapid Muster', flag('ability_rally'), 'Press 8 (Muster) and click anywhere: you instantly gain troops. Strike (7) and Pulse (9) work on enemy land.', { point: 'tool:rally' }),
+      step('research', 'Research something', flag('researched'), 'Open Research and pick one.', { point: 'tool:research', icon: 'click', keys: ['R'] }),
+      step('muster', 'Use Rapid Muster', flag('ability_rally'), 'Muster, then click anywhere: free troops.', { point: 'tool:rally', icon: 'click', keys: ['8'] }),
     ] },
   { id: 7, name: 'Win a world', desc: 'Objectives and capturing a capital.', setup: { troops: 3000 },
     steps: [
-      step('capital', 'Capture the Training Fort', null, 'Each world has a victory goal at the top of the screen. Here it is to capture the Training Fort: attack toward it until its tile is yours.', { point: 'site:enemy-capital' }),
+      step('capital', 'Capture the Training Fort', null, 'Capture the Training Fort to win.', { point: 'site:enemy-capital', icon: 'click' }),
     ] },
 ];
 

@@ -45,7 +45,7 @@ export function newCampaign() {
     civ: 'terran',
     civsUnlocked: ['terran'],
     planets: Object.fromEntries(PLANETS.map(p => [p.id, { completed: false, attempts: 0, defeats: 0, bestTime: null, objectives: [], stars: 0 }])),
-    settings: { difficulty: 'commander', tips: true, sound: true, labels: true, simple: false, motion: false, playerColor: 'civ', name: 'Commander' },
+    settings: { difficulty: 'commander', tips: true, sound: true, labels: true, simple: false, motion: false, playerColor: 'civ', name: 'Commander', controlsSeen: false },
     battle: null, // in-progress battle snapshot
   };
 }
@@ -78,7 +78,7 @@ export function normalizeCampaign(raw) {
     t.stars = Number.isInteger(rp.stars) ? Math.max(0, Math.min(3, rp.stars)) : t.completed ? 1 : 0;
   }
   if (raw.settings && DIFFICULTIES[raw.settings.difficulty]) c.settings.difficulty = raw.settings.difficulty;
-  for (const k of ['tips', 'sound', 'labels', 'simple', 'motion']) {
+  for (const k of ['tips', 'sound', 'labels', 'simple', 'motion', 'controlsSeen']) {
     if (raw.settings && typeof raw.settings[k] === 'boolean') c.settings[k] = raw.settings[k];
   }
   if (raw.settings && /^(civ|#[0-9a-f]{6})$/i.test(raw.settings.playerColor || '')) c.settings.playerColor = raw.settings.playerColor;

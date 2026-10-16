@@ -242,7 +242,8 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 @keyframes bflash { 50% { background: rgba(80, 64, 16, 0.95); } }
 .battles-chip { position: absolute; right: 6px; top: var(--hud-top); z-index: 3; }
 @media (max-width: 760px), (max-height: 520px) {
-  .battles { top: calc(var(--hud-top) + 34px); width: min(340px, calc(100vw - 12px)); }
+  .battles { top: calc(var(--below-tut, var(--hud-top)) + 34px); width: min(340px, calc(100vw - 12px)); }
+  .battles-chip { top: var(--below-tut, var(--hud-top)); }
 }
 .stat.flash b { animation: bflash .5s steps(3) 2; color: var(--good); }
 .lesson-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -279,6 +280,24 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .tut-head { display: flex; justify-content: space-between; align-items: center; color: var(--gold); font-family: var(--font-head); font-size: 12px; }
 .tut-head .btn { padding: 1px 8px; font-size: 11px; min-height: 0; }
 .tutorial.flash { animation: tflash .9s steps(4); }
+/* Training pictures: an animated mouse / finger and key caps, then one line. */
+.tut-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.tut-row p { margin: 0; font-size: 16px; }
+.tut-visual { display: flex; align-items: center; gap: 4px; flex: none; }
+.tut-icon { width: 36px; height: 36px; image-rendering: pixelated; }
+kbd.cap { display: inline-block; min-width: 22px; padding: 2px 5px 4px; font-family: var(--font-head); font-size: 13px; text-align: center; color: #fff6c8; background: #2a2440; border: 2px solid #8a80b0; border-bottom-width: 4px; }
+.anim-click { animation: tap 1s steps(2) infinite; }
+.anim-drag { animation: dragmove 1.4s steps(6) infinite; }
+.anim-slider { animation: slide 1.2s steps(4) infinite alternate; }
+@keyframes tap { 50% { transform: translateY(4px); } }
+@keyframes dragmove { 0% { transform: translate(0, 0); } 100% { transform: translate(12px, -8px); } }
+@keyframes slide { to { transform: translateX(8px); } }
+@media (prefers-reduced-motion: reduce) { .anim-click, .anim-drag, .anim-slider { animation: none; } }
+/* One-time controls card above the build bar. */
+.controls-help { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--hud-bottom) + 8px); display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; padding: 6px 12px; max-width: calc(100vw - 24px); font-size: 14px; pointer-events: none; transition: opacity .6s; }
+.controls-help.fade { opacity: 0; }
+.controls-help .ctl { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.controls-help img { width: 27px; height: 27px; image-rendering: pixelated; }
 @keyframes tflash { 0%, 50% { background: rgba(80, 64, 16, 0.95); } 100% { background: rgba(13, 11, 24, 0.8); } }
 /* Points at the HUD control the current training step is about. */
 .glow { outline: 2px solid var(--gold); outline-offset: 2px; animation: glow 1s steps(2) infinite; }
