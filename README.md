@@ -30,8 +30,8 @@ npm start            # http://localhost:8080
 | Action | Desktop | Touch |
 | --- | --- | --- |
 | Attack / expand | Click land next to your border | Tap |
-| Pan | Drag, or WASD / arrow keys | Drag (never attacks) |
-| Zoom (smooth) | Mouse wheel, `Q` / `E`, `+` / `-` | Pinch |
+| Pan | Drag, or WASD / arrow keys (by key position: ZQSD on AZERTY) | Drag (never attacks) |
+| Zoom (smooth) | Mouse wheel, `Q` / `E` (by position: `A` / `E` on AZERTY), `+` / `-` | Pinch |
 | Attack ratio | Slider, `[` / `]` | Slider |
 | Build | `1`–`5`, then click your land | Build bar |
 | Expedition / Research | `6` / `R` (or just click land across the sea) | Build bar |
@@ -43,6 +43,7 @@ npm start            # http://localhost:8080
 | Radial menu: attack, expedition, build, ally, gift, betray, info | Right-click a spot | Long-press |
 | Explain anything | Hover it (map tiles, tools, resources, buttons) | Long-press |
 | Pin a tile's details | Click it | Tap |
+| Cancel a tool | Right-click, Backspace or X (Escape is never used: it leaves fullscreen) | Tap the tool again |
 
 ## The campaign
 

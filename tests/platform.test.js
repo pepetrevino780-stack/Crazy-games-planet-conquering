@@ -166,3 +166,36 @@ test('audio: music loops per world, effects normalised, mutes and volumes', asyn
   assert.ok(audio.battleBedLevel(2) > audio.battleBedLevel(1));
   assert.equal(audio.battleBedLevel(20), audio.battleBedLevel(50));
 });
+
+// ---------- Keyboard layouts ----------
+
+test('keys work by position on any layout, and Escape is never used', async () => {
+  const { keyAction, keyLabel, panKeys, setLayout, loadLayout } = await import('../js/keys.js');
+  // QWERTY.
+  assert.deepEqual(keyAction({ code: 'KeyW', key: 'w' }), { action: 'panUp' });
+  assert.deepEqual(keyAction({ code: 'Digit1', key: '1' }), { action: 'digit', digit: '1' });
+  assert.deepEqual(keyAction({ code: 'KeyR', key: 'r' }), { action: 'research' });
+  // AZERTY: the physical W key types "z" and pans up; the number row types
+  // symbols without Shift but still builds; Q (types "a") zooms out.
+  assert.deepEqual(keyAction({ code: 'KeyW', key: 'z' }), { action: 'panUp' });
+  assert.deepEqual(keyAction({ code: 'KeyA', key: 'q' }), { action: 'panLeft' });
+  assert.deepEqual(keyAction({ code: 'KeyQ', key: 'a' }), { action: 'zoomOut' });
+  assert.deepEqual(keyAction({ code: 'Digit1', key: '&' }), { action: 'digit', digit: '1' });
+  assert.deepEqual(keyAction({ code: 'Numpad7', key: '7' }), { action: 'digit', digit: '7' });
+  assert.deepEqual(keyAction({ code: 'BracketLeft', key: '^' }), { action: 'ratioDown' });
+  // Escape does nothing; Backspace or X cancel.
+  assert.equal(keyAction({ code: 'Escape', key: 'Escape' }), null);
+  assert.deepEqual(keyAction({ code: 'Backspace', key: 'Backspace' }), { action: 'cancel' });
+  assert.deepEqual(keyAction({ code: 'KeyX', key: 'x' }), { action: 'cancel' });
+  // Hints in the player's layout.
+  setLayout(null);
+  assert.equal(panKeys(), 'WASD');
+  setLayout(new Map([['KeyW', 'z'], ['KeyA', 'q'], ['KeyS', 's'], ['KeyD', 'd'], ['KeyQ', 'a']]));
+  assert.equal(panKeys(), 'ZQSD');
+  assert.equal(keyLabel('KeyQ'), 'A');
+  assert.equal(keyLabel('KeyE'), 'E', 'missing keys fall back');
+  // Browsers without the Keyboard API just keep the defaults.
+  assert.equal(await loadLayout({}), null);
+  assert.equal(panKeys(), 'WASD');
+  setLayout(null);
+});

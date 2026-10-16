@@ -19,6 +19,7 @@ import {
 import { isAllied, attitude, requestAlliance, gift, betray, isTraitor } from './sim/diplomacy.js';
 import { planRoute } from './sim/path.js';
 import { rateLimiter } from './battlefx.js';
+import { keyAction, keyLabel, panKeys, loadLayout } from './keys.js';
 import { MapRenderer, fmt } from './render.js';
 import { THEMES, TERRAIN, THEME_IDS, isLand } from './world/themes.js';
 import { iconURL, spriteCanvas, mixHex } from './art/sprites.js';
@@ -577,7 +578,8 @@ function buildToolbar() {
 // Press a building in the toolbar and drag it onto the map: a ghost follows
 // the pointer, green where it can go and red (with the reason) where it
 // cannot. Dropping on your own building of the same type upgrades it.
-// Esc, or dropping back on the toolbar, cancels. Hotkeys + click still work.
+// Backspace or X, or dropping back on the toolbar, cancels (never Escape: it
+// leaves fullscreen). Hotkeys + click still work.
 let drag = null;      // { type, pid, x0, y0, cx, cy, active, touch, tile, preview }
 let dragEndedAt = 0;
 
@@ -664,7 +666,7 @@ function activateTool(kind, id) {
   if (armed && armed.kind === kind && armed.id === id) { armed = null; return; }
   armed = { kind, id };
   const hints = {
-    build: `Click your land to build a ${BUILDINGS[id]?.name}. Right-click or Esc to cancel.`,
+    build: touchFirst() ? `Tap your land to build a ${BUILDINGS[id]?.name}. Tap the tool again to cancel.` : `Click your land to build a ${BUILDINGS[id]?.name}. Right-click or ${keyLabel('KeyX')} to cancel.`,
     ship: 'Click the sea (or any spot) to build a battleship at your nearest Starport and send it there.',
     dropship: canDropship(battle) ? 'Click land anywhere to send an expedition from your nearest coast.' : 'You need land on a coast to launch expeditions.',
     ability: { strike: 'Click enemy land to bombard it.', rally: 'Click anywhere to muster troops.', emp: 'Click near enemy hubs, relays, defenses or buildings.' }[id],
@@ -767,7 +769,7 @@ const STAT_TIPS = {
   energy: f => `<b>Energy</b><br>Powers abilities (7, 8, 9). +${income(battle, f).energy.toFixed(1)}/s from vents and other sites.`,
   exotic: f => `<b>Exotic matter</b><br>Spend on research (R). +${income(battle, f).exotic.toFixed(1)}/s from Research Spires.`,
   land: f => `<b>Land</b><br>${fmt(f.tiles)} tiles, ${((f.tiles / world(battle).landCount) * 100).toFixed(1)}% of the planet. More land means a higher troop cap and more minerals.`,
-  ratio: f => `<b>Attack ratio</b><br>Share of your army sent with each attack: now ${fmt(f.troops * ratio)} troops. <kbd>[</kbd> <kbd>]</kbd> adjust it.`,
+  ratio: f => `<b>Attack ratio</b><br>Share of your army sent with each attack: now ${fmt(f.troops * ratio)} troops. <kbd>${keyLabel('BracketLeft')}</kbd> <kbd>${keyLabel('BracketRight')}</kbd> adjust it.`,
 };
 
 const TIP_FNS = {
@@ -1693,7 +1695,7 @@ function openHelp() {
     <h4>Field notes</h4><ul>${cfg.briefing.map(b => `<li>${esc(b)}</li>`).join('')}</ul>
     <h4>Controls</h4><ul>
       <li>Click enemy or unclaimed land next to your border to attack it with your attack ratio of troops.</li>
-      <li>Drag or WASD to pan the map. Mouse wheel, pinch or Q / E to zoom smoothly. C glides to your capital.</li>
+      <li>Drag or ${panKeys()} to pan the map. Mouse wheel, pinch or ${keyLabel('KeyQ')} / ${keyLabel('KeyE')} to zoom smoothly. C glides to your capital. Right-click or ${keyLabel('KeyX')} cancels a tool.</li>
       <li>Zoomed out, buildings show as badges with their level; zoom in to see them up close.</li>
       <li>1–5 build, 6 expedition, 0 battleship, R research, 7–9 abilities, Space pause, L leaderboard, O objectives.</li>
       <li>On touch screens, a drag never attacks: only a clean tap does.</li>
@@ -1826,6 +1828,7 @@ async function init() {
   setSound(campaign ? campaign.settings.sound : true);
   if (campaign) setVolumes(campaign.settings.volume);
   onAudioSettings(setPortalMute);
+  loadLayout(); // key hints in the player's own layout (ZQSD on AZERTY)
   // Browsers only start audio after a gesture: the first click or key does it.
   const unlock = () => { unlockAudio(); window.removeEventListener('pointerdown', unlock, true); window.removeEventListener('keydown', unlock, true); };
   window.addEventListener('pointerdown', unlock, true);
@@ -1922,29 +1925,38 @@ async function init() {
   window.addEventListener('keydown', e => {
     if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) e.preventDefault();
   });
+  // Keys by position where it matters (see keys.js): AZERTY players get
+  // ZQSD; Escape is never used, so it only leaves fullscreen.
   window.addEventListener('keydown', e => {
     if (!battle || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
-    const k = e.key.toLowerCase();
-    const b = Object.entries(BUILDINGS).find(([, v]) => v.key === k);
-    const a = Object.entries(ABILITIES).find(([, v]) => v.key === k);
-    if (b) activateTool('build', b[0]);
-    else if (a) activateTool('ability', a[0]);
-    else if (k === '6') activateTool('dropship', 'dropship');
-    else if (k === '0') activateTool('ship', 'ship');
-    else if (k === 'r') activateTool('research', 'research');
-    else if (k === ' ') togglePause();
-    else if (k === 'escape') { if (drag?.active) dragEndedAt = performance.now(); drag = null; armed = null; inspectTile = -1; closeRadial(); }
-    else if (k === 'l') $('#btn-board').click();
-    else if (k === 'o') $('#objectives').classList.toggle('hidden');
-    else if (k === 'c') centerOnCapital();
-    else if (k === '=' || k === '+' || k === 'e') renderer.zoomBy(1);
-    else if (k === '-' || k === 'q') renderer.zoomBy(-1);
-    else if (k === 'w' || k === 'arrowup') renderer.panBy(0, 60);
-    else if (k === 's' || k === 'arrowdown') renderer.panBy(0, -60);
-    else if (k === 'a' || k === 'arrowleft') renderer.panBy(60, 0);
-    else if (k === 'd' || k === 'arrowright') renderer.panBy(-60, 0);
-    else if (k === '[') setRatio(ratio - 0.05);
-    else if (k === ']') setRatio(ratio + 0.05);
+    const act = keyAction(e);
+    if (!act) return;
+    switch (act.action) {
+      case 'digit': {
+        const b = Object.entries(BUILDINGS).find(([, v]) => v.key === act.digit);
+        const a = Object.entries(ABILITIES).find(([, v]) => v.key === act.digit);
+        if (b) activateTool('build', b[0]);
+        else if (a) activateTool('ability', a[0]);
+        else if (act.digit === '6') activateTool('dropship', 'dropship');
+        else if (act.digit === '0') activateTool('ship', 'ship');
+        break;
+      }
+      case 'research': activateTool('research', 'research'); break;
+      case 'pause': togglePause(); break;
+      case 'cancel': if (drag?.active) dragEndedAt = performance.now(); drag = null; armed = null; inspectTile = -1; closeRadial(); break;
+      case 'board': $('#btn-board').click(); break;
+      case 'objectives': $('#objectives').classList.toggle('hidden'); break;
+      case 'capital': centerOnCapital(); break;
+      case 'zoomIn': renderer.zoomBy(1); break;
+      case 'zoomOut': renderer.zoomBy(-1); break;
+      case 'panUp': renderer.panBy(0, 60); break;
+      case 'panDown': renderer.panBy(0, -60); break;
+      case 'panLeft': renderer.panBy(60, 0); break;
+      case 'panRight': renderer.panBy(-60, 0); break;
+      case 'ratioDown': setRatio(ratio - 0.05); break;
+      case 'ratioUp': setRatio(ratio + 0.05); break;
+      default:
+    }
   });
   window.addEventListener('resize', resize);
   document.addEventListener('visibilitychange', () => { setHidden(document.hidden); if (document.hidden) saveBattle(); });
