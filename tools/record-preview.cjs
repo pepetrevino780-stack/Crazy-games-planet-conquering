@@ -22,7 +22,7 @@ const FPS = 30;
     let r = seed; Math.random = () => ((r = (r * 9301 + 49297) % 233280) / 233280);
     localStorage.setItem('planet-conquest-campaign', JSON.stringify({ version: 1, cores: 0, upgrades: {}, civ: 'terran', civsUnlocked: ['terran'],
       planets: Object.fromEntries(['vulkara', 'cryonis', 'mycelion', 'xythera', 'noctyra'].map(id => [id, { completed: id !== world, attempts: 1, defeats: 0, bestTime: 500, objectives: [] }])),
-      settings: { tips: false, sound: false, labels: true }, tutorial: { done: [1, 2, 3, 4, 5, 6, 7], rewarded: true, offered: true } }));
+      settings: { tips: false, sound: false, labels: true, controlsSeen: true }, tutorial: { done: [1, 2, 3, 4, 5, 6, 7], rewarded: true, offered: true } }));
   }, [WORLD, SEED]);
   const page = await ctx.newPage();
   const errs = []; page.on('pageerror', e => errs.push(String(e)));

@@ -37,6 +37,17 @@ Upload the zip as an **HTML5** game in the CrazyGames developer portal.
 - Drag a building from the bar onto your land (or press 1–5 and click); 6 expedition, 0 battleship, R research, 7–9 abilities
 - [ / ] attack ratio, L leaderboard, O objectives, C center on capital, Space pause
 
+### Resubmission note (paste into the portal)
+
+Changes since the quality rejection:
+- Renamed from "Alien Worlds" to **Planetfall Conquest** (the old name belonged to other games).
+- New players land straight in play: no menus or briefing screens on first launch; returning players get one Play button.
+- Onboarding shows instead of tells: one short line per step with an animated mouse/finger and key caps, only three core actions on the first world, and a controls card that fades after the first attack.
+- Music for every world, planet ambience, a battle bed, volume sliders, and support for the CrazyGames mute setting.
+- Keys follow the keyboard layout (ZQSD on AZERTY); Escape is never used in-game.
+- Cleaner phone layout (the HUD covers about half as much of the screen), labelled tool tiles, and a fix for a blank map on older iOS Safari.
+- New covers with gameplay, and preview videos at 16:9 and 2:3 that open on their cover.
+
 ## 3. What the SDK integration does
 
 Code: `js/platform.js`, wired up in `js/main.js`. Tests: `tests/platform.test.js`.
