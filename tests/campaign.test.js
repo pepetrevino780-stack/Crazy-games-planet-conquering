@@ -21,7 +21,7 @@ import { connectedShare, growthMult, isConnected, capitalOf } from '../js/sim/co
 import { THEMES, THEME_IDS, isLand, T } from '../js/world/themes.js';
 import {
   newCampaign, normalizeCampaign, loadCampaign, saveCampaign, playerLoadout, computeRewards,
-  applyVictory, applyDefeat, assistLevel, buyUpgrade, unlockCiv, isUnlocked, nextWorld, shouldOfferTutorial, SAVE_KEY, starsFor, parTime,
+  applyVictory, applyDefeat, assistLevel, buyUpgrade, unlockCiv, isUnlocked, nextWorld, playTarget, SAVE_KEY, starsFor, parTime,
   completeLesson, TUTORIAL_REWARD,
 } from '../js/progression.js';
 
@@ -1162,21 +1162,23 @@ test('every world is open, with a recommended order and a 1-5 difficulty', () =>
   assert.equal(nextWorld(c, 'noctyra'), null);
 });
 
-test('a new player who picks a later world is offered the tutorial once', () => {
+test('one Play button: a new player lands in the first lesson, others resume or play the next world', () => {
+  assert.deepEqual(playTarget(null), { kind: 'tutorial', lesson: 1 }, 'very first launch');
   const c = newCampaign();
-  assert.ok(!shouldOfferTutorial(c, 'vulkara'), 'not for the first world');
-  assert.ok(shouldOfferTutorial(c, 'noctyra'));
-  c.tutorial.offeredWorld = true;
-  assert.ok(!shouldOfferTutorial(c, 'noctyra'), 'only once');
-  const saved = memoryStorage();
-  saveCampaign(saved, c);
-  assert.ok(loadCampaign(saved).tutorial.offeredWorld, 'remembered across sessions');
-  const done = newCampaign();
-  done.tutorial.done = [1];
-  assert.ok(!shouldOfferTutorial(done, 'xythera'), 'not after a lesson');
+  assert.deepEqual(playTarget(c), { kind: 'tutorial', lesson: 1 });
+  c.tutorial.done = [1];
+  assert.deepEqual(playTarget(c), { kind: 'world', id: 'vulkara' }, 'after the first lesson: the first world');
+  c.planets.vulkara.attempts = 1; c.planets.vulkara.completed = true;
+  assert.deepEqual(playTarget(c), { kind: 'world', id: 'cryonis' }, 'next unconquered world');
+  c.battle = { v: 4 };
+  assert.deepEqual(playTarget(c), { kind: 'resume' }, 'a saved battle comes first');
+  c.battle = null;
+  for (const p of PLANETS) c.planets[p.id].completed = true;
+  assert.deepEqual(playTarget(c), { kind: 'world', id: 'vulkara' });
+  // A player who skipped the tutorial but has played a world is not sent back to it.
   const vet = newCampaign();
-  vet.planets.cryonis.completed = true;
-  assert.ok(!shouldOfferTutorial(vet, 'xythera'), 'not after a conquest');
+  vet.planets.cryonis.attempts = 2;
+  assert.equal(playTarget(vet).kind, 'world');
 });
 
 test('rewards do not depend on the order worlds are played in', () => {

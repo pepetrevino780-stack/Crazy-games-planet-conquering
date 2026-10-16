@@ -19,8 +19,8 @@
         <p class="subtitle">Five strange worlds. Five lessons. One war.</p>
         <label class="name-field">Commander name <input id="player-name" maxlength="16" autocomplete="off" spellcheck="false"></label>
         <div class="menu">
-          <button id="btn-resume" class="btn primary hidden">Resume battle</button>
-          <button id="btn-continue" class="btn primary">Start campaign</button>
+          <button id="btn-play" class="btn primary big">Play</button>
+          <button id="btn-continue" class="btn">Campaign map</button>
           <button id="btn-tutorial" class="btn">Tutorial</button>
           <button id="btn-skirmish" class="btn">Skirmish</button>
           <button id="btn-new" class="btn ghost hidden">New game</button>
@@ -101,36 +101,6 @@
     </section>
 
     <!-- Briefing -->
-    <section id="screen-briefing" class="screen">
-      <header class="bar">
-        <button class="btn small" data-nav="campaign" id="brief-back">&lt; Back</button>
-        <h2 id="brief-title">Planet</h2>
-        <span></span>
-      </header>
-      <div class="scroll brief">
-        <div class="brief-head">
-          <canvas id="brief-orb" width="64" height="64"></canvas>
-          <div>
-            <p class="lesson-tag" id="brief-lesson"></p>
-            <p class="tagline" id="brief-tagline"></p>
-          </div>
-        </div>
-        <div class="brief-grid">
-          <div class="panel">
-            <h3>Victory</h3>
-            <ul id="brief-victory" class="bullets"></ul>
-            <h3>Enemy</h3>
-            <p id="brief-enemy"></p>
-            <p id="brief-assist" class="assist hidden"></p>
-          </div>
-          <div class="panel">
-            <h3>Field notes</h3>
-            <ul id="brief-notes" class="bullets"></ul>
-          </div>
-        </div>
-        <button id="btn-launch" class="btn primary wide">Begin invasion</button>
-      </div>
-    </section>
 
     <!-- Battle -->
     <section id="screen-battle" class="screen">
@@ -153,7 +123,7 @@
           <button id="btn-pause" class="btn icon" title="Pause (Space)"><img data-icon="pause" alt=""></button>
           <button id="btn-speed" class="btn icon" title="Game speed"><img data-icon="speed" alt=""></button>
           <button id="btn-sound" class="btn icon" title="Sound"><img data-icon="sound" alt=""></button>
-          <button id="btn-help" class="btn icon" title="Field manual"><img data-icon="help" alt=""></button>
+          <button id="btn-help" class="btn icon" title="Mission and field manual"><img data-icon="help" alt=""></button>
           <button class="btn icon" data-open="settings" title="Settings"><img data-icon="settings" alt=""></button>
         </div>
       </div>

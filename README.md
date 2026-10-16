@@ -47,8 +47,8 @@ npm start            # http://localhost:8080
 ## The campaign
 
 Every world is open from the start. The number is the recommended order (each lesson builds on the one
-before) and each card shows a difficulty from 1 to 5. A new player who picks a later world first is
-offered the tutorial.
+before) and each card shows a difficulty from 1 to 5. Clicking a world starts it at once; its victory goals,
+enemy and field notes are in the in-battle Mission panel (the ? button).
 
 | # | World | Difficulty | Lesson | What's new | Victory | Main enemy |
 |---|---|---|---|---|---|---|
@@ -58,7 +58,11 @@ offered the tutorial.
 | 4 | **Xythera**: Ancient Machines | 3 | Plan | Relays power automated defences; ancient factories; scarce growth; enemy battleships | Core Foundry plus 2 factories | Axiom Directorate: tactical |
 | 5 | **Noctyra**: Eternal Eclipse | 5 | Mastery | Command nodes add enemy attack fronts; the eclipse strips the Citadel; enemy battleships; everything returns | Conquer the Eclipse Citadel | Umbral Dominion: coordinated |
 
-**Tutorial:** a Tutorial button on the title screen (offered once to new players) opens seven short,
+**First launch:** there are no menus. The very first launch lands the player straight in the first tutorial
+lesson; after it, the debrief offers Vulkara. Returning players get one big **Play** button on the title
+screen: it resumes a saved battle, or starts the next unconquered world.
+
+**Tutorial:** a Tutorial button on the title screen opens seven short,
 replayable lessons on a small, calm world where nobody attacks you and the game waits for each step: land and
 expand; direction and survivors; build and upgrade; the battle panel and retreat; across the sea with Starports
 and dropships; research and abilities; and winning a world. Each lesson gets a checkmark, and finishing all seven

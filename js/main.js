@@ -1,8 +1,8 @@
 // Interface controller: screens, map input, HUD, notices, saving and portal hooks.
-import { PLANETS, getPlanet, skirmishConfig, BUILDINGS, RESEARCH, SITE_TYPES, PERSONAS, SKIRMISH_MODES, TUTORIAL_LESSONS } from './campaign.js';
+import { PLANETS, getPlanet, BUILDINGS, RESEARCH, SITE_TYPES, PERSONAS, SKIRMISH_MODES, TUTORIAL_LESSONS } from './campaign.js';
 import {
   newCampaign, loadCampaign, saveCampaign, isUnlocked, UPGRADES, CIVS, ABILITIES, upgradeCost,
-  buyUpgrade, unlockCiv, playerLoadout, cleanName, nextWorld, shouldOfferTutorial, completeLesson, TUTORIAL_REWARD, computeRewards, applyVictory, applyDefeat, assistLevel, starsFor,
+  buyUpgrade, unlockCiv, playerLoadout, cleanName, nextWorld, playTarget, completeLesson, TUTORIAL_REWARD, computeRewards, applyVictory, applyDefeat, assistLevel, starsFor,
 } from './progression.js';
 import {
   createBattle, step, spawnPlayer, canSpawnAt, playerAttack, playerDropship, playerBuild,
@@ -51,7 +51,6 @@ let seenAttacks = new Set();
 let lastFrame = 0, accumulator = 0, lastSave = 0, lastHud = 0;
 let endTimer = 0;
 let inspectorClosed = false;
-let briefingRef = null; // { configId, theme?, worldSeed? }
 let skirmishSeed = 1 + Math.floor(Math.random() * 99999);
 
 const EVENT_TEXT = {
@@ -162,15 +161,10 @@ function renderTitle() {
     titleArt = titleScene(320, 180).toDataURL();
     $('#screen-title').style.backgroundImage = `url(${titleArt})`;
   }
-  // One clear primary action: resume the saved battle, else continue, else start.
-  const b = campaign?.battle;
-  const started = hasProgress();
-  $('#btn-resume').classList.toggle('hidden', !b);
-  if (b) $('#btn-resume').textContent = `Resume: ${battleName(b)} ${fmtTime(b.time)}`;
-  const cont = $('#btn-continue');
-  cont.textContent = b ? 'Campaign map' : started ? 'Continue campaign' : 'Start campaign';
-  cont.classList.toggle('primary', !b);
-  $('#btn-new').classList.toggle('hidden', !started);
+  // One big Play button: one click back into the action.
+  const b = campaign?.battle, t = playTarget(campaign);
+  $('#btn-play').textContent = t.kind === 'resume' ? `Continue: ${battleName(b)} ${fmtTime(b.time)}` : t.kind === 'world' ? `Play: ${getPlanet(t.id).name}` : 'Play';
+  $('#btn-new').classList.toggle('hidden', !hasProgress());
   if (document.activeElement !== $('#player-name')) $('#player-name').value = campaign?.settings.name || 'Commander';
 }
 
@@ -197,15 +191,7 @@ function renderCampaign() {
       <div class="difficulty" aria-label="Difficulty ${p.difficulty} of 5" title="Difficulty ${p.difficulty} of 5">${pips}</div><div class="status">${status}</div>
       <button class="btn ${unlocked && !rec.completed ? 'primary' : ''}" ${unlocked ? '' : 'disabled'}>${rec.completed ? 'Replay' : 'Invade'}</button>`;
     li.insertBefore(orbCanvas(p.theme), li.querySelector('h3'));
-    li.querySelector('button').onclick = async () => {
-      // A brand-new player picking a later world first is offered the tutorial.
-      if (shouldOfferTutorial(campaign, p.id)) {
-        campaign.tutorial.offeredWorld = true;
-        persist();
-        if (await confirmBox(`Play the tutorial first? ${p.name} is world ${i + 1} of 5 (difficulty ${p.difficulty}/5); the 5-minute tutorial teaches the basics.`, 'Play the tutorial', `Go to ${p.name}`)) { show('tutorial'); return; }
-      }
-      openBriefing({ configId: p.id });
-    };
+    li.querySelector('button').onclick = () => launch({ configId: p.id });
     list.appendChild(li);
   });
 }
@@ -225,7 +211,7 @@ function renderSkirmish() {
     li.className = 'planet panel';
     li.innerHTML = `<h3>${esc(THEMES[theme].name)}</h3><div class="lesson">${esc(getPlanet(theme)?.name || '')} world</div><button class="btn primary">Generate &amp; play</button>`;
     li.insertBefore(orbCanvas(theme), li.querySelector('h3'));
-    li.querySelector('button').onclick = () => openBriefing({ configId: 'skirmish', theme, worldSeed: Number($('#skirmish-seed').value) || 1, mode: $('#skirmish-mode').value });
+    li.querySelector('button').onclick = () => launch({ configId: 'skirmish', theme, worldSeed: Number($('#skirmish-seed').value) || 1, mode: $('#skirmish-mode').value });
     list.appendChild(li);
   }
 }
@@ -246,11 +232,13 @@ function renderTutorial() {
   }
 }
 
-function startTutorial(lesson) {
+// quick: land at once (the very first launch drops straight into play).
+function startTutorial(lesson, quick = false) {
   sfx.click();
   const L = TUTORIAL_LESSONS[lesson - 1];
+  const manual = L.setup.manualLanding && !quick;
   battle = createBattle('tutorial', playerLoadout(campaign), {
-    lesson, seed: 77 + lesson, autoSpawn: !L.setup.manualLanding, spawnTime: L.setup.manualLanding ? 600 : 10,
+    lesson, seed: 77 + lesson, autoSpawn: !manual, spawnTime: manual ? 600 : 10,
   });
   enterBattle();
 }
@@ -289,29 +277,13 @@ function renderUpgrades() {
   }
 }
 
-function cfgFor(ref) {
-  return ref.configId === 'skirmish' ? skirmishConfig(ref.theme, ref.worldSeed, ref.mode) : getPlanet(ref.configId);
-}
-
-function openBriefing(ref) {
-  briefingRef = ref;
-  const p = cfgFor(ref);
-  const idx = PLANETS.indexOf(p);
-  $('#brief-title').textContent = ref.configId === 'skirmish' ? `Skirmish — ${THEMES[ref.theme].name} · ${SKIRMISH_MODES[p.mode].name}` : `${p.name}: ${p.title}`;
-  $('#brief-back').dataset.nav = ref.configId === 'skirmish' ? 'skirmish' : 'campaign';
-  $('#brief-lesson').textContent = idx >= 0 ? `Lesson ${idx + 1}: ${p.lesson} · difficulty ${p.difficulty}/5` : `World seed ${ref.worldSeed}`;
-  $('#brief-tagline').textContent = p.tagline;
-  const orb = planetOrb(p.theme, 64);
-  const bc = $('#brief-orb');
-  bc.getContext('2d').clearRect(0, 0, 64, 64);
-  bc.getContext('2d').drawImage(orb, 0, 0);
-  $('#brief-victory').innerHTML = p.victory.conds.map(c => `<li>${esc(c.label)}</li>`).join('') + '<li>Defeat: lose all your land. Losing your capital costs troops and slows your empire until you retake it.</li>';
-  $('#brief-enemy').innerHTML = `<b style="color:${p.enemy.color}">${esc(p.enemy.name)}</b> — ${esc(PROFILE_TEXT[p.enemy.profile] || '')} Plus ${p.nations.count} independent nations: ${[...new Set((p.nations.profiles || [p.nations.profile]).map(id => PERSONAS[id].name.toLowerCase()))].join(', ')}.`;
-  $('#brief-notes').innerHTML = p.briefing.map(b => `<li>${esc(b)}</li>`).join('');
-  const assist = idx >= 0 ? assistLevel(campaign, p.id) : 0;
-  $('#brief-assist').classList.toggle('hidden', !assist);
-  $('#brief-assist').textContent = assist ? `Adaptive assist ${assist}/3: after your earlier defeats, enemy commanders here react a little slower.` : '';
-  show('briefing');
+// Worlds start straight away. The mission (victory goals, enemy, field notes)
+// lives in the in-battle Mission panel (the ? button), not a screen to pass.
+async function launch(ref) {
+  const saved = campaign.battle;
+  if (saved && !(await confirmBox(`Abandon your saved battle (${battleName(saved)})?`))) return;
+  campaign.battle = null;
+  beginBattle(ref);
 }
 
 // ---------- Battle lifecycle ----------
@@ -453,8 +425,16 @@ function endTutorialLesson() {
     body.innerHTML = `<ul class="bullets">${cfg.tutorial.map(s => `<li>${esc(s.label)}</li>`).join('')}</ul>
       ${bonus ? `<p class="reward-ad">Every lesson done: <b>+${bonus} Stellar Cores</b>. Spend them on Command upgrades.</p>` : ''}`;
     const nextLesson = TUTORIAL_LESSONS.find(L => !campaign.tutorial.done.includes(L.id));
-    $('#btn-debrief-primary').textContent = nextLesson ? `Next: ${nextLesson.name}` : 'Start the campaign';
-    $('#btn-debrief-primary').onclick = () => (nextLesson ? startTutorial(nextLesson.id) : openBriefing({ configId: PLANETS[0].id }));
+    // A new player goes from the first lesson straight into the first world;
+    // the other lessons stay one click away.
+    const newPlayer = !PLANETS.some(p => campaign.planets[p.id].attempts > 0);
+    if (newPlayer || !nextLesson) {
+      $('#btn-debrief-primary').textContent = `Play: ${PLANETS[0].name}`;
+      $('#btn-debrief-primary').onclick = () => launch({ configId: PLANETS[0].id });
+    } else {
+      $('#btn-debrief-primary').textContent = `Next: ${nextLesson.name}`;
+      $('#btn-debrief-primary').onclick = () => startTutorial(nextLesson.id);
+    }
   } else {
     campaign.battle = null;
     persist();
@@ -464,7 +444,7 @@ function endTutorialLesson() {
     $('#btn-debrief-primary').textContent = 'Try again';
     $('#btn-debrief-primary').onclick = () => startTutorial(lesson);
   }
-  $('#btn-debrief-secondary').textContent = 'Tutorial menu';
+  $('#btn-debrief-secondary').textContent = 'More lessons';
   $('#btn-debrief-secondary').onclick = () => show('tutorial');
   battle = null;
   show('debrief');
@@ -479,7 +459,7 @@ function endBattle() {
   const result = battleResult(battle);
   const chart = landChart(battle);
   const replayRef = cfg.skirmish ? { configId: 'skirmish', theme: battle.theme, worldSeed: battle.seed, mode: battle.mode } : { configId: cfg.id };
-  $('#btn-debrief-replay').onclick = () => openBriefing(replayRef);
+  $('#btn-debrief-replay').onclick = () => launch(replayRef);
   $('#debrief-icon').src = iconURL(won ? 'victory' : 'defeat', 4);
   if (won) {
     const stars = starsFor(cfg, result);
@@ -507,7 +487,7 @@ function endBattle() {
       else adBtn.textContent = 'No ad available right now';
     };
     $('#btn-debrief-primary').textContent = next ? `Next: ${next.name}` : cfg.skirmish ? 'New skirmish' : 'Campaign';
-    $('#btn-debrief-primary').onclick = () => (next ? openBriefing({ configId: next.id }) : show(cfg.skirmish ? 'skirmish' : 'campaign'));
+    $('#btn-debrief-primary').onclick = () => (next ? launch({ configId: next.id }) : show(cfg.skirmish ? 'skirmish' : 'campaign'));
     $('#btn-debrief-secondary').textContent = 'Command upgrades';
     $('#btn-debrief-secondary').onclick = () => show('upgrades');
   } else {
@@ -1649,8 +1629,15 @@ function openHelp() {
   paused = true;
   const names = THEMES[battle.theme].names;
   const sitesHere = [...new Set(battle.sites.map(s => s.type))];
-  $('#help-title').textContent = cfg.skirmish ? 'Field manual' : `${cfg.name}: ${cfg.lesson}`;
+  $('#help-title').textContent = cfg.skirmish ? 'Mission' : `Mission: ${cfg.name}`;
+  const idx = PLANETS.findIndex(p => p.id === cfg.id);
+  const assist = idx >= 0 ? assistLevel(campaign, cfg.id) : 0;
+  const enemy = cfg.enemy ? `<b style="color:${cfg.enemy.color}">${esc(cfg.enemy.name)}</b>: ${esc(PROFILE_TEXT[cfg.enemy.profile] || '')}${cfg.nations ? ` Plus ${cfg.nations.count} independent nations.` : ''}` : '';
   $('#help-body').innerHTML = `
+    <p class="lesson-tag">${idx >= 0 ? `World ${idx + 1}/5 · ${esc(cfg.lesson)} · difficulty ${cfg.difficulty}/5` : esc(cfg.tagline || '')}</p>
+    <h4>Victory</h4><ul>${cfg.victory.conds.map(c => `<li>${esc(c.label)}</li>`).join('')}<li>Defeat: lose all your land.</li></ul>
+    ${enemy ? `<h4>Enemy</h4><p>${enemy}</p>` : ''}
+    ${assist ? `<p class="note">Adaptive assist ${assist}/3: after your earlier defeats, enemy commanders here react a little slower.</p>` : ''}
     <h4>Field notes</h4><ul>${cfg.briefing.map(b => `<li>${esc(b)}</li>`).join('')}</ul>
     <h4>Controls</h4><ul>
       <li>Click enemy or unclaimed land next to your border to attack it with your attack ratio of troops.</li>
@@ -1802,17 +1789,14 @@ async function init() {
   document.querySelectorAll('[data-nav]').forEach(b => { b.onclick = () => { sfx.click(); show(b.dataset.nav); }; });
   document.querySelectorAll('[data-open="settings"]').forEach(b => { b.onclick = openSettings; });
   $('#btn-settings-close').onclick = closeSettings;
-  $('#btn-continue').onclick = async () => {
-    const fresh = !hasProgress();
+  $('#btn-play').onclick = () => {
+    const t = playTarget(campaign);
     if (!campaign) { campaign = newCampaign(); persist(); }
-    // A brand-new player is offered the tutorial once, then goes straight to the first briefing.
-    if (fresh && !campaign.tutorial.done.length && !campaign.tutorial.offered) {
-      campaign.tutorial.offered = true;
-      persist();
-      if (await confirmBox('First time? Play the 5-minute tutorial.', 'Play the tutorial', 'Skip')) { show('tutorial'); return; }
-    }
-    if (fresh) openBriefing({ configId: PLANETS[0].id }); else show('campaign');
+    if (t.kind === 'resume') resumeBattle();
+    else if (t.kind === 'tutorial') startTutorial(t.lesson, true);
+    else launch({ configId: t.id });
   };
+  $('#btn-continue').onclick = () => { if (!campaign) { campaign = newCampaign(); persist(); } sfx.click(); show('campaign'); };
   $('#btn-tutorial').onclick = () => show('tutorial');
   $('#btn-skirmish').onclick = () => { if (!campaign) { campaign = newCampaign(); persist(); } show('skirmish'); };
   $('#btn-skirmish-reroll').onclick = () => { skirmishSeed = 1 + Math.floor(Math.random() * 99999); $('#skirmish-seed').value = skirmishSeed; };
@@ -1822,19 +1806,12 @@ async function init() {
     campaign = newCampaign();
     if (settings) campaign.settings = settings; // keep sound, colour and accessibility choices
     persist();
-    openBriefing({ configId: PLANETS[0].id });
+    launch({ configId: PLANETS[0].id });
   };
-  $('#btn-resume').onclick = resumeBattle;
   $('#btn-resume-campaign').onclick = resumeBattle;
   $('#btn-upgrades').onclick = () => show('upgrades');
   $('#sel-difficulty').onchange = e => { campaign.settings.difficulty = e.target.value; persist(); };
   $('#btn-reset').onclick = async () => { if (await confirmBox('Reset the whole campaign? This cannot be undone.')) { campaign = newCampaign(); persist(); renderCampaign(); } };
-  $('#btn-launch').onclick = async () => {
-    const saved = campaign.battle;
-    if (saved && !(await confirmBox(`Abandon your saved battle (${battleName(saved)})?`))) return;
-    campaign.battle = null;
-    beginBattle(briefingRef);
-  };
   $('#btn-pause').onclick = () => togglePause();
   $('#btn-resume-battle').onclick = () => togglePause(false);
   $('#btn-restart').onclick = async () => {
@@ -1906,7 +1883,8 @@ async function init() {
   document.addEventListener('visibilitychange', () => { if (document.hidden) saveBattle(); });
   window.addEventListener('pagehide', saveBattle);
 
-  show('title');
+  // The very first launch skips every menu: the first lesson lands at once.
+  if (!campaign) { campaign = newCampaign(); persist(); startTutorial(1, true); } else show('title');
   requestAnimationFrame(frame);
   loadingStop();
 }

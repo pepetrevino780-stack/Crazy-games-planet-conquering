@@ -87,7 +87,6 @@ export function normalizeCampaign(raw) {
     c.tutorial.done = [...new Set(raw.tutorial.done.filter(n => Number.isInteger(n) && n >= 1 && n <= TUTORIAL_REWARD.lessons))];
     c.tutorial.rewarded = !!raw.tutorial.rewarded;
     c.tutorial.offered = !!raw.tutorial.offered;
-    c.tutorial.offeredWorld = !!raw.tutorial.offeredWorld;
   }
   if (raw.battle && typeof raw.battle === 'object' && raw.battle.v === 4) c.battle = raw.battle;
   return c;
@@ -129,11 +128,16 @@ export function nextWorld(campaign, id) {
   return null;
 }
 
-// Offer the tutorial to a brand-new player who picks a world other than the
-// first: no lessons done, nothing conquered, and not asked this way before.
-export function shouldOfferTutorial(campaign, id) {
-  if (id === PLANETS[0].id || campaign.tutorial.done.length || campaign.tutorial.offeredWorld) return false;
-  return !PLANETS.some(p => campaign.planets[p.id].completed);
+// What the title screen's one Play button does: resume a saved battle, start
+// the first tutorial lesson for a brand-new player, else play the first
+// unconquered world in the recommended order (Vulkara when all are done).
+export function playTarget(campaign) {
+  if (!campaign) return { kind: 'tutorial', lesson: 1 };
+  if (campaign.battle) return { kind: 'resume' };
+  const fresh = !campaign.tutorial.done.length && !PLANETS.some(p => campaign.planets[p.id].attempts > 0);
+  if (fresh) return { kind: 'tutorial', lesson: 1 };
+  const next = PLANETS.find(p => !campaign.planets[p.id].completed) || PLANETS[0];
+  return { kind: 'world', id: next.id };
 }
 
 export function upgradeCost(campaign, id) {
