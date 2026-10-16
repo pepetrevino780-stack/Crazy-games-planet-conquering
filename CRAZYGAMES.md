@@ -17,7 +17,7 @@ Upload the zip as an **HTML5** game in the CrazyGames developer portal.
 | SDK | HTML5 SDK v3 (already integrated) |
 | **Progress Save** | **Enable the Data module option.** Saves go through `CrazyGames.SDK.data`; CrazyGames disables that module if this toggle is off. |
 | Orientation | Landscape (portrait also works) |
-| Mobile | Supported: touch controls and responsive layout |
+| Mobile | Touch controls and a compact phone layout are in. **Leave "supports mobile" off until the game has been played on a real iPhone and Android phone** (only emulated phones were tested). |
 | Audio mute through SDK | Supported: tick it |
 | Cover images | `assets/crazygames/cover-landscape-1920x1080.png`, `cover-portrait-800x1200.png`, `cover-square-800x800.png`: only the title as text, with a hint of play (territories, capitals, a battleship shelling enemy land). Rebuild with `node tools/render-covers.cjs`. |
 | Screenshots | `assets/crazygames/screenshot-*.png` (1920x1080 gameplay) |

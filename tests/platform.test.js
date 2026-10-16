@@ -199,3 +199,26 @@ test('keys work by position on any layout, and Escape is never used', async () =
   assert.equal(panKeys(), 'WASD');
   setLayout(null);
 });
+
+// ---------- Mobile layout guards ----------
+
+test('phones: the map canvas never collapses, and the camera can clear the HUD panels', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../css/style.css', import.meta.url), 'utf8');
+  // iOS Safari before 14.1 ignores the inset shorthand: it left the map blank.
+  assert.doesNotMatch(css, /\binset:\s/);
+  const { MapRenderer } = await import('../js/render.js');
+  const canvas = { width: 300, height: 150, getContext: () => ({}) };
+  const r = new MapRenderer(canvas);
+  r.resize(0, 0, 2);
+  assert.deepEqual([canvas.width, canvas.height], [300, 150], 'a zero-size layout is ignored');
+  assert.ok(!r.cssW, 'still waiting for a real size');
+  r.resize(390, 844, 2, { top: 60, right: 0, bottom: 70, left: 180 });
+  assert.deepEqual([canvas.width, canvas.height], [780, 1688]);
+  // A 400x300 map: the camera may pan the left edge out from under a 180 px panel.
+  r.W = 400; r.H = 300;
+  const cam = { zoom: 8, cx: 0, cy: 150 };
+  r.clampCam(cam);
+  const vw = (390 * 2) / 8;
+  assert.ok(Math.abs(cam.cx - (vw / 2 - (180 * 2) / 8)) < 1e-9, 'left edge can sit at the panel edge');
+});

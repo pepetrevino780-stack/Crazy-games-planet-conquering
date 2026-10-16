@@ -547,11 +547,14 @@ function tip(key, text) {
   toast(esc(text), 'tip', 6000);
 }
 
+// One-word names for the small tiles on phones (the tooltip has the full name).
+const SHORT_LABEL = { extractor: 'Mines', starport: 'Port', spire: 'Spire', dropship: 'Sail', ship: 'Ship', research: 'Lab' };
+
 function buildToolbar() {
   const bar = $('#toolbar');
   const f = battle.factions[PLAYER];
   const tools = [
-    ...Object.entries(BUILDINGS).map(([id, b]) => ({ kind: 'build', id, key: b.key, label: b.name, icon: spriteIcon(id) })),
+    ...Object.entries(BUILDINGS).map(([id, b]) => ({ kind: 'build', id, key: b.key, label: id === 'spire' ? 'Spire' : b.name, icon: spriteIcon(id) })),
     'sep',
     { kind: 'dropship', id: 'dropship', key: '6', label: 'Expedition', icon: iconURL('fleet', 3) },
     { kind: 'ship', id: 'ship', key: '0', label: 'Battleship', icon: iconURL('ship', 3) },
@@ -567,7 +570,7 @@ function buildToolbar() {
     b.dataset.kind = t.kind; b.dataset.id = t.id;
     b.dataset.tipFn = 'tool';
     b.setAttribute('aria-label', t.kind === 'build' ? `${BUILDINGS[t.id].name}: ${BUILDINGS[t.id].desc}` : t.label);
-    b.innerHTML = `<span class="key">${t.key}</span><img src="${t.icon}" alt="" draggable="false"><span class="label">${esc(t.label)}</span><span class="cost"></span>${t.kind === 'ability' ? '<span class="cd"></span>' : ''}<img class="lockmark" src="${iconURL('lock', 2)}" alt="">`;
+    b.innerHTML = `<span class="key">${t.key}</span><img src="${t.icon}" alt="" draggable="false"><span class="label">${esc(t.label)}</span><span class="short">${esc(SHORT_LABEL[t.id] || t.label)}</span><span class="cost"></span>${t.kind === 'ability' ? '<span class="cd"></span>' : ''}<img class="lockmark" src="${iconURL('lock', 2)}" alt="">`;
     b.onclick = () => { if (performance.now() - dragEndedAt > 350) activateTool(t.kind, t.id); };
     if (t.kind === 'build') b.addEventListener('pointerdown', e => startDrag(e, t.id));
     bar.appendChild(b);
@@ -1622,7 +1625,9 @@ function onUp(e) {
   // panning the map never launches an attack by accident.
   if (!g || g.pinch || g.moved || g.longPress || e.button === 2 || performance.now() - g.t > 700) return;
   const i = renderer.screenToTile(p.x, p.y);
+  lastPointerTouch = g.type === 'touch';
   if (i >= 0) clickTile(i);
+  lastPointerTouch = false;
 }
 
 function clickTile(i) {
@@ -1639,7 +1644,9 @@ function clickTile(i) {
   else if (armed?.kind === 'ability') res = useAbility(battle, armed.id, i);
   else if (armed?.kind === 'ship') { res = playerBuildShip(battle, i); if (res.ok) toast('Battleship launched. Right-click the sea to move your fleet.', 'good', 2500); }
   else if (armed?.kind === 'dropship') { res = playerDropship(battle, i, ratio); if (res.ok) { toast(`Expedition of ${fmt(res.sent)} troops launched: arrives in ${Math.ceil(res.eta)} s.`, 'good', 2500); sfx.attack(); } }
-  else if (battle.owner[i] === PLAYER) { inspectTile = inspectTile === i ? -1 : i; sfx.click(); return; }
+  // Your own land: a mouse click pins its card; a tap never does (one info
+  // source at a time on small screens: long-press, then Info, to pin).
+  else if (battle.owner[i] === PLAYER) { inspectTile = lastPointerTouch ? -1 : inspectTile === i ? -1 : i; if (!lastPointerTouch) sfx.click(); return; }
   else {
     res = playerAttack(battle, i, ratio);
     if (res.ok && res.expedition) toast(`Across the sea: expedition of ${fmt(res.sent)} troops launched, arrives in ${Math.ceil(res.eta)} s.`, 'good', 3000);
@@ -1766,10 +1773,20 @@ function layoutHud() {
   return { top, bottom, left: empOpen ? Math.round(empRect.right + 4) : 0, right: 0 };
 }
 
+let lastPointerTouch = false;
+
+// Fit the canvas to the window. Guards for phones: never size it to zero
+// (retry next frame until layout is ready), and keep the backing store under
+// about 4 million pixels so iOS Safari never refuses to draw it.
+let resizeRetry = 0;
 function resize() {
   if (!battle) return;
   const c = $('#canvas');
-  renderer.resize(c.clientWidth, c.clientHeight, Math.min(window.devicePixelRatio || 1, 2), layoutHud());
+  const w = c.clientWidth || window.innerWidth, h = c.clientHeight || window.innerHeight;
+  if (!w || !h) { if (resizeRetry++ < 60) requestAnimationFrame(resize); return; }
+  resizeRetry = 0;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(4.2e6 / (w * h)));
+  renderer.resize(w, h, Math.max(1, dpr), layoutHud());
 }
 
 function syncGameplay() {
@@ -1959,6 +1976,8 @@ async function init() {
     }
   });
   window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => setTimeout(resize, 250));
+  window.visualViewport?.addEventListener('resize', resize);
   document.addEventListener('visibilitychange', () => { setHidden(document.hidden); if (document.hidden) saveBattle(); });
   window.addEventListener('pagehide', saveBattle);
 

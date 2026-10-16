@@ -82,12 +82,16 @@ export class MapRenderer {
   }
 
   resize(cssW, cssH, dpr, insets) {
+    if (!(cssW > 0 && cssH > 0)) return; // never shrink the canvas to nothing
+    const wasEmpty = !this.cssW;
     this.dpr = dpr;
     this.canvas.width = Math.round(cssW * dpr);
     this.canvas.height = Math.round(cssH * dpr);
     this.cssW = cssW; this.cssH = cssH;
     if (insets) this.insets = insets;
-    if (this.state) this.clamp();
+    // The first real size (e.g. a phone finishing its layout): frame the map.
+    if (this.state && (wasEmpty || !this.target)) this.fit();
+    else if (this.state) this.clamp();
   }
 
   // Smallest zoom that covers the whole window with map. Zoom is continuous

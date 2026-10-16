@@ -35,7 +35,7 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--void); color: var(--text); font-family: var(--font-body); font-size: 15px; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
-#app { position: fixed; inset: 0; overflow: hidden; background: var(--void) center / cover no-repeat; image-rendering: pixelated; }
+#app { position: fixed; top: 0; right: 0; bottom: 0; left: 0; overflow: hidden; background: var(--void) center / cover no-repeat; image-rendering: pixelated; }
 button, select, input { font: inherit; color: inherit; }
 .hidden { display: none !important; }
 img[data-icon], .px-icon { image-rendering: pixelated; width: 18px; height: 18px; flex: none; }
@@ -50,7 +50,7 @@ h3 { color: var(--violet); font-size: 14px; text-transform: uppercase; margin: 1
   clip-path: polygon(4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 4px);
 }
 
-.screen { position: absolute; inset: 0; display: none; flex-direction: column; }
+.screen { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: none; flex-direction: column; }
 .screen.active { display: flex; }
 .scroll { overflow-y: auto; padding: 16px; flex: 1; -webkit-overflow-scrolling: touch; }
 .narrow { max-width: 1000px; width: 100%; margin: 0 auto; }
@@ -162,7 +162,7 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 /* The map fills the window; panels float over it, docked to the corners.
    --hud-top / --hud-bottom are measured in JS from the top bar and toolbar. */
 #screen-battle { background: #000; --hud-top: 64px; --hud-bottom: 72px; }
-#canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; image-rendering: pixelated; cursor: crosshair; }
+#canvas { position: absolute; top: 0; right: 0; bottom: 0; left: 0; width: 100%; height: 100%; touch-action: none; display: block; image-rendering: pixelated; cursor: crosshair; }
 #canvas.panning { cursor: grabbing; }
 #screen-battle .hud-box, #screen-battle .toolbar {
   background: rgba(13, 11, 24, 0.8);
@@ -323,6 +323,7 @@ kbd.cap { display: inline-block; min-width: 22px; padding: 2px 5px 4px; font-fam
 .tool img { width: 22px; height: 22px; -webkit-user-drag: none; user-select: none; }
 .tool .key { position: absolute; top: 1px; left: 3px; font-size: 10px; color: var(--muted); }
 .tool .cost { font-size: 11px; color: var(--gold); }
+.tool .short { display: none; }
 .tool .cd { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--gold); }
 .tool.locked img { opacity: 0.35; }
 .tool .lockmark { display: none; position: absolute; top: 2px; right: 2px; width: 12px; height: 12px; opacity: 1; image-rendering: pixelated; }
@@ -340,7 +341,7 @@ kbd.cap { display: inline-block; min-width: 22px; padding: 2px 5px 4px; font-fam
 @keyframes bannerIn { 0% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
 .spawn-banner small { display: block; font-family: var(--font-body); color: var(--muted); margin-top: 4px; font-size: 13px; }
 
-.overlay { position: absolute; inset: 0; background: rgba(3, 2, 8, 0.72); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+.overlay { position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: rgba(3, 2, 8, 0.72); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
 .dialog { padding: 18px; max-width: 520px; width: 100%; max-height: 90%; overflow: auto; }
 .dialog h2 { margin-top: 0; }
 .help-body h4 { margin: 12px 0 4px; color: var(--cyan); font-family: var(--font-head); font-size: 13px; }
@@ -354,8 +355,12 @@ kbd.cap { display: inline-block; min-width: 22px; padding: 2px 5px 4px; font-fam
   .campaign-side { width: 100%; }
 }
 @media (max-width: 1100px), (max-height: 700px) {
+  /* Small labels stay, so every tile (abilities too) says what it is. */
   .tool .label { display: none; }
-  .tool { min-width: 46px; min-height: 44px; }
+  .tool .short { display: block; font-size: 9px; line-height: 1; }
+  .tool .cost { font-size: 10px; }
+  .tool img { width: 18px; height: 18px; }
+  .tool { min-width: 50px; min-height: 44px; }
 }
 @media (max-width: 760px), (max-height: 520px) {
   html, body { font-size: 14px; }
@@ -377,8 +382,15 @@ kbd.cap { display: inline-block; min-width: 22px; padding: 2px 5px 4px; font-fam
   .stat.sub { display: none; }
 }
 @media (orientation: portrait) and (max-width: 760px) {
-  .hud-top { flex-wrap: wrap; }
-  .hud-status { order: 3; flex-basis: 100%; }
+  /* Compact phone HUD: one row with the goal and the essential controls.
+     The planet name lives in the Mission panel (?), sound in Settings. */
+  .hud-top .hud-info, #btn-sound { display: none; }
+  .hud-status { order: 1; flex: 1; }
+  .hud-status { min-width: 0; }
+  .hud-controls { order: 2; flex: none; gap: 3px; }
+  .hud-controls .btn.icon { min-width: 34px; min-height: 34px; padding: 2px; }
+  .obj-line { font-size: 13px; }
+  .chip { font-size: 11px; padding: 0 5px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .glow, .tutorial.flash, .banner.show { animation: none; }
