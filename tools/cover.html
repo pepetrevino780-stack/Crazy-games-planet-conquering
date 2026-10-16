@@ -41,8 +41,8 @@ function pixelText(text, size, cy, top, bottom) {
 }
 const portrait = h > w;
 const big = Math.round(Math.min(w, h) * (portrait ? 0.17 : 0.16));
-pixelText('ALIEN WORLDS', big, Math.round(h * (portrait ? 0.42 : 0.4)), '#ffe08a', '#ff7a1f');
-pixelText('PLANETARY CONQUEST', Math.round(big * 0.5), Math.round(h * (portrait ? 0.42 : 0.4) + big * 0.82), '#d8c4ff', '#9a6bff');
+pixelText('PLANETFALL', big, Math.round(h * (portrait ? 0.42 : 0.4)), '#ffe08a', '#ff7a1f');
+pixelText('CONQUEST', Math.round(big * 0.62), Math.round(h * (portrait ? 0.42 : 0.4) + big * 0.82), '#d8c4ff', '#9a6bff');
 
 const c = document.getElementById('c');
 c.width = w * s; c.height = h * s;

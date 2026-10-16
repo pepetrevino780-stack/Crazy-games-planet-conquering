@@ -6,7 +6,7 @@
 npm run build
 ```
 
-This writes `dist/alien-worlds.zip` (well under 1 MB, with `index.html` at the root) and the unpacked files in `dist/game/`.
+This writes `dist/planetfall-conquest.zip` (well under 1 MB, with `index.html` at the root) and the unpacked files in `dist/game/`.
 Upload the zip as an **HTML5** game in the CrazyGames developer portal.
 
 ## 2. Submission settings
@@ -23,16 +23,16 @@ Upload the zip as an **HTML5** game in the CrazyGames developer portal.
 
 ### Listing text (ready to paste)
 
-**Title:** Alien Worlds: Planetary Conquest
+**Title:** Planetfall Conquest (19 characters; it matches the in-game title)
 
-**Short description:** Conquer five alien planets in real time. Expand, defend, disrupt and outplan smarter enemy civilizations, and earn permanent upgrades as you go.
+**Short description:** A single-player strategy game: conquer five alien planets in real time. Expand, defend, disrupt and outplan smarter enemy civilizations, and earn permanent upgrades as you go.
 
-**Description:** Land on a strange alien world and grow your empire tile by tile. Push your borders into the wilderness, then go to war with rival civilizations. Capture a capital and that civilization collapses. A five-world campaign teaches a new strategy on each planet: expand on volcanic Vulkara, defend the crystal fields of Cryonis, cut the fungal hubs of Mycelion, disable the ancient defenses of Xythera, and time your assault to the eclipse on Noctyra. Earn Stellar Cores for permanent upgrades, unlock abilities and alien civilizations, or play endless skirmishes on procedurally generated worlds.
+**Description:** Land on a strange alien world and grow your empire tile by tile. Push your borders into the wilderness, then go to war with rival civilizations. Take a rival's capital to throw it into disarray, and guard your own. A five-world campaign teaches a new strategy on each planet: expand on volcanic Vulkara, defend the crystal fields of Cryonis, cut the fungal hubs of Mycelion, disable the ancient defenses of Xythera, and time your assault to the eclipse on Noctyra. Earn Stellar Cores for permanent upgrades, unlock abilities and alien civilizations, or play endless skirmishes on procedurally generated worlds.
 
 **Controls:**
 - Click or tap land next to your border to attack it with your attack ratio of troops.
 - Drag to pan; mouse wheel or pinch to zoom.
-- 1–5 build, 6 dropship, R research, 7–9 abilities
+- Drag a building from the bar onto your land (or press 1–5 and click); 6 expedition, 0 battleship, R research, 7–9 abilities
 - [ / ] attack ratio, L leaderboard, O objectives, C center on capital, Space pause
 
 ## 3. What the SDK integration does

@@ -1,6 +1,6 @@
 // Builds the upload package for CrazyGames (or any HTML5 portal):
 //   dist/game/                 the playable files, index.html at the root
-//   dist/alien-worlds.zip      the same files zipped for upload
+//   dist/planetfall-conquest.zip      the same files zipped for upload
 // Only modules reachable from js/main.js are shipped.
 import { readFileSync, writeFileSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { dirname, join, posix } from 'node:path';
@@ -8,7 +8,7 @@ import { deflateRawSync } from 'node:zlib';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const OUT = join(ROOT, 'dist', 'game');
-const ZIP = join(ROOT, 'dist', 'alien-worlds.zip');
+const ZIP = join(ROOT, 'dist', 'planetfall-conquest.zip');
 
 function moduleGraph(entry) {
   const seen = new Set();
