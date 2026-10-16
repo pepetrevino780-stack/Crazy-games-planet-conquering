@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   initPlatform, platformActive, platformStorage, setAdHandlers, loadingStart, loadingStop,
-  gameplayStart, gameplayStop, happytime, midgameAd, rewardedAd,
+  gameplayStart, gameplayStop, happytime, midgameAd, rewardedAd, onAudioSettings,
 } from '../js/platform.js';
 
 const fakeLocal = { getItem: () => null, setItem: () => {} };
@@ -112,4 +112,57 @@ test('one look on every planet: every UI icon lives in js/art/sprites.js and not
   // Nothing styles the HUD by planet: no theme classes or attributes, no theme colours in CSS.
   assert.doesNotMatch(main, /(classList\.(add|toggle)|dataset)\.?[^;\n]*\btheme\b/);
   assert.doesNotMatch(css, /\b(vulkara|cryonis|mycelion|xythera|noctyra)\b|\[data-theme/i);
+});
+
+// ---------- Audio ----------
+
+test('CrazyGames mute: the game follows muteAudio and its changes', async () => {
+  const { win } = mockSdk('crazygames');
+  let listener = null;
+  win.CrazyGames.SDK.game.settings = { muteAudio: true };
+  win.CrazyGames.SDK.game.addSettingsChangeListener = cb => { listener = cb; };
+  await initPlatform(win);
+  const seen = [];
+  onAudioSettings(m => seen.push(m));
+  assert.deepEqual(seen, [true], 'muted from the start');
+  listener({ muteAudio: false });
+  listener({ disableChat: true }); // other settings are ignored
+  assert.deepEqual(seen, [true, false]);
+  // Off the portal it never calls back.
+  await initPlatform({ localStorage: fakeLocal });
+  const off = [];
+  onAudioSettings(m => off.push(m));
+  assert.deepEqual(off, []);
+});
+
+test('audio: music loops per world, effects normalised, mutes and volumes', async () => {
+  const audio = await import('../js/audio.js');
+  // Every world has its own loop: deterministic, 8 bars, notes in key and range.
+  const seen = new Set();
+  for (const name of ['menu', 'vulkara', 'cryonis', 'mycelion', 'xythera', 'noctyra']) {
+    const a = audio.composeLoop(name), b = audio.composeLoop(name);
+    assert.deepEqual(a, b, `${name} is deterministic`);
+    assert.equal(a.steps, 128);
+    for (const v of ['bass', 'lead', 'pad', 'kick', 'hat']) assert.ok(a.events.some(e => e.voice === v), `${name} has ${v}`);
+    for (const e of a.events.filter(e => e.midi)) {
+      assert.ok(e.midi >= 30 && e.midi <= 96, `${name} note in range`);
+      assert.ok(e.step >= 0 && e.step < a.steps);
+    }
+    seen.add(JSON.stringify(a.events.slice(0, 40)));
+  }
+  assert.equal(seen.size, 6, 'each world sounds different');
+  // Effects: no role/wave combination is harsh, and big moments stay biggest.
+  for (const w of Object.keys(audio.WAVE_LOUDNESS)) for (const r of Object.keys(audio.ROLES)) assert.ok(audio.effectGain(w, r) <= 0.09);
+  assert.ok(audio.effectGain('square', 'ui') < audio.effectGain('triangle', 'ui'), 'square waves are tamed');
+  assert.ok(audio.effectGain('triangle', 'big') > audio.effectGain('triangle', 'event'));
+  // Master level: settings and every kind of mute.
+  const v = { master: 0.7, music: 0.5, sfx: 0.8 };
+  const on = { enabled: true, adMuted: false, portalMuted: false, hidden: false };
+  assert.equal(audio.masterLevel(v, on), 0.7);
+  for (const k of ['adMuted', 'portalMuted', 'hidden']) assert.equal(audio.masterLevel(v, { ...on, [k]: true }), 0, k);
+  assert.equal(audio.masterLevel(v, { ...on, enabled: false }), 0);
+  // The distant battle grows with the fronts, up to a cap.
+  assert.equal(audio.battleBedLevel(0), 0);
+  assert.ok(audio.battleBedLevel(2) > audio.battleBedLevel(1));
+  assert.equal(audio.battleBedLevel(20), audio.battleBedLevel(50));
 });

@@ -111,6 +111,8 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .field select, .field input[type=number] { background: var(--panel-2); border: var(--px) solid var(--line-hi); padding: 6px; min-height: 36px; color: var(--text); }
 .field.check { flex-direction: row; align-items: center; gap: 10px; color: var(--text); }
 .field.check input { width: 20px; height: 20px; accent-color: var(--cyan); }
+.field.slider { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; color: var(--text); }
+.field.slider input { flex: 1; max-width: 220px; accent-color: var(--cyan); }
 
 /* Upgrades */
 .card-list { list-style: none; padding: 0; margin: 0 0 20px; display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }

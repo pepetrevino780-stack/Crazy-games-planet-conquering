@@ -1254,3 +1254,12 @@ test('training is one short line plus a picture per step; Vulkara teaches only t
     for (const name of ['mouse', 'hand', 'drag', 'slider', 'eye', 'wheel']) assert.ok(ICONS[name] && ICONS[name].rows.every(r => r.length === 9), name);
   });
 });
+
+test('volume settings are saved and checked', () => {
+  const c = newCampaign();
+  assert.deepEqual(c.settings.volume, { master: 0.8, music: 0.5, sfx: 0.8 });
+  const raw = JSON.parse(JSON.stringify(c));
+  raw.settings.volume = { master: 0.3, music: 2, sfx: 'loud' };
+  const n = normalizeCampaign(raw);
+  assert.deepEqual(n.settings.volume, { master: 0.3, music: 0.5, sfx: 0.8 }, 'bad values fall back');
+});

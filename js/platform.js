@@ -43,6 +43,15 @@ export async function initPlatform(win = globalThis.window) {
 
 export const platformActive = () => active;
 
+// CrazyGames' own mute setting: report it now and whenever it changes.
+export function onAudioSettings(cb) {
+  if (!active) return;
+  call(s => {
+    cb(!!s.game.settings?.muteAudio);
+    s.game.addSettingsChangeListener?.(next => { if (next && 'muteAudio' in next) cb(!!next.muteAudio); });
+  });
+}
+
 // Ads pause the battle; the game provides how.
 export function setAdHandlers(handlers) {
   adHandlers = { ...adHandlers, ...handlers };

@@ -45,7 +45,7 @@ export function newCampaign() {
     civ: 'terran',
     civsUnlocked: ['terran'],
     planets: Object.fromEntries(PLANETS.map(p => [p.id, { completed: false, attempts: 0, defeats: 0, bestTime: null, objectives: [], stars: 0 }])),
-    settings: { difficulty: 'commander', tips: true, sound: true, labels: true, simple: false, motion: false, playerColor: 'civ', name: 'Commander', controlsSeen: false },
+    settings: { difficulty: 'commander', tips: true, sound: true, labels: true, simple: false, motion: false, playerColor: 'civ', name: 'Commander', controlsSeen: false, volume: { master: 0.8, music: 0.5, sfx: 0.8 } },
     battle: null, // in-progress battle snapshot
   };
 }
@@ -83,6 +83,10 @@ export function normalizeCampaign(raw) {
   }
   if (raw.settings && /^(civ|#[0-9a-f]{6})$/i.test(raw.settings.playerColor || '')) c.settings.playerColor = raw.settings.playerColor;
   if (raw.settings && typeof raw.settings.name === 'string') c.settings.name = cleanName(raw.settings.name);
+  for (const k of ['master', 'music', 'sfx']) {
+    const v = raw.settings?.volume?.[k];
+    if (typeof v === 'number' && v >= 0 && v <= 1) c.settings.volume[k] = v;
+  }
   if (raw.tutorial && Array.isArray(raw.tutorial.done)) {
     c.tutorial.done = [...new Set(raw.tutorial.done.filter(n => Number.isInteger(n) && n >= 1 && n <= TUTORIAL_REWARD.lessons))];
     c.tutorial.rewarded = !!raw.tutorial.rewarded;

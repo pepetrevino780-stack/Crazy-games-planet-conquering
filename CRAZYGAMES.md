@@ -18,6 +18,7 @@ Upload the zip as an **HTML5** game in the CrazyGames developer portal.
 | **Progress Save** | **Enable the Data module option.** Saves go through `CrazyGames.SDK.data`; CrazyGames disables that module if this toggle is off. |
 | Orientation | Landscape (portrait also works) |
 | Mobile | Supported: touch controls and responsive layout |
+| Audio mute through SDK | Supported: tick it |
 | Cover images | `assets/crazygames/cover-landscape-1920x1080.png`, `cover-portrait-800x1200.png`, `cover-square-800x800.png`: only the title as text, with a hint of play (territories, capitals, a battleship shelling enemy land). Rebuild with `node tools/render-covers.cjs`. |
 | Screenshots | `assets/crazygames/screenshot-*.png` (1920x1080 gameplay) |
 | Preview videos | `assets/crazygames/preview-landscape-1920x1080.mp4` (16:9) and `preview-portrait-1080x1620.mp4` (2:3). 17 s, 30 fps, no sound, no cursor, normal speed; each opens on its cover for 0.5 s, then cuts to a late-game war (a busy front, a battleship duel, a capital falling). Rebuild with `tools/make-previews.sh`. |
@@ -66,6 +67,6 @@ Code: `js/platform.js`, wired up in `js/main.js`. Tests: `tests/platform.test.js
 ## 5. Notes and known gaps
 
 - **Gameplay screenshots** for the listing are in `assets/crazygames/` (`screenshot-*.png`).
-- **Sound** is synthesised and muted while ads play (`setAdMute` in the ad pause handler).
+- **Sound** is synthesised (no audio files): effects, a looping chiptune per world, planet ambience and a distant-battle bed that rises with your fronts. Settings has master, music and effects volume. It is muted while ads play and follows CrazyGames' mute setting (`SDK.game.settings.muteAudio` and its settings listener), so tick **"The game supports CrazyGames muting audio through SDK"** in the portal.
 - **No sitelock:** nothing stops other sites from embedding a copy of the build. Add one only if needed.
 - **Requirements not checked directly:** the CrazyGames documentation site could not be reached from the build environment. This integration follows their SDK v3 docs as summarised in search results. Re-check the [technical requirements](https://docs.crazygames.com/requirements/technical) and [ad requirements](https://docs.crazygames.com/requirements/ads/) before submitting.

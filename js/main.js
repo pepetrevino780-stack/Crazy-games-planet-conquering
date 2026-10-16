@@ -23,10 +23,10 @@ import { MapRenderer, fmt } from './render.js';
 import { THEMES, TERRAIN, THEME_IDS, isLand } from './world/themes.js';
 import { iconURL, spriteCanvas, mixHex } from './art/sprites.js';
 import { titleScene, planetOrb, backdropCanvas } from './art/backdrop.js';
-import { sfx, setSound, setAdMute } from './audio.js';
+import { sfx, setSound, setAdMute, setPortalMute, setHidden, setVolumes, unlockAudio, playMusic, setAmbience, setBattleIntensity } from './audio.js';
 import {
   initPlatform, platformActive, platformStorage, setAdHandlers, loadingStart, loadingStop,
-  gameplayStart, gameplayStop, happytime, midgameAd, rewardedAd,
+  gameplayStart, gameplayStop, happytime, midgameAd, rewardedAd, onAudioSettings,
 } from './platform.js';
 
 const $ = sel => document.querySelector(sel);
@@ -100,6 +100,8 @@ const REASONS = {
 
 function show(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + name));
+  // Menus play the menu theme; battles their world's theme and ambience.
+  if (name !== 'battle') { playMusic('menu'); setAmbience(null); }
   if (name === 'title') renderTitle();
   if (name === 'campaign') renderCampaign();
   if (name === 'upgrades') renderUpgrades();
@@ -305,6 +307,8 @@ function startBattle(ref) {
 }
 
 function enterBattle() {
+  playMusic(battle.theme);
+  setAmbience(battle.theme);
   seenTips = new Set(battle.objectivesDone);
   seenAttacks = new Set(battle.attacks.map(a => a.id));
   armed = null; hoverTile = -1; inspectTile = -1; paused = false; speed = 1; endTimer = 0;
@@ -1334,6 +1338,7 @@ function updateInspector() {
 }
 
 function updateHud(force = false) {
+  if (battle) setBattleIntensity(battle.attacks.filter(a => a.attacker === PLAYER || a.target === PLAYER).length);
   if (battle) { updateControlsHelp(); contextHints(); }
   const now = performance.now();
   if (!force && now - lastHud < 120) return;
@@ -1707,6 +1712,7 @@ function openSettings() {
   const s = campaign ? campaign.settings : newCampaign().settings;
   $('#set-sound').checked = s.sound; $('#set-tips').checked = s.tips; $('#set-labels').checked = s.labels;
   $('#set-simple').checked = s.simple; $('#set-motion').checked = s.motion; $('#set-color').value = s.playerColor;
+  for (const k of ['master', 'music', 'sfx']) $(`#set-vol-${k}`).value = Math.round(s.volume[k] * 100);
   if (battle) paused = true;
   $('#overlay-settings').classList.remove('hidden');
 }
@@ -1716,7 +1722,9 @@ function closeSettings() {
   const s = campaign.settings;
   s.sound = $('#set-sound').checked; s.tips = $('#set-tips').checked; s.labels = $('#set-labels').checked;
   s.simple = $('#set-simple').checked; s.motion = $('#set-motion').checked; s.playerColor = $('#set-color').value;
+  for (const k of ['master', 'music', 'sfx']) s.volume[k] = Number($(`#set-vol-${k}`).value) / 100;
   setSound(s.sound);
+  setVolumes(s.volume);
   persist();
   if (battle) {
     renderer.setSimple(s.simple);
@@ -1816,6 +1824,14 @@ async function init() {
   const prefersReduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   if (campaign && prefersReduced && !campaign.settings.motion) campaign.settings.motion = true;
   setSound(campaign ? campaign.settings.sound : true);
+  if (campaign) setVolumes(campaign.settings.volume);
+  onAudioSettings(setPortalMute);
+  // Browsers only start audio after a gesture: the first click or key does it.
+  const unlock = () => { unlockAudio(); window.removeEventListener('pointerdown', unlock, true); window.removeEventListener('keydown', unlock, true); };
+  window.addEventListener('pointerdown', unlock, true);
+  window.addEventListener('keydown', unlock, true);
+  // Volume sliders apply as you drag them.
+  for (const k of ['master', 'music', 'sfx']) $(`#set-vol-${k}`).addEventListener('input', e => setVolumes({ [k]: Number(e.target.value) / 100 }));
   setAdHandlers({
     pause: () => { adPlaying = true; setAdMute(true); },
     resume: () => { adPlaying = false; setAdMute(false); lastFrame = 0; },
@@ -1931,7 +1947,7 @@ async function init() {
     else if (k === ']') setRatio(ratio + 0.05);
   });
   window.addEventListener('resize', resize);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) saveBattle(); });
+  document.addEventListener('visibilitychange', () => { setHidden(document.hidden); if (document.hidden) saveBattle(); });
   window.addEventListener('pagehide', saveBattle);
 
   // The very first launch skips every menu: the first lesson lands at once.
