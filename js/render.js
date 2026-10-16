@@ -65,6 +65,29 @@ export class MapRenderer {
     this.fit();
   }
 
+  // A 16x16 tile of soft light and dark specks, repeated at 4 sub-pixels per
+  // map tile. Deterministic, so it never shimmers.
+  drawGrain(o, z) {
+    if (!this.grain) {
+      const c = this.makeCanvas(16, 16), g = c.getContext('2d');
+      let r = 7;
+      const rand = () => ((r = (r * 9301 + 49297) % 233280) / 233280);
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+        const v = rand();
+        if (v < 0.22) { g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(x, y, 1, 1); } else if (v > 0.86) { g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(x, y, 1, 1); }
+      }
+      this.grain = c;
+    }
+    const ctx = this.ctx, k = z / 4;
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.translate(o.x, o.y);
+    ctx.scale(k, k);
+    ctx.fillStyle = ctx.createPattern(this.grain, 'repeat');
+    ctx.fillRect(0, 0, this.W * 4, this.H * 4);
+    ctx.restore();
+  }
+
   makeCanvas(w, h) {
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
@@ -103,7 +126,9 @@ export class MapRenderer {
   }
 
   maxZoom() {
-    return Math.max(this.minZoom(), 8 * this.dpr);
+    // Capped at 6 device px per tile: closer, flat tiles look blocky beside
+    // the detailed building art.
+    return Math.max(this.minZoom(), 6 * this.dpr);
   }
 
   fit() {
@@ -671,6 +696,9 @@ export class MapRenderer {
     ctx.fillStyle = '#05040a';
     ctx.fillRect(o.x - z, o.y - z, (this.W + 2) * z, (this.H + 2) * z);
     ctx.drawImage(this.simple && this.baseSimple ? this.baseSimple : this.base, o.x, o.y, this.W * z, this.H * z);
+    // Close up, a fine texture inside each tile (4x4 sub-pixels) keeps the
+    // ground from reading as flat blocks next to the detailed sprites.
+    if (z / d >= 3.5 && !this.simple) this.drawGrain(o, z);
     this.advanceReveal(ui.reducedMotion ? 99 : ui.dt || 0.016);
     this.updateOverlay();
     ctx.drawImage(this.over, o.x, o.y, this.W * z, this.H * z);

@@ -99,7 +99,7 @@ export const PLANETS = [
     events: { type: 'eruption', period: 45, duration: 8, warn: 5 },
     victory: { mode: 'all', conds: [{ type: 'capture', site: 'enemy-capital', label: 'Capture the Ember Throne' }] },
     objectives: [
-      { id: 'v1', type: 'tiles', n: 2700, label: 'Expand to 2,700 tiles', reward: 5,
+      { id: 'v1', type: 'tiles', n: 1200, label: 'Expand to 1,200 tiles', reward: 5,
         tip: 'Click unclaimed land next to your border. Wilderness is cheap to take.' },
       { id: 'v2', type: 'ratioAttack', ratio: 0.5, label: 'Attack with a 50% ratio or more', reward: 5,
         tip: 'The ratio sets how much of your army joins an attack. Troops regrow fastest when your army is not full.' },
@@ -238,7 +238,7 @@ export const PLANETS = [
     lesson: 'Prove Your Mastery',
     tagline: 'A world under a dead sun. The Umbral Dominion strikes on every front.',
     theme: 'noctyra', seed: 8521, size: [1230, 750], scale: 3, aiShips: true,
-    enemy: { name: 'Umbral Dominion', color: '#ff3355', profile: 'mastermind', radius: 9, troops: 1200, capitalName: 'Eclipse Citadel', capitalType: 'citadel', startDelay: 6,
+    enemy: { name: 'Umbral Dominion', color: '#ff3355', profile: 'mastermind', radius: 9, troops: 1200, capitalName: 'Eclipse Citadel', capitalType: 'citadel', startDelay: 3,
       sites: [{ type: 'command', count: 3, ring: [20, 34], name: 'Command Node' }, { type: 'hub', count: 1, ring: [12, 18], name: 'Umbral Hub' },
         { type: 'relay', count: 1, ring: [22, 28], name: 'Shade Relay' }, { type: 'turret', count: 2, ring: [10, 14], name: 'Shade Defense' }],
       powers: true },
