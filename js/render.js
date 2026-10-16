@@ -843,26 +843,45 @@ export class MapRenderer {
 
     // Battleships with a hit-point bar; shells in flight.
     for (const sh of st.ships || []) {
-      // Never smaller than a badge, so a fleet is visible zoomed out.
-      const spr = spriteCanvas('ship', st.factions[sh.owner].color), ss = Math.max(Math.round(3 * d), sc);
+      // Never smaller than a badge, and bigger up close.
+      const spr = spriteCanvas('ship', st.factions[sh.owner].color), ss = Math.max(Math.round(3 * d), sc, Math.round(z * 0.75));
       const sp = T(sh.x + 0.5, sh.y + 0.5);
-      ctx.drawImage(spr, Math.round(sp.x - (spr.width * ss) / 2), Math.round(sp.y - (spr.height * ss) / 2), spr.width * ss, spr.height * ss);
+      const sw = spr.width * ss, shh = spr.height * ss;
+      // A wake while sailing, and a dark hull shadow so it reads on any sea.
+      const wp = sh.path && sh.path[0];
+      if (wp && motion) {
+        const ang = Math.atan2(wp.y - sh.y, wp.x - sh.x);
+        ctx.fillStyle = 'rgba(220,240,255,0.55)';
+        for (let k = 1; k <= 5; k++) {
+          const q = T(sh.x + 0.5 - Math.cos(ang) * k * 1.2, sh.y + 0.5 - Math.sin(ang) * k * 1.2);
+          const u = Math.max(1, Math.round(ss * (1 - k / 7)));
+          ctx.fillRect(Math.round(q.x - u / 2), Math.round(q.y + shh * 0.2), u, u);
+        }
+      }
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillRect(Math.round(sp.x - sw / 2) + ss, Math.round(sp.y + shh / 2 - ss), sw - ss, ss * 2);
+      ctx.drawImage(spr, Math.round(sp.x - sw / 2), Math.round(sp.y - shh / 2), sw, shh);
       if (sh.hp < 100) {
-        const p = T(sh.x + 0.5, sh.y + 0.5), bw = Math.round(12 * d), bh = Math.max(2, Math.round(2 * d));
+        const bw = Math.max(Math.round(12 * d), Math.round(sw * 0.8)), bh = Math.max(2, Math.round(2 * d));
+        const by = Math.round(sp.y - shh / 2 - 4 * d);
         ctx.fillStyle = 'rgba(5,4,12,0.9)';
-        ctx.fillRect(Math.round(p.x - bw / 2) - 1, Math.round(p.y - 8 * d) - 1, bw + 2, bh + 2);
+        ctx.fillRect(Math.round(sp.x - bw / 2) - 1, by - 1, bw + 2, bh + 2);
         ctx.fillStyle = sh.hp > 50 ? '#7ff0c8' : sh.hp > 25 ? '#ffd25e' : '#ff4b3e';
-        ctx.fillRect(Math.round(p.x - bw / 2), Math.round(p.y - 8 * d), Math.round(bw * Math.max(0, sh.hp) / 100), bh);
+        ctx.fillRect(Math.round(sp.x - bw / 2), by, Math.round(bw * Math.max(0, sh.hp) / 100), bh);
       }
     }
     const dt = ui.dt || 0.016;
-    this.shells = this.shells.filter(s => (s.t += dt) < s.dur || (this.burst(s.x1, s.y1, '#ff9a3c', 8), false));
+    this.shells = this.shells.filter(s => (s.t += dt) < s.dur || (this.burst(s.x1, s.y1, '#ff9a3c', 10), this.burst(s.x1, s.y1, '#6a6070', 5), false));
     for (const s of this.shells) {
-      const k = s.t / s.dur;
-      const x = s.x0 + (s.x1 - s.x0) * k, y = s.y0 + (s.y1 - s.y0) * k - Math.sin(k * Math.PI) * 4;
-      const q = T(x + 0.5, y + 0.5), u = Math.max(2, Math.round(z / 2));
-      ctx.fillStyle = '#fff2a8';
-      ctx.fillRect(Math.round(q.x - u / 2), Math.round(q.y - u / 2), u, u);
+      // A glowing round with a short fading trail along its arc.
+      const u = Math.max(2, Math.round(z * 0.6));
+      for (let j = 4; j >= 0; j--) {
+        const k = Math.max(0, s.t / s.dur - j * 0.04);
+        const x = s.x0 + (s.x1 - s.x0) * k, y = s.y0 + (s.y1 - s.y0) * k - Math.sin(k * Math.PI) * 4;
+        const q = T(x + 0.5, y + 0.5), uu = j ? Math.max(1, Math.round(u * (1 - j / 6))) : u;
+        ctx.fillStyle = j ? (j < 3 ? '#ffd25e' : '#ff7a1f') : '#fff6c8';
+        ctx.fillRect(Math.round(q.x - uu / 2), Math.round(q.y - uu / 2), uu, uu);
+      }
     }
 
     // Battle on the fronts: soldiers, muzzle flashes, explosions, smoke.
