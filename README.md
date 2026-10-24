@@ -25,7 +25,7 @@ npm start            # http://localhost:8080
 2. **Expand.** Click land next to your border. That sends your *attack ratio* of troops, and the border advances tile by tile until the attack runs out of troops. Unclaimed wilderness is cheap. Mountains, rivers and volcanoes are slow and costly.
 3. **Grow.** You have one troop pool. When an attack ends, its surviving troops march home and rejoin it (even above your cap for a while, shown in amber). Its cap grows with your land, and troops regrow fastest when your army is well below the cap, so keep attacking.
 4. **Fight.** Every rival is a labelled nation blob. Attacking a civilization costs more where its garrison is dense or the land is fortified. **Capture a small nation's capital and it collapses.** Empires (you and the main enemy) survive losing their capital, badly hurt: 40% of their troops and half their minerals are lost at once, attacks in the field lose half their troops, and until the capital is retaken troop growth, income and the troop cap drop and they run one attack front fewer. After 20 s of disarray (no capital, so all land counts as cut off) a provisional capital is set up deep in their remaining land. You are defeated only when you lose all your land.
-5. **Build and research.** Spend minerals on Habitats (+troop cap), Extractors (+minerals), Starports (dropships across the sea), Bastions (defence) and Research Spires (exotic matter). Use a building tool on one of your own buildings of that type to upgrade it (up to level 3): effects add up per level, Bastions reach further and Starports launch faster dropships. Spend exotic matter on research and energy on special abilities.
+5. **Build and research.** Spend minerals on Habitats (+troop cap), Extractors (+minerals), Starports (dropships across the sea), Bastions (defence) and Research Spires (exotic matter). Use a building tool on one of your own buildings of that type to upgrade it (up to level 3): effects add up per level (Habitats: your first 5 levels in total count), Bastions reach further and Starports launch faster dropships. Spend exotic matter on research and energy on special abilities.
 
 | Action | Desktop | Touch |
 | --- | --- | --- |
@@ -55,8 +55,8 @@ enemy and field notes are in the in-battle Mission panel (the ? button).
 |---|---|---|---|---|---|---|
 | 1 | **Vulkara**: Ashen Cradle | 1 | Attack | Expansion, attack ratio, magma vents, eruptions | Capture the Ember Throne | Cindari Clans: relaxed |
 | 2 | **Cryonis**: Frozen Frontier | 2 | Defend | Terrain defence, bastions, crystal deposits, whiteout storms | Hold 3 crystals for 2:30, or take the Frost Bastion | Glacari Concord: cautious, retaliates |
-| 3 | **Mycelion**: Living World | 4 | Disrupt | Network hubs nourish land and shield the Brood Heart; spore blooms | Destroy the Brood Heart | Mycelial Swarm: aggressive expander |
-| 4 | **Xythera**: Ancient Machines | 3 | Plan | Relays power automated defences; ancient factories; scarce growth; enemy battleships | Core Foundry plus 2 factories | Axiom Directorate: tactical |
+| 3 | **Xythera**: Ancient Machines | 3 | Plan | Relays power automated defences; ancient factories; scarce growth; enemy battleships | Core Foundry plus 2 factories | Axiom Directorate: tactical |
+| 4 | **Mycelion**: Living World | 4 | Disrupt | Network hubs nourish land and shield the Brood Heart; spore blooms | Destroy the Brood Heart | Mycelial Swarm: aggressive expander |
 | 5 | **Noctyra**: Eternal Eclipse | 5 | Mastery | Command nodes add enemy attack fronts; the eclipse strips the Citadel; enemy battleships; everything returns | Conquer the Eclipse Citadel | Umbral Dominion: coordinated |
 
 **First launch:** there are no menus. The very first launch lands the player straight in the first tutorial

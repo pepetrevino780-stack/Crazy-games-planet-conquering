@@ -314,7 +314,7 @@ export const ICONS = {
   labels: { c: ['#e9f1ff', '#ffffff'], rows: ['ooooooooo', 'oaaaaaaao', 'oaoooooao', 'oaaaaaaao', 'oaoooaaao', 'oaaaaaaao', 'ooooooooo', '..o......', '.o.......'] },
   lock: { c: ['#9aa8c0', '#e9f1ff'], rows: ['..ooooo..', '.oo...oo.', '.o.....o.', 'ooooooooo', 'oaaahaaao', 'oaaoooaao', 'oaaaoaaao', 'oaaaaaaao', 'ooooooooo'] },
   crown: { c: ['#ffd25e', '#fff3c4'], rows: ['.........', 'o...o...o', 'oo.oao.oo', 'oaoaaaoao', 'oaaahaaao', 'oaaaaaaao', 'ooooooooo', '.........', '.........'] },
-  territory: { c: ['#3fd0ff', '#bff2ff'], rows: ['..ooooo..', '.oaaaaao.', 'oaahaaaao', 'oaaaaaabo', 'oaaaaaabo', 'oaaaaabbo', '.oaabbbo.', '..ooooo..', '.........'] },
+  territory: { c: ['#3fd0ff', '#bff2ff'], rows: ['oo.......', 'ohoooooo.', 'ohaaaaaho', 'ohaaaaao.', 'ohaaaaaho', 'ohoooooo.', 'oh.......', 'oh.......', 'oo.......'] },
   close: { c: ['#e9f1ff', '#ffffff'], rows: ['.........', '.oo...oo.', '.oao.oao.', '..oaoao..', '...oao...', '..oaoao..', '.oao.oao.', '.oo...oo.', '.........'] },
   enemy: { c: ['#ff4b3e', '#ffc4be'], rows: ['..ooooo..', '.oaaaaao.', 'oaaaaaaao', 'oaoaaaoao', 'oaoaaaoao', 'oaaahaaao', '.oaaaaao.', '..oaoao..', '..ooooo..'] },
 };

@@ -26,6 +26,9 @@ const desaturate = (c, k) => { const l = luma(c) * 255; return mix(c, [l, l, l],
 export const LAND_MIN_LUMA = 0.24;
 export const SEA_MAX_RATIO = 0.55; // sea luminance <= 55% of ground (>= 40% darker)
 
+// Per-world muting of the ground: share of colour removed, brightness kept.
+const MUTE = { mycelion: { desat: 0.55, dark: 0.8 } };
+
 const palCache = new Map();
 export function palettes(theme) {
   if (palCache.has(theme)) return palCache.get(theme);
@@ -40,6 +43,10 @@ export function palettes(theme) {
     for (const key of ['plains', 'wild', 'highland', 'ruins']) out[key] = out[key].map(c => scale(c, k));
     out.mountain = out.mountain.map((c, i) => (i < out.mountain.length - 1 ? scale(c, Math.min(k, 1.8)) : c));
   }
+  // Worlds whose ground is loud (Mycelion's bright purple and green) are muted
+  // so borders, sites and nation colours stand out on top.
+  const mute = MUTE[theme];
+  if (mute) for (const key of LAND) out[key] = out[key].map(c => scale(desaturate(c, mute.desat), mute.dark));
   // Seas: desaturated, and never brighter than SEA_MAX_RATIO of the darkest ground tone.
   const darkGround = Math.min(...['plains', 'wild', 'highland'].map(key => Math.min(...out[key].map(luma))));
   const cap = darkGround * SEA_MAX_RATIO;

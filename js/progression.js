@@ -45,9 +45,22 @@ export function newCampaign() {
     civ: 'terran',
     civsUnlocked: ['terran'],
     planets: Object.fromEntries(PLANETS.map(p => [p.id, { completed: false, attempts: 0, defeats: 0, bestTime: null, objectives: [], stars: 0 }])),
-    settings: { difficulty: 'commander', tips: true, sound: true, labels: true, simple: false, motion: false, playerColor: 'civ', name: 'Commander', controlsSeen: false, volume: { master: 0.8, music: 0.5, sfx: 0.8 } },
-    battle: null, // in-progress battle snapshot
+    settings: { difficulty: 'commander', tips: true, sound: true, labels: true, simple: false, motion: false, playerColor: 'civ', name: 'Commander', controlsSeen: false, expeditionAsked: false, volume: { master: 0.8, music: 0.5, sfx: 0.8 } },
+    // In-progress battle snapshots: one slot per mode, so starting a campaign
+    // world never wipes a tutorial lesson or a skirmish. lastSlot is the one
+    // played most recently (the title's Continue).
+    saves: { tutorial: null, campaign: null, skirmish: null },
+    lastSlot: null,
   };
+}
+
+export const SAVE_SLOTS = ['tutorial', 'campaign', 'skirmish'];
+// Which slot a battle saves into.
+export const slotOf = configId => (configId === 'tutorial' || configId === 'skirmish' ? configId : 'campaign');
+// The save the title's Continue resumes: the most recent one.
+export function latestSave(campaign) {
+  if (!campaign) return null;
+  return campaign.saves[campaign.lastSlot] || SAVE_SLOTS.map(k => campaign.saves[k]).find(Boolean) || null;
 }
 
 // Merge a loaded save onto a fresh template so new fields are filled in
@@ -78,7 +91,7 @@ export function normalizeCampaign(raw) {
     t.stars = Number.isInteger(rp.stars) ? Math.max(0, Math.min(3, rp.stars)) : t.completed ? 1 : 0;
   }
   if (raw.settings && DIFFICULTIES[raw.settings.difficulty]) c.settings.difficulty = raw.settings.difficulty;
-  for (const k of ['tips', 'sound', 'labels', 'simple', 'motion', 'controlsSeen']) {
+  for (const k of ['tips', 'sound', 'labels', 'simple', 'motion', 'controlsSeen', 'expeditionAsked']) {
     if (raw.settings && typeof raw.settings[k] === 'boolean') c.settings[k] = raw.settings[k];
   }
   if (raw.settings && /^(civ|#[0-9a-f]{6})$/i.test(raw.settings.playerColor || '')) c.settings.playerColor = raw.settings.playerColor;
@@ -92,7 +105,11 @@ export function normalizeCampaign(raw) {
     c.tutorial.rewarded = !!raw.tutorial.rewarded;
     c.tutorial.offered = !!raw.tutorial.offered;
   }
-  if (raw.battle && typeof raw.battle === 'object' && raw.battle.v === 4) c.battle = raw.battle;
+  const okSave = b => !!b && typeof b === 'object' && b.v === 4;
+  for (const k of SAVE_SLOTS) if (okSave(raw.saves?.[k])) c.saves[k] = raw.saves[k];
+  // Older saves had a single slot.
+  if (okSave(raw.battle)) { c.saves[slotOf(raw.battle.configId)] = raw.battle; c.lastSlot = slotOf(raw.battle.configId); }
+  if (SAVE_SLOTS.includes(raw.lastSlot)) c.lastSlot = raw.lastSlot;
   return c;
 }
 
@@ -137,7 +154,7 @@ export function nextWorld(campaign, id) {
 // unconquered world in the recommended order (Vulkara when all are done).
 export function playTarget(campaign) {
   if (!campaign) return { kind: 'tutorial', lesson: 1 };
-  if (campaign.battle) return { kind: 'resume' };
+  if (latestSave(campaign)) return { kind: 'resume' };
   const fresh = !campaign.tutorial.done.length && !PLANETS.some(p => campaign.planets[p.id].attempts > 0);
   if (fresh) return { kind: 'tutorial', lesson: 1 };
   const next = PLANETS.find(p => !campaign.planets[p.id].completed) || PLANETS[0];
@@ -262,12 +279,12 @@ export function applyVictory(campaign, planet, result, rewards) {
   }
   campaign.cores += rewards.total;
   campaign.totalEarned += rewards.total;
-  campaign.battle = null;
+  campaign.saves.campaign = null;
 }
 
 export function applyDefeat(campaign, planet) {
   if (campaign.planets[planet.id]) campaign.planets[planet.id].defeats += 1;
-  campaign.battle = null;
+  campaign.saves.campaign = null;
 }
 
 // Adaptive assist: each defeat on a planet makes its NPCs slightly slower

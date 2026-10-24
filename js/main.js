@@ -3,6 +3,7 @@ import { PLANETS, getPlanet, WORLD_TOOLS, BUILDINGS, RESEARCH, SITE_TYPES, PERSO
 import {
   newCampaign, loadCampaign, saveCampaign, isUnlocked, UPGRADES, CIVS, ABILITIES, upgradeCost,
   buyUpgrade, unlockCiv, playerLoadout, cleanName, nextWorld, playTarget, completeLesson, TUTORIAL_REWARD, computeRewards, applyVictory, applyDefeat, assistLevel, starsFor,
+  slotOf, latestSave,
 } from './progression.js';
 import {
   createBattle, step, spawnPlayer, canSpawnAt, playerAttack, playerDropship, playerBuild,
@@ -38,7 +39,7 @@ let storage = null;
 let campaign = null;
 let battle = null;
 let renderer = null;
-let ratio = 0.2;
+let ratio = 0.35; // big enough that a first attack fills an area, not a thin spike
 let lastConquered = 0;
 let paused = false;
 let speed = 1;
@@ -156,7 +157,7 @@ function orbCanvas(theme, size = 48) {
 
 let titleArt = null;
 function hasProgress() {
-  return !!campaign && (!!campaign.battle || campaign.totalEarned > 0 || Object.values(campaign.planets).some(p => p.attempts > 0));
+  return !!campaign && (!!latestSave(campaign) || campaign.totalEarned > 0 || Object.values(campaign.planets).some(p => p.attempts > 0));
 }
 
 function renderTitle() {
@@ -165,18 +166,18 @@ function renderTitle() {
     $('#screen-title').style.backgroundImage = `url(${titleArt})`;
   }
   // One big Play button: one click back into the action.
-  const b = campaign?.battle, t = playTarget(campaign);
+  const b = latestSave(campaign), t = playTarget(campaign);
   $('#btn-play').textContent = t.kind === 'resume' ? `Continue: ${battleName(b)} ${fmtTime(b.time)}` : t.kind === 'world' ? `Play: ${getPlanet(t.id).name}` : 'Play';
   $('#btn-new').classList.toggle('hidden', !hasProgress());
   if (document.activeElement !== $('#player-name')) $('#player-name').value = campaign?.settings.name || 'Commander';
 }
 
-const battleName = b => (b.configId === 'tutorial' ? `Tutorial lesson ${b.lesson}` : b.configId === 'skirmish' ? `Skirmish${b.mode && b.mode !== 'classic' ? ` (${SKIRMISH_MODES[b.mode].name})` : ''}: ${THEMES[b.theme].name}` : getPlanet(b.configId).name);
+const battleName = b => (b.configId === 'tutorial' ? `Tutorial: lesson ${b.lesson}` : b.configId === 'skirmish' ? `Skirmish${b.mode && b.mode !== 'classic' ? ` (${SKIRMISH_MODES[b.mode].name})` : ''}: ${THEMES[b.theme].name}` : getPlanet(b.configId).name);
 
 function renderCampaign() {
   $('#cores-campaign').textContent = campaign.cores;
   $('#sel-difficulty').value = campaign.settings.difficulty;
-  const saved = campaign.battle;
+  const saved = campaign.saves.campaign;
   $('#btn-resume-campaign').classList.toggle('hidden', !saved);
   if (saved) $('#btn-resume-campaign').textContent = `Resume ${battleName(saved)} (${fmtTime(saved.time)})`;
   const list = $('#planet-list');
@@ -190,7 +191,8 @@ function renderCampaign() {
     const status = rec.completed ? `Conquered · best ${fmtTime(rec.bestTime)}<br>${objs}`
       : rec.attempts ? `${rec.defeats} defeat${rec.defeats === 1 ? '' : 's'} · ${objs}` : esc(p.title);
     const pips = '<span class="pip on"></span>'.repeat(p.difficulty) + '<span class="pip"></span>'.repeat(5 - p.difficulty);
-    li.innerHTML = `<span class="step" title="Recommended order">#${i + 1}</span>${rec.completed ? starRow(rec.stars || 1) : ''}<h3>${esc(p.name)}</h3><div class="lesson">${esc(p.lesson)}</div>
+    // Every card shows its stars (empty until conquered) and a clear mark once won.
+    li.innerHTML = `<span class="step" title="Recommended order">#${i + 1}</span>${starRow(rec.completed ? rec.stars || 1 : 0)}<h3>${esc(p.name)}</h3>${rec.completed ? '<div class="conquered">&#10003; Conquered</div>' : ''}<div class="lesson">${esc(p.lesson)}</div>
       <div class="difficulty" aria-label="Difficulty ${p.difficulty} of 5" title="Difficulty ${p.difficulty} of 5">${pips}</div><div class="status">${status}</div>
       <button class="btn ${unlocked && !rec.completed ? 'primary' : ''}" ${unlocked ? '' : 'disabled'}>${rec.completed ? 'Replay' : 'Invade'}</button>`;
     li.insertBefore(orbCanvas(p.theme), li.querySelector('h3'));
@@ -207,6 +209,7 @@ function renderSkirmish() {
     sel.onchange = () => { $('#skirmish-mode-desc').textContent = SKIRMISH_MODES[sel.value].desc; };
   }
   $('#skirmish-mode-desc').textContent = SKIRMISH_MODES[sel.value].desc;
+  $('#skirmish-difficulty').value = campaign.settings.difficulty;
   const list = $('#skirmish-list');
   list.innerHTML = '';
   for (const theme of THEME_IDS) {
@@ -229,8 +232,9 @@ function renderTutorial() {
     const li = document.createElement('li');
     li.className = 'panel' + (done.includes(L.id) ? ' done' : '');
     const next = !done.includes(L.id) && TUTORIAL_LESSONS.find(x => !done.includes(x.id)) === L;
-    li.innerHTML = `<span class="mark">${done.includes(L.id) ? '&#10003;' : L.id}</span><div class="info"><b>${L.id}. ${esc(L.name)}</b><p>${esc(L.desc)}</p></div><button class="btn ${next ? 'primary' : ''}">${done.includes(L.id) ? 'Replay' : 'Play'}</button>`;
-    li.querySelector('button').onclick = () => startTutorial(L.id);
+    const saved = campaign.saves.tutorial?.lesson === L.id ? campaign.saves.tutorial : null;
+    li.innerHTML = `<span class="mark">${done.includes(L.id) ? '&#10003;' : L.id}</span><div class="info"><b>${L.id}. ${esc(L.name)}</b><p>${esc(L.desc)}</p></div><button class="btn ${next || saved ? 'primary' : ''}">${saved ? `Resume ${fmtTime(saved.time)}` : done.includes(L.id) ? 'Replay' : 'Play'}</button>`;
+    li.querySelector('button').onclick = () => (saved ? resumeBattle(saved) : startTutorial(L.id));
     list.appendChild(li);
   }
 }
@@ -279,9 +283,11 @@ function renderUpgrades() {
 // Worlds start straight away. The mission (victory goals, enemy, field notes)
 // lives in the in-battle Mission panel (the ? button), not a screen to pass.
 async function launch(ref) {
-  const saved = campaign.battle;
+  // Only a save of the same mode is replaced (one slot each for campaign,
+  // tutorial and skirmish).
+  const slot = slotOf(ref.configId), saved = campaign.saves[slot];
   if (saved && !(await confirmBox(`Abandon your saved battle (${battleName(saved)})?`))) return;
-  campaign.battle = null;
+  campaign.saves[slot] = null;
   beginBattle(ref);
 }
 
@@ -320,7 +326,7 @@ function enterBattle() {
   const cfg = config(battle);
   const idx = PLANETS.indexOf(cfg);
   $('#hud-planet').textContent = cfg.skirmish ? `Skirmish · ${THEMES[battle.theme].name}` : cfg.name;
-  $('#hud-sub').textContent = `${idx >= 0 ? `World ${idx + 1}/5 · ` : ''}${cfg.lesson} · ${battle.difficulty}`;
+  $('#hud-sub').textContent = cfg.lessonId ? `Lesson ${cfg.lessonId}: ${cfg.lesson}` : `${idx >= 0 ? `World ${idx + 1}/5 · ` : ''}${cfg.lesson} · ${battle.difficulty}`;
   buildToolbar();
   show('battle');
   $('#empire').classList.remove('collapsed');
@@ -335,14 +341,16 @@ function enterBattle() {
 
 function saveBattle() {
   if (!battle || (battle.status !== 'playing' && battle.status !== 'spawn')) return;
-  campaign.battle = serialize(battle);
+  const slot = slotOf(battle.configId);
+  campaign.saves[slot] = serialize(battle);
+  campaign.lastSlot = slot;
   persist();
   lastSave = performance.now();
 }
 
-function resumeBattle() {
-  const restored = deserialize(campaign.battle);
-  if (!restored) { campaign.battle = null; persist(); toast('That saved battle could not be restored.', 'bad'); show('campaign'); return; }
+function resumeBattle(save = latestSave(campaign)) {
+  const restored = save && deserialize(save);
+  if (!restored) { if (save) campaign.saves[slotOf(save.configId)] = null; persist(); toast('That saved battle could not be restored.', 'bad'); show('campaign'); return; }
   battle = restored;
   enterBattle();
   toast('Battle resumed.', 'good');
@@ -418,7 +426,7 @@ function endTutorialLesson() {
   $('#btn-debrief-replay').onclick = () => startTutorial(lesson);
   if (won) {
     const bonus = completeLesson(campaign, lesson);
-    campaign.battle = null;
+    campaign.saves.tutorial = null;
     persist();
     $('#debrief-title').textContent = `Lesson ${lesson} complete`;
     $('#debrief-sub').textContent = `${cfg.lesson} · ${campaign.tutorial.done.length}/${TUTORIAL_LESSONS.length} lessons done`;
@@ -436,7 +444,7 @@ function endTutorialLesson() {
       $('#btn-debrief-primary').onclick = () => startTutorial(nextLesson.id);
     }
   } else {
-    campaign.battle = null;
+    campaign.saves.tutorial = null;
     persist();
     $('#debrief-title').textContent = 'Lesson not finished';
     $('#debrief-sub').textContent = cfg.lesson;
@@ -617,8 +625,13 @@ function buildToolbar() {
     b.dataset.tipFn = 'tool';
     b.setAttribute('aria-label', t.kind === 'build' ? `${BUILDINGS[t.id].name}: ${BUILDINGS[t.id].desc}` : t.label);
     b.innerHTML = `<span class="key">${t.key}</span><img src="${t.icon}" alt="" draggable="false"><span class="label">${esc(t.label)}</span><span class="cost"></span>${t.kind === 'ability' ? '<span class="cd"></span>' : ''}<img class="lockmark" src="${iconURL('lock', 2)}" alt="">`;
-    b.onclick = () => { if (performance.now() - dragEndedAt > 350) activateTool(t.kind, t.id); };
-    if (t.kind === 'build') b.addEventListener('pointerdown', e => startDrag(e, t.id));
+    b.onclick = () => {
+      if (performance.now() - dragEndedAt <= 350) return;
+      const why = battle && toolUnlocked(t.kind, t.id) ? toolBlockReason(t.kind, t.id) : '';
+      if (why) { sfx.error(); toast(esc(why), 'bad', 2200); return; }
+      activateTool(t.kind, t.id);
+    };
+    if (t.kind === 'build') b.addEventListener('pointerdown', e => { if (!toolBlockReason('build', t.id)) startDrag(e, t.id); });
     bar.appendChild(b);
   }
 }
@@ -716,7 +729,7 @@ function toolUnlocked(kind, id) {
 
 function activateTool(kind, id) {
   if (!battle) return;
-  if (!toolUnlocked(kind, id)) { sfx.error(); toast('That unlocks later in your training.', 'bad', 2000); return; }
+  if (!toolUnlocked(kind, id)) { sfx.error(); toast('That unlocks later in the tutorial.', 'bad', 2000); return; }
   sfx.click();
   if (kind === 'research') { openResearch(); return; }
   if (kind === 'ability' && !battle.factions[PLAYER].abilities.includes(id)) { toast(REASONS.locked, 'bad', 2500); return; }
@@ -751,19 +764,40 @@ function updateToolbar() {
     if (trainingLock) { b.querySelector('.cost').textContent = ''; return; }
     const cost = b.querySelector('.cost');
     b.classList.toggle('armed', !!armed && armed.kind === kind && armed.id === id);
-    if (kind === 'build') { const c = buildCost(battle, PLAYER, id); cost.textContent = fmt(c); b.disabled = f.minerals < c; }
-    else if (kind === 'dropship') { cost.textContent = DROPSHIP_COST; b.disabled = !canDropship(battle) || f.minerals < DROPSHIP_COST; }
-    else if (kind === 'ship') { cost.textContent = SHIP_COST.minerals; b.disabled = !hasPort() || f.minerals < SHIP_COST.minerals || f.energy < SHIP_COST.energy; }
+    if (kind === 'build') cost.textContent = fmt(buildCost(battle, PLAYER, id));
+    else if (kind === 'dropship') cost.textContent = DROPSHIP_COST;
+    else if (kind === 'ship') cost.textContent = SHIP_COST.minerals;
     else if (kind === 'research') { cost.textContent = fmt(f.exotic); }
     else if (kind === 'ability') {
       cost.textContent = `${ABILITY_ENERGY[id]}E`;
       if (!f.abilities.includes(id)) return;
       const total = ABILITIES[id].cooldown * (f.cooldown || 1);
       const left = Math.max(0, battle.cooldowns[id] - battle.time);
-      b.disabled = !abilityReady(battle, id);
       b.querySelector('.cd').style.width = `${100 * (1 - left / total)}%`;
     }
+    setOff(b, !!toolBlockReason(kind, id));
   });
+}
+
+// Unaffordable tools stay hoverable (a disabled button gets no mouse events),
+// so the tooltip can say why: they are greyed with a class instead.
+function setOff(b, off) {
+  b.classList.toggle('off', off);
+  b.setAttribute('aria-disabled', off ? 'true' : 'false');
+}
+
+// Why a tool cannot be used right now, or '' if it can.
+function toolBlockReason(kind, id) {
+  const f = battle.factions[PLAYER];
+  const need = (n, what, have) => `Need ${fmt(n)} ${what} (you have ${fmt(have)}).`;
+  if (kind === 'build') { const c = buildCost(battle, PLAYER, id); return f.minerals < c ? need(c, 'minerals', f.minerals) : ''; }
+  if (kind === 'dropship') return !canDropship(battle) ? 'You hold no coast to launch from.' : f.minerals < DROPSHIP_COST ? need(DROPSHIP_COST, 'minerals', f.minerals) : '';
+  if (kind === 'ship') return !hasPort() ? 'Build a Starport first.' : f.minerals < SHIP_COST.minerals ? need(SHIP_COST.minerals, 'minerals', f.minerals) : f.energy < SHIP_COST.energy ? need(SHIP_COST.energy, 'energy', f.energy) : '';
+  if (kind === 'ability' && f.abilities.includes(id) && !abilityReady(battle, id)) {
+    const left = Math.ceil(Math.max(0, battle.cooldowns[id] - battle.time));
+    return left > 0 ? `Recharging: ready in ${left} s.` : need(ABILITY_ENERGY[id], 'energy', f.energy);
+  }
+  return '';
 }
 
 function openResearch() {
@@ -827,27 +861,34 @@ const STAT_TIPS = {
   ratio: f => `<b>Attack ratio</b><br>Share of your army sent with each attack: now ${fmt(f.troops * ratio)} troops. <kbd>${keyLabel('BracketLeft')}</kbd> <kbd>${keyLabel('BracketRight')}</kbd> adjust it.`,
 };
 
+// The tool tooltip below its headline (see TIP_FNS.tool).
+function toolTipBody(kind, id, f) {
+  if (kind === 'build') {
+    const b = BUILDINGS[id], c = buildCost(battle, PLAYER, id);
+    return `<b>${esc(b.name)}</b> <kbd>${b.key}</kbd><br>${esc(b.desc)}<br><span class="${f.minerals >= c ? 'ok' : 'no'}">Cost ${fmt(c)} minerals</span> (you have ${fmt(f.minerals)}). Each one you own costs more.<br><span class="dim">Use it on one of your own ${esc(b.name)}s to upgrade it (up to level 3).</span>`;
+  }
+  if (kind === 'dropship') return `<b>Expedition</b> <kbd>6</kbd><br>Send your attack ratio of troops to land anywhere, even across the sea. Launches from your fastest coast; each Starport level makes it 40% faster.${canDropship(battle) ? '' : ' <span class="no">You hold no coast.</span>'}<br>Cost ${DROPSHIP_COST} minerals. Clicking land on another continent sends one automatically.`;
+  if (kind === 'ship') {
+    const n = battle.ships.filter(x => x.owner === PLAYER).length;
+    return `<b>Battleship</b> <kbd>0</kbd><br>Built at your Starport nearest the spot you click, then sails there by sea. Every few seconds it shells enemy coast in range, fights enemy ships and cuts down passing enemy expeditions.${hasPort() ? '' : ' <span class="no">Build a Starport first.</span>'}<br>Cost ${SHIP_COST.minerals} minerals + ${SHIP_COST.energy} energy. You have ${n}. Right-click the sea to move your fleet.`;
+  }
+  if (kind === 'research') return `<b>Research</b> <kbd>R</kbd><br>Spend exotic matter on upgrades that last this battle. You have ${fmt(f.exotic)} exotic.`;
+  const a = ABILITIES[id], u = UPGRADES.find(x => x.id === id);
+  const owned = f.abilities.includes(id);
+  return `<b>${esc(a.name)}</b> <kbd>${a.key}</kbd><br>${esc(u.desc.replace(/^Ability: (.)/, (_, c) => c.toUpperCase()))}<br>Cooldown ${Math.round(a.cooldown * (f.cooldown || 1))}s.${owned ? '' : ' <span class="no">Unlock it in Command upgrades.</span>'}`;
+}
+
 const TIP_FNS = {
   tool(el) {
     const { kind, id } = el.dataset;
     const f = battle.factions[PLAYER];
     if (!toolUnlocked(kind, id) && !(kind === 'ability' && !f.abilities.includes(id))) {
       const name = kind === 'build' ? BUILDINGS[id].name : kind === 'ability' ? ABILITIES[id].name : kind === 'dropship' ? 'Expedition' : kind === 'ship' ? 'Battleship' : 'Research';
-      return `<b>${esc(name)}</b><br><span class="no">Locked: your training unlocks it in a later step.</span>`;
+      return `<b>${esc(name)}</b><br><span class="no">Locked: the tutorial unlocks it in a later step.</span>`;
     }
-    if (kind === 'build') {
-      const b = BUILDINGS[id], c = buildCost(battle, PLAYER, id);
-      return `<b>${esc(b.name)}</b> <kbd>${b.key}</kbd><br>${esc(b.desc)}<br><span class="${f.minerals >= c ? 'ok' : 'no'}">Cost ${fmt(c)} minerals</span> (you have ${fmt(f.minerals)}). Each one you own costs more.<br><span class="dim">Use it on one of your own ${esc(b.name)}s to upgrade it (up to level 3).</span>`;
-    }
-    if (kind === 'dropship') return `<b>Expedition</b> <kbd>6</kbd><br>Send your attack ratio of troops to land anywhere, even across the sea. Launches from your fastest coast; each Starport level makes it 40% faster.${canDropship(battle) ? '' : ' <span class="no">You hold no coast.</span>'}<br>Cost ${DROPSHIP_COST} minerals. Clicking land on another continent sends one automatically.`;
-    if (kind === 'ship') {
-      const n = battle.ships.filter(x => x.owner === PLAYER).length;
-      return `<b>Battleship</b> <kbd>0</kbd><br>Built at your Starport nearest the spot you click, then sails there by sea. Every few seconds it shells enemy coast in range, fights enemy ships and cuts down passing enemy expeditions.${hasPort() ? '' : ' <span class="no">Build a Starport first.</span>'}<br>Cost ${SHIP_COST.minerals} minerals + ${SHIP_COST.energy} energy. You have ${n}. Right-click the sea to move your fleet.`;
-    }
-    if (kind === 'research') return `<b>Research</b> <kbd>R</kbd><br>Spend exotic matter on upgrades that last this battle. You have ${fmt(f.exotic)} exotic.`;
-    const a = ABILITIES[id], u = UPGRADES.find(x => x.id === id);
-    const owned = f.abilities.includes(id);
-    return `<b>${esc(a.name)}</b> <kbd>${a.key}</kbd><br>${esc(u.desc.replace(/^Ability: (.)/, (_, c) => c.toUpperCase()))}<br>Cooldown ${Math.round(a.cooldown * (f.cooldown || 1))}s.${owned ? '' : ' <span class="no">Unlock it in Command upgrades.</span>'}`;
+    // Greyed out? Say why first.
+    const why = toolBlockReason(kind, id);
+    return (why ? `<span class="no">${esc(why)}</span><br>` : '') + toolTipBody(kind, id, f);
   },
   stat(el) { return STAT_TIPS[el.dataset.stat](battle.factions[PLAYER]); },
   // The empire row keeps only Troops, Land and the ratio; the rest is here.
@@ -932,10 +973,15 @@ function placeMapTooltip(x, y) {
   const el = $('#tooltip'), r = el.getBoundingClientRect();
   const scr = window.getComputedStyle($("#screen-battle"));
   const top = parseFloat(scr.getPropertyValue('--hud-top')) || 60, bottom = parseFloat(scr.getPropertyValue('--hud-bottom')) || 60;
-  const left = x < window.innerWidth / 2 ? window.innerWidth - r.width - 8 : 8;
-  const t = y < window.innerHeight / 2 ? window.innerHeight - bottom - r.height - 6 : top + 4;
-  el.style.left = `${Math.max(4, Math.round(left))}px`;
-  el.style.top = `${Math.max(4, Math.round(t))}px`;
+  // Beside the cursor, on the side facing the middle of the screen (never in a
+  // corner, where it would cover the battles chip or HUD), clear of the HUD bars.
+  const gap = 28;
+  let left = x < window.innerWidth / 2 ? x + gap : x - gap - r.width;
+  let t = y < window.innerHeight / 2 ? y + gap : y - gap - r.height;
+  left = Math.max(4, Math.min(window.innerWidth - r.width - 4, left));
+  t = Math.max(top + 4, Math.min(window.innerHeight - bottom - r.height - 6, t));
+  el.style.left = `${Math.round(left)}px`;
+  el.style.top = `${Math.round(t)}px`;
 }
 
 function placeTooltip(x, y) {
@@ -999,6 +1045,8 @@ function initTooltips() {
     if (e.pointerType === 'touch') return;
     // The battle screen can appear under a resting cursor without a pointerover.
     if (!tipSource && e.target.id === 'canvas' && battle) tipSource = 'map';
+    // Left the element the card describes (even without a pointerover): close it.
+    if (tipSource && tipSource !== 'map' && !tipSource.contains(e.target)) { hideTooltip(); if (e.target.id === 'canvas' && battle) tipSource = 'map'; }
     lastMoveAt = performance.now();
     tipXY = { x: e.clientX, y: e.clientY };
     if (tipSource === 'map') { $('#tooltip').classList.add('hidden'); scheduleTip(); }
@@ -1042,6 +1090,17 @@ function updateRoutePreview() {
   routePath = r && r.kind === 'land' ? r.path : null;
   routeKind = r ? r.kind : null;
   routeEta = r && r.kind === 'sea' ? expeditionPlan(battle, PLAYER, i)?.eta || 0 : 0;
+}
+
+// A small chip by the cursor while hovering land across the sea: what a click
+// there costs (an expedition), before any tooltip delay.
+function updateCursorChip() {
+  const el = $('#cursor-chip');
+  const show = battle && battle.status === 'playing' && !armed && !drag?.active && routeKind === 'sea' && routeTile === hoverTile && hoverTile >= 0 && tipSource === 'map' && !mapPressed;
+  el.classList.toggle('hidden', !show);
+  if (!show) return;
+  el.textContent = `Expedition · ${DROPSHIP_COST} minerals${routeEta ? ` · ${Math.ceil(routeEta)} s` : ''}`;
+  el.style.left = `${tipXY.x + 14}px`; el.style.top = `${tipXY.y + 16}px`;
 }
 
 // ---------- Radial menu ----------
@@ -1375,7 +1434,7 @@ function updateTutorial() {
     const keys = touchFirst() ? [] : step.keys || [];
     const visual = icon || keys.length ? `<span class="tut-visual">${icon ? `<img class="tut-icon anim-${step.icon}" src="${iconURL(icon, 4)}" alt="">` : ''}${keys.map(k => `<kbd class="cap">${esc(k)}</kbd>`).join('')}</span>` : '';
     const text = touchFirst() ? step.text.replace(/^Click/, 'Tap').replace(/, then click/, ', then tap') : step.text;
-    card.innerHTML = `<div class="tut-head"><span>TRAINING ${battle.tutorial + 1}/${steps.length}</span><button class="btn small ghost" id="btn-tut-skip" data-tip="Unlock every tool and stop the training.">Skip</button></div><div class="tut-row">${visual}<p>${esc(text)}</p></div>${campaign && !campaign.settings.controlsSeen ? `<div class="tut-controls">${controlsHtml()}</div>` : ''}`;
+    card.innerHTML = `<div class="tut-head"><span>TUTORIAL ${battle.tutorial + 1}/${steps.length}</span><button class="btn small ghost" id="btn-tut-skip" data-tip="Unlock every tool and stop the tutorial.">Skip</button></div><div class="tut-row">${visual}<p>${esc(text)}</p></div>${campaign && !campaign.settings.controlsSeen ? `<div class="tut-controls">${controlsHtml()}</div>` : ''}`;
     $('#btn-tut-skip').onclick = () => { skipTutorial(battle); sfx.click(); toast('Training skipped. Everything is unlocked; the field manual (?) has the details.', 'tip', 4000); updateHud(true); };
     card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash');
     tutPointer = null; tutPointerAt = 0;
@@ -1597,7 +1656,7 @@ function processNotices() {
         sfx.build(); renderer.raise(n.id, performance.now()); renderer.ring(n.x, n.y, '#3fd0ff', 5); renderer.burst(n.x, n.y, '#8a7a6a', 10);
         if (n.owner === PLAYER && n.cost) renderer.pop(n.x, n.y, `-${fmt(n.cost)} minerals`, '#c9b8ff');
         break;
-      case 'tutorial': sfx.objective(); goalDone(tutorialStep(battle) ? '' : 'Training complete'); break;
+      case 'tutorial': sfx.objective(); goalDone(tutorialStep(battle) ? '' : 'Tutorial complete'); break;
       case 'diplomacy': {
         const f = battle.factions[n.faction];
         if (n.kind === 'allied') { toast(`<b>${esc(f.name)}</b> accepted your alliance.`, 'good'); sfx.objective(); }
@@ -1752,6 +1811,14 @@ function clickTile(i) {
   // source at a time on small screens: long-press, then Info, to pin).
   else if (battle.owner[i] === PLAYER) { inspectTile = lastPointerTouch ? -1 : inspectTile === i ? -1 : i; if (!lastPointerTouch) sfx.click(); return; }
   else {
+    // The first automatic expedition asks first (it costs minerals and sails
+    // off with troops); after that the cursor chip says what a click does.
+    if (!campaign.settings.expeditionAsked && planRoute(battle, PLAYER, i)?.kind === 'sea') {
+      campaign.settings.expeditionAsked = true; persist();
+      confirmBox(`That land is across the sea. Clicking it sends an expedition of ${fmt(battle.factions[PLAYER].troops * ratio)} troops for ${DROPSHIP_COST} minerals. Send it?`, 'Send expedition', 'Cancel')
+        .then(ok => { if (ok && battle && battle.status === 'playing') clickTile(i); });
+      return;
+    }
     res = playerAttack(battle, i, ratio);
     if (res.ok && res.expedition) toast(`Across the sea: expedition of ${fmt(res.sent)} troops launched, arrives in ${Math.ceil(res.eta)} s.`, 'good', 3000);
     if (res.ok && res.reinforce) toast(`Reinforcements sailing to your beachhead: they attack on arrival in ${Math.ceil(res.eta)} s.`, 'good', 3000);
@@ -1917,7 +1984,7 @@ function frame(ts) {
   if (battle.status === 'won' || battle.status === 'lost') {
     if (!endTimer) { endTimer = ts; sfx[battle.status === 'won' ? 'victory' : 'defeat'](); toast(battle.status === 'won' ? '<b>PLANET CONQUERED</b>' : '<b>YOUR CIVILIZATION HAS FALLEN</b>', battle.status === 'won' ? 'good' : 'bad', 2000); }
     if (battle.status === 'won' && Math.random() < 0.3) { const cap = battle.sites.find(s => s.id === 'enemy-capital'); if (cap) renderer.burst(cap.x + (Math.random() - 0.5) * 30, cap.y + (Math.random() - 0.5) * 20, ['#ffd25e', '#7ff0c8', '#ff6ad2'][Math.floor(Math.random() * 3)], 6); }
-    if (ts - endTimer > 1800) { campaign.battle = null; endBattle(); return; }
+    if (ts - endTimer > 1800) { campaign.saves[slotOf(battle.configId)] = null; endBattle(); return; }
   }
   const s = campaign.settings;
   let spawnHover = null;
@@ -1929,7 +1996,7 @@ function frame(ts) {
     inspectOwner: inspectTile >= 0 ? battle.owner[inspectTile] : 0,
     highlights: new Set(cur?.highlight ? [cur.highlight] : []),
     intents,
-    route: drag?.active ? null : (updateRoutePreview(), routePath),
+    route: (updateCursorChip(), drag?.active ? null : (updateRoutePreview(), routePath)),
     ghost: dragGhost(),
     pointer: battle.status === 'playing' && !renderer.holdOwner && tutorialStep(battle) ? tutPointer : null,
   });
@@ -1999,20 +2066,21 @@ async function init() {
     persist();
     launch({ configId: PLANETS[0].id });
   };
-  $('#btn-resume-campaign').onclick = resumeBattle;
+  $('#btn-resume-campaign').onclick = () => resumeBattle(campaign.saves.campaign);
   $('#btn-upgrades').onclick = () => show('upgrades');
-  $('#sel-difficulty').onchange = e => { campaign.settings.difficulty = e.target.value; persist(); };
-  $('#btn-reset').onclick = async () => { if (await confirmBox('Reset the whole campaign? This cannot be undone.')) { campaign = newCampaign(); persist(); renderCampaign(); } };
+  // One difficulty setting, offered on both the campaign and skirmish screens.
+  for (const id of ['#sel-difficulty', '#skirmish-difficulty']) $(id).onchange = e => { campaign.settings.difficulty = e.target.value; persist(); };
+  $('#btn-reset').onclick = async () => { if (await confirmBox('Reset the whole campaign? Every conquered world, upgrade and Stellar Core is lost. This cannot be undone.', 'Reset everything', 'Keep my campaign')) { campaign = newCampaign(); persist(); renderCampaign(); } };
   $('#btn-pause').onclick = () => togglePause();
   $('#btn-resume-battle').onclick = () => togglePause(false);
   $('#btn-restart').onclick = async () => {
     if (await confirmBox('Restart this world? Current battle progress will be lost.')) {
       const ref = { configId: battle.configId, theme: battle.theme, worldSeed: battle.seed, mode: battle.mode };
-      campaign.battle = null;
+      campaign.saves[slotOf(ref.configId)] = null;
       startBattle(ref);
     }
   };
-  $('#btn-quit').onclick = () => { saveBattle(); const id = campaign.battle?.configId; battle = null; show(id === 'skirmish' ? 'title' : id === 'tutorial' ? 'tutorial' : 'campaign'); };
+  $('#btn-quit').onclick = () => { saveBattle(); const id = battle?.configId; battle = null; show(id === 'skirmish' ? 'title' : id === 'tutorial' ? 'tutorial' : 'campaign'); };
   $('#btn-help').onclick = openHelp;
   // Closing an overlay resumes the game, unless the pause menu is still open.
   const resumeUnlessPaused = () => { paused = !$('#overlay-pause').classList.contains('hidden'); };
@@ -2088,6 +2156,9 @@ async function init() {
 
   // The very first launch skips every menu: the first lesson lands at once.
   if (!campaign) { campaign = newCampaign(); persist(); startTutorial(1); } else show('title');
+  // The menu appears only once its fonts have loaded, so no button moves
+  // under the pointer after it shows (at most a short wait).
+  Promise.race([document.fonts?.ready, new Promise(r => setTimeout(r, 1500))]).then(() => $('#screen-title').classList.add('ready'));
   requestAnimationFrame(frame);
   loadingStop();
 }

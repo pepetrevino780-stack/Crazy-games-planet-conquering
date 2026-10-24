@@ -67,7 +67,7 @@ export const SITE_TYPES = {
 
 // Player-built structures (bought with minerals). Cost grows with each copy.
 export const BUILDINGS = {
-  habitat: { key: '1', name: 'Habitat', desc: '+12% max troops per level (up to 5 levels count).', cost: 300 },
+  habitat: { key: '1', name: 'Habitat', desc: '+12% max troops per level. Each Habitat goes up to level 3; your first 5 Habitat levels in total count.', cost: 300 },
   extractor: { key: '2', name: 'Extractor', desc: '+4 minerals/s per level.', cost: 250 },
   starport: { key: '3', name: 'Starport', desc: 'Expeditions launched from it are 40% faster per level, and it can build battleships. Must be near the coast.', cost: 400, coastal: true },
   bastion: { key: '4', name: 'Bastion', desc: 'Your nearby land defends at 1.8x. Each upgrade widens its reach by a fifth.', cost: 300, radius: 10 },
@@ -167,36 +167,6 @@ export const PLANETS = [
     rewards: { base: 40 },
   },
   {
-    id: 'mycelion',
-    difficulty: 4, // 1-5, shown on the world card
-    name: 'Mycelion',
-    title: 'The Living World',
-    lesson: 'Learn to Disrupt',
-    tagline: 'A fungal world wired together by living hubs. The Mycelials spread without pause.',
-    theme: 'mycelion', seed: 6311, size: [1080, 660], scale: 3,
-    enemy: { name: 'Mycelial Swarm', color: '#c6ff3d', profile: 'aggressive', radius: 9, troops: 750, capitalName: 'Brood Heart', startDelay: 22,
-      sites: [{ type: 'hub', count: 3, ring: [16, 26], name: 'Hub' }], shieldedBy: 'hub' },
-    nations: { count: 12, radius: 5, troops: 450, profiles: ['tribe', 'opportunist', 'aggressive'] },
-    sites: [{ type: 'ruin', count: 2, where: 'any' }],
-    events: { type: 'bloom', period: 40, duration: 4, warn: 5 },
-    victory: { mode: 'all', conds: [{ type: 'capture', site: 'enemy-capital', orDestroyed: true, label: 'Destroy the Brood Heart' }] },
-    objectives: [
-      { id: 'm1', type: 'ownType', site: 'hub', n: 1, label: 'Capture a network hub', reward: 10, highlight: 'hub',
-        tip: 'Hubs nourish all Mycelial land around them. Taking one weakens a whole region at once.' },
-      { id: 'm2', type: 'ownType', site: 'hub', n: 2, label: 'Hold two hubs', reward: 10,
-        tip: 'Each hub you hold also stops the spore bloom from feeding the Swarm.' },
-      { id: 'm3', type: 'unshield', label: 'Drop the Brood Heart shield', reward: 5, highlight: 'enemy-capital',
-        tip: 'The shield is down. Strike the Brood Heart before the Swarm retakes a hub.' },
-    ],
-    briefing: [
-      'Network hubs nourish the land around them: nourished land defends at 1.35x.',
-      'The Brood Heart is shielded while the Swarm holds any hub. Its biggest armies are not the target. The hubs are.',
-      'Spore blooms give every hub owner a burst of troops. Cut the hubs and the blooms feed you instead.',
-    ],
-    lessons: ['Locate network hubs', 'Break enemy connections', 'Prioritise key targets', 'Contain a fast expander'],
-    rewards: { base: 50 },
-  },
-  {
     id: 'xythera',
     difficulty: 3, // 1-5, shown on the world card
     name: 'Xythera',
@@ -230,6 +200,36 @@ export const PLANETS = [
     ],
     lessons: ['Capture energy relays', 'Disable defenses first', 'Secure factories', 'Plan around scarce resources'],
     rewards: { base: 60 },
+  },
+  {
+    id: 'mycelion',
+    difficulty: 4, // 1-5, shown on the world card
+    name: 'Mycelion',
+    title: 'The Living World',
+    lesson: 'Learn to Disrupt',
+    tagline: 'A fungal world wired together by living hubs. The Mycelials spread without pause.',
+    theme: 'mycelion', seed: 6311, size: [1080, 660], scale: 3,
+    enemy: { name: 'Mycelial Swarm', color: '#c6ff3d', profile: 'aggressive', radius: 9, troops: 750, capitalName: 'Brood Heart', startDelay: 22,
+      sites: [{ type: 'hub', count: 3, ring: [16, 26], name: 'Hub' }], shieldedBy: 'hub' },
+    nations: { count: 12, radius: 5, troops: 450, profiles: ['tribe', 'opportunist', 'aggressive'] },
+    sites: [{ type: 'ruin', count: 2, where: 'any' }],
+    events: { type: 'bloom', period: 40, duration: 4, warn: 5 },
+    victory: { mode: 'all', conds: [{ type: 'capture', site: 'enemy-capital', orDestroyed: true, label: 'Destroy the Brood Heart' }] },
+    objectives: [
+      { id: 'm1', type: 'ownType', site: 'hub', n: 1, label: 'Capture a network hub', reward: 10, highlight: 'hub',
+        tip: 'Hubs nourish all Mycelial land around them. Taking one weakens a whole region at once.' },
+      { id: 'm2', type: 'ownType', site: 'hub', n: 2, label: 'Hold two hubs', reward: 10,
+        tip: 'Each hub you hold also stops the spore bloom from feeding the Swarm.' },
+      { id: 'm3', type: 'unshield', label: 'Drop the Brood Heart shield', reward: 5, highlight: 'enemy-capital',
+        tip: 'The shield is down. Strike the Brood Heart before the Swarm retakes a hub.' },
+    ],
+    briefing: [
+      'Network hubs nourish the land around them: nourished land defends at 1.35x.',
+      'The Brood Heart is shielded while the Swarm holds any hub. Its biggest armies are not the target. The hubs are.',
+      'Spore blooms give every hub owner a burst of troops. Cut the hubs and the blooms feed you instead.',
+    ],
+    lessons: ['Locate network hubs', 'Break enemy connections', 'Prioritise key targets', 'Contain a fast expander'],
+    rewards: { base: 50 },
   },
   {
     id: 'noctyra',
@@ -321,7 +321,7 @@ const TOOL_STEPS = [
   ['spire', 'research', 'rally'],
   ['ship', 'emp'],
 ];
-export const WORLD_TOOLS = Object.fromEntries(['vulkara', 'cryonis', 'mycelion', 'xythera'].map((id, i) => [id, TOOL_STEPS.slice(0, i + 1).flat()]));
+export const WORLD_TOOLS = Object.fromEntries(['vulkara', 'cryonis', 'xythera', 'mycelion'].map((id, i) => [id, TOOL_STEPS.slice(0, i + 1).flat()]));
 
 export const TUTORIAL_LESSONS = [
   // The very first launch: three steps on the small map, won in under two minutes.
@@ -369,7 +369,8 @@ export function tutorialConfig(lesson = 1) {
     id: 'tutorial', name: 'Tutorial', title: `Lesson ${L.id}: ${L.name}`, lesson: L.name, tagline: L.desc,
     theme: 'vulkara', seed: 2024, size: [300, 190], scale: 1, tutorialWorld: true, lessonId: L.id, setup: L.setup, boost: L.boost, tools: L.tools,
     grace: 99999,
-    enemy: { name: 'Training Drones', color: '#ff4b3e', profile: 'passive', radius: 6, troops: 250, capitalName: 'Training Fort', startDelay: 99999 },
+    // The Training Fort sits mid-continent, a short march from the landing site.
+    enemy: { name: 'Training Drones', color: '#ff4b3e', profile: 'passive', radius: 6, troops: 250, capitalName: 'Training Fort', startDelay: 99999, east: 0.42 },
     nations: { count: 1, radius: 5, troops: 300, profiles: ['passive'], mainOnly: true },
     sites: [],
     events: null,

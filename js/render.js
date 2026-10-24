@@ -7,7 +7,7 @@ import { SITE_TYPES } from './campaign.js';
 import { spriteCanvas, spriteCanvasHi, glyphCanvas, spriteAccent, CAPITAL_SPRITE, mixHex, shadeHex } from './art/sprites.js';
 import { backdropCanvas } from './art/backdrop.js';
 import { spawnBattleFx, pushCapped } from './battlefx.js';
-import { rt, world, siteOwner, isShielded, isPowered, empActive, eventPhase, mapScale, PLAYER } from './sim/core.js';
+import { rt, world, config, siteOwner, isShielded, isPowered, empActive, eventPhase, mapScale, PLAYER } from './sim/core.js';
 
 // Floating numbers stay readable (spec G4: at least 14 px), and freshly
 // captured tiles flash for FLASH seconds.
@@ -1019,9 +1019,17 @@ export class MapRenderer {
     }
   }
 
-  // Continent names, large and faint, underneath the nation labels.
+  // True if a screen box reaches into the HUD bars at the top or bottom.
+  underHud(b) {
+    const d = this.dpr, i = this.insets;
+    return b.y0 < (i.top || 0) * d || b.y1 > this.canvas.height - (i.bottom || 0) * d;
+  }
+
+  // Continent names, large and faint, underneath the nation labels. The
+  // tutorial map has none: there it is just "the tutorial".
   drawContinents(o, z) {
     const ctx = this.ctx, d = this.dpr;
+    if (config(this.state).tutorialWorld) return;
     const list = world(this.state).continents || [];
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     for (const c of list) {
@@ -1029,6 +1037,8 @@ export class MapRenderer {
       ctx.font = `700 ${size}px "Silkscreen", monospace`;
       const name = c.name.toUpperCase().split('').join(' ');
       const x = o.x + (c.x + 0.5) * z, y = o.y + (c.y + 0.5) * z + size * 1.6;
+      const half = ctx.measureText(name).width / 2;
+      if (this.underHud({ x0: x - half, x1: x + half, y0: y - size, y1: y + size })) continue;
       ctx.lineWidth = Math.max(2, size / 6);
       ctx.strokeStyle = 'rgba(5,4,12,0.35)';
       ctx.strokeText(name, x, y);
@@ -1080,6 +1090,11 @@ export class MapRenderer {
     const order = [...this.labels.keys()].filter(id => st.factions[id]?.alive && id !== this.landing)
       .sort((a, b) => (a === PLAYER ? -1 : b === PLAYER ? 1 : st.factions[b].tiles - st.factions[a].tiles));
     const placed = [];
+    // Never on top of your own capital or buildings, and never under the HUD.
+    const r = Math.max(10 * d, 2.5 * z);
+    const blocks = [...st.sites.filter(x => x.type === 'capital' && st.owner[x.y * st.w + x.x] === PLAYER), ...st.buildings.filter(b => st.owner[b.y * st.w + b.x] === PLAYER)]
+      .map(b => { const x = o.x + (b.x + 0.5) * z, y = o.y + (b.y + 0.5) * z; return { x0: x - r, x1: x + r, y0: y - r, y1: y + r }; });
+    const hit = (box, list) => list.some(b => b.x0 < box.x1 && b.x1 > box.x0 && b.y0 < box.y1 && b.y1 > box.y0);
     for (const id of order) {
       const pos = this.labels.get(id);
       const f = st.factions[id];
@@ -1091,8 +1106,15 @@ export class MapRenderer {
       const big = id === PLAYER || f.kind === 'enemy';
       ctx.font = `${big ? 700 : 400} ${Math.round(size)}px "Alien Body", monospace`;
       const wHalf = ctx.measureText(name).width / 2 + 4;
-      const box = { x0: p.x - wHalf, x1: p.x + wHalf, y0: p.y - size * 1.1, y1: p.y + size * 1.1 };
-      if (id !== PLAYER && placed.some(b => b.x0 < box.x1 && b.x1 > box.x0 && b.y0 < box.y1 && b.y1 > box.y0)) continue;
+      // Try the spot, then a little above or below it.
+      let box = null;
+      for (const k of [0, -1, 1, -2, 2]) {
+        const y = p.y + k * size * 2.4;
+        const b = { x0: p.x - wHalf, x1: p.x + wHalf, y0: y - size * 1.1, y1: y + size * 1.1 };
+        if (this.underHud(b) || hit(b, blocks) || (id !== PLAYER && hit(b, placed))) continue;
+        box = b; p.y = y; break;
+      }
+      if (!box) continue;
       placed.push(box);
       ctx.lineWidth = Math.max(2, size / 5);
       ctx.strokeStyle = 'rgba(5,4,12,0.85)';

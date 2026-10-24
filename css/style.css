@@ -65,7 +65,7 @@ h3 { color: var(--violet); font-size: 14px; text-transform: uppercase; margin: 1
 .btn:hover { background: #221c44; border-color: var(--violet); }
 .btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .btn:active { transform: translate(1px, 1px); box-shadow: inset 2px 2px 0 #000; }
-.btn:disabled { opacity: 0.42; cursor: not-allowed; }
+.btn:disabled, .btn.off { opacity: 0.42; cursor: not-allowed; }
 .btn.primary { background: #123a52; border-color: var(--cyan); color: #dff8ff; }
 .btn.primary:hover { background: #18506e; }
 .btn.big { font-size: 20px; padding: 14px 20px; }
@@ -78,6 +78,7 @@ h3 { color: var(--violet); font-size: 14px; text-transform: uppercase; margin: 1
 
 /* Title */
 #screen-title { align-items: center; justify-content: center; text-align: center; background: var(--void) center / cover no-repeat; image-rendering: pixelated; }
+#screen-title:not(.ready) .title-wrap { visibility: hidden; }
 .title-wrap { padding: 24px 28px; max-width: 560px; width: calc(100% - 32px); background: rgba(9, 7, 18, 0.86); }
 h1 { margin: 0 0 10px; font-size: clamp(30px, 8vw, 56px); line-height: 1; color: #ffe08a; text-shadow: 3px 3px 0 #7a1a08, 0 0 18px rgba(255, 120, 40, 0.35); }
 h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--violet); text-shadow: 2px 2px 0 #1a0a2e; letter-spacing: 3px; }
@@ -101,7 +102,15 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .planet .status { font-size: 13px; color: var(--muted); min-height: 34px; }
 .planet.locked { opacity: 0.45; }
 .planet.done .status { color: var(--good); }
-.planet .btn { width: 100%; }
+.planet .btn { width: 100%; margin-top: auto; }
+.planet h3 { min-height: 2.4em; display: flex; align-items: center; justify-content: center; }
+.skirmish-setup { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 14px; padding: 10px 12px; margin-bottom: 12px; align-items: end; }
+.skirmish-setup .note { grid-column: 1 / -1; margin: 0; }
+.seed-row { display: flex; gap: 6px; }
+.seed-row input { flex: 1; min-width: 0; }
+.danger-zone { margin-top: 28px; padding-top: 10px; border-top: 2px dashed var(--line); }
+.danger-zone .note { font-size: 12px; margin: 0 0 6px; }
+.planet .conquered { color: var(--good); font-size: 12px; font-family: var(--font-head); }
 .planet .difficulty { display: flex; gap: 3px; justify-content: center; }
 .planet .pip { width: 9px; height: 9px; border: 2px solid var(--line); background: transparent; }
 .planet .pip.on { background: var(--gold); border-color: var(--gold); }
@@ -206,13 +215,14 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
    ratio. Minerals, energy and exotic matter are in its tooltip. */
 .empire { display: flex; flex-direction: row; align-items: center; gap: 10px; padding: 4px 10px; flex: none; font-variant-numeric: tabular-nums; }
 .empire .stat { display: flex; gap: 5px; align-items: center; }
-.empire .drawer-tab, .empire .stat.sub, .empire .stat[data-stat="minerals"], .empire .stat[data-stat="energy"], .empire .stat[data-stat="exotic"] { display: none; }
+.empire .drawer-tab, .empire .stat.sub, .empire .stat[data-stat="energy"], .empire .stat[data-stat="exotic"] { display: none; }
 .empire .stat span { display: none; }
 .empire .stat small { display: none; }
 .empire .stat img { width: 18px; height: 18px; }
 .empire .ratio { flex-direction: row; align-items: center; gap: 6px; margin: 0; white-space: nowrap; }
 .empire .ratio > span { font-size: 12px; }
-.empire .ratio b { margin-left: 4px; }
+.empire .ratio b { margin-left: 0; }
+.empire .ratio .word { font-style: normal; }
 .empire .ratio input { width: 72px; height: 20px; }
 .hud-status { min-width: 200px; }
 /* Planet name and subtitle live in the Mission panel (?): the info box keeps the leaderboard button. */
@@ -280,6 +290,7 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 
 /* Tooltip that follows the pointer. */
 .tooltip { position: fixed; z-index: 50; max-width: min(300px, calc(100vw - 8px)); padding: 6px 8px; background: rgba(9, 7, 18, 0.95); border: var(--px) solid var(--line); font-size: 13px; line-height: 1.4; pointer-events: none; overflow-wrap: anywhere; }
+.cursor-chip { position: fixed; z-index: 49; padding: 2px 6px; background: rgba(9, 7, 18, 0.92); border: 1px solid var(--good); color: var(--good); font-size: 12px; pointer-events: none; white-space: nowrap; }
 .tooltip b { font-family: var(--font-head); font-size: 12px; }
 .tooltip kbd { font-family: var(--font-head); font-size: 12px; padding: 0 4px; border: 1px solid var(--muted); color: var(--gold); }
 .tooltip .ok { color: var(--good); }
@@ -289,7 +300,8 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .tooltip .dim { color: var(--muted); font-size: 12px; }
 
 /* Training card: one short instruction at a time, top centre. */
-.tutorial { position: absolute; left: 50%; transform: translateX(-50%); top: var(--hud-top); width: min(400px, calc(100vw - 12px)); z-index: 1; border-color: var(--gold); font-size: 14px; line-height: 1.4; }
+/* Bottom-left, just above the toolbar: the middle of the map stays free to click. */
+.tutorial { position: absolute; left: calc(6px + var(--safe-left, 0px)); bottom: calc(var(--hud-bottom) + 6px); width: min(360px, calc(100vw - 12px)); z-index: 1; border-color: var(--gold); font-size: 14px; line-height: 1.4; }
 .tutorial p { margin: 4px 0 0; }
 .tut-head { display: flex; justify-content: space-between; align-items: center; color: var(--gold); font-family: var(--font-head); font-size: 12px; }
 .tut-head .btn { padding: 1px 8px; font-size: 12px; min-height: 0; }
@@ -391,6 +403,11 @@ kbd.cap { display: inline-block; min-width: 22px; padding: 2px 5px 4px; font-fam
   .tool img { width: 18px; height: 18px; }
   .tool { min-width: 50px; min-height: 36px; }
   .tool .key { display: none; }
+  /* Narrow screens: a tighter top bar so every panel fits on one line. */
+  .empire { gap: 7px; padding: 4px 7px; }
+  .empire .ratio .word { display: none; }
+  .empire .ratio input { width: 54px; }
+  .hud-status { min-width: 150px; }
 }
 @media (max-width: 760px), (max-height: 520px) {
   html, body { font-size: 14px; }

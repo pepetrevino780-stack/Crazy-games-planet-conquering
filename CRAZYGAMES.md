@@ -29,7 +29,7 @@ Upload the zip as an **HTML5** game in the CrazyGames developer portal.
 
 **Short description:** A single-player strategy game: conquer five alien planets in real time. Expand, defend, disrupt and outplan smarter enemy civilizations, and earn permanent upgrades as you go.
 
-**Description:** Land on a strange alien world and grow your empire tile by tile. Push your borders into the wilderness, then go to war with rival civilizations. Take a rival's capital to throw it into disarray, and guard your own. A five-world campaign teaches a new strategy on each planet: expand on volcanic Vulkara, defend the crystal fields of Cryonis, cut the fungal hubs of Mycelion, disable the ancient defenses of Xythera, and time your assault to the eclipse on Noctyra. Earn Stellar Cores for permanent upgrades, unlock abilities and alien civilizations, or play endless skirmishes on procedurally generated worlds.
+**Description:** Land on a strange alien world and grow your empire tile by tile. Push your borders into the wilderness, then go to war with rival civilizations. Take a rival's capital to throw it into disarray, and guard your own. A five-world campaign teaches a new strategy on each planet: expand on volcanic Vulkara, defend the crystal fields of Cryonis, disable the ancient defenses of Xythera, cut the fungal hubs of Mycelion, and time your assault to the eclipse on Noctyra. Earn Stellar Cores for permanent upgrades, unlock abilities and alien civilizations, or play endless skirmishes on procedurally generated worlds.
 
 **Controls:**
 - Click or tap land next to your border to attack it with your attack ratio of troops.

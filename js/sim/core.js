@@ -148,6 +148,7 @@ export function capitalOf(state, fid) {
 
 // ---------- Faction numbers ----------
 
+export const REFILL = 0.004; // share of the troop cap regrown per second when the army is near empty
 export function maxTroops(state, f) {
   const hab = Math.min(5, buildingLevels(state, f.id, 'habitat'));
   const logistics = f.research.includes('logistics') ? 0.1 : 0;
@@ -172,7 +173,9 @@ export function regen(state, f) {
   const max = maxTroops(state, f);
   if (f.troops >= max) return 0;
   const k = areaScale(state);
-  return k * (6 + Math.pow(Math.max(0, f.troops) / k, 0.7) * 0.5) * (1 - f.troops / max) * growthMult(state, f);
+  // The refill term grows with the cap: an army far below a big cap (right
+  // after a large conquest) climbs back quickly instead of looking stranded.
+  return (k * (6 + Math.pow(Math.max(0, f.troops) / k, 0.7) * 0.5) + max * REFILL) * (1 - f.troops / max) * growthMult(state, f);
 }
 
 export function income(state, f) {

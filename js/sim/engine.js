@@ -148,7 +148,9 @@ export function createBattle(configId, loadout, opts = {}) {
   }));
   // The enemy capital sits in the east of the main continent, the player lands in the west.
   const span = mainSpan(state);
-  const capPt = placePoints(w, 1, { rand: R, accept: (x, y, i) => w.comp[i] === main && x > span.min + (span.max - span.min) * 0.72, score: x => x * 0.5 })[0]
+  // `enemy.east` (0..1) brings it closer, for short maps such as the tutorial.
+  const east = e.east ?? 0.72, near = e.east !== undefined;
+  const capPt = placePoints(w, 1, { rand: R, accept: (x, y, i) => w.comp[i] === main && x > span.min + (span.max - span.min) * east, score: x => (near ? -Math.abs(x - (span.min + (span.max - span.min) * (east + 0.08))) : x * 0.5) })[0]
     || nearestLand(state, span.max - (span.max - span.min) * 0.1, state.h / 2, main);
   const capType = e.capitalType || 'capital';
   const enemyCapital = { id: 'enemy-capital', type: capType, x: capPt.x, y: capPt.y, name: e.capitalName, faction: enemyId };

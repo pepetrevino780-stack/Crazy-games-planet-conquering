@@ -22,7 +22,7 @@ import { THEMES, THEME_IDS, isLand, T } from '../js/world/themes.js';
 import {
   newCampaign, normalizeCampaign, loadCampaign, saveCampaign, playerLoadout, computeRewards,
   applyVictory, applyDefeat, assistLevel, buyUpgrade, unlockCiv, isUnlocked, nextWorld, playTarget, SAVE_KEY, starsFor, parTime,
-  completeLesson, TUTORIAL_REWARD,
+  completeLesson, TUTORIAL_REWARD, slotOf, latestSave,
 } from '../js/progression.js';
 
 const loadout = (mut = c => c) => playerLoadout(mut(newCampaign()));
@@ -359,7 +359,9 @@ function botRun(id, profile, tier, seed) {
 
 test('NPC commanders get sharper across the campaign', () => {
   const p = PLANETS.map(x => AI_PROFILES[x.enemy.profile]);
-  for (let i = 2; i < p.length; i++) assert.ok(p[i].interval <= p[i - 1].interval, `planet ${i + 1} thinks at least as fast`);
+  // Worlds are ordered by overall difficulty (map mechanics included), so the
+  // AI speed need not rise every step: the first world thinks slowest, the last fastest.
+  for (let i = 1; i < p.length; i++) assert.ok(p[i].interval < p[0].interval && p[i].interval >= p[p.length - 1].interval, `planet ${i + 1}`);
   assert.ok(p[4].objectiveSense >= p[1].objectiveSense);
   assert.ok(!p[0].retaliate && p[1].retaliate, 'Cryonis introduces retaliation');
   // No main civilization starts much bigger than the player's landing.
@@ -435,7 +437,7 @@ test('corrupt or foreign saves fall back safely', () => {
   assert.equal(loadCampaign(store), null);
   assert.equal(deserialize({ v: 1 }), null);
   assert.equal(deserialize({ v: 3, owner: 'AAAA', w: 10, h: 10, configId: 'vulkara', theme: 'vulkara', seed: 1 }), null);
-  assert.equal(normalizeCampaign({ version: 1, battle: { v: 1, planetId: 'vulkara' } }).battle, null, 'old battle format dropped');
+  assert.deepEqual(normalizeCampaign({ version: 1, battle: { v: 1, planetId: 'vulkara' } }).saves, { tutorial: null, campaign: null, skirmish: null }, 'old battle format dropped');
 });
 
 test('a battle saved mid-war resumes exactly where it left off', () => {
@@ -443,10 +445,10 @@ test('a battle saved mid-war resumes exactly where it left off', () => {
   const a = battle('noctyra', { playerProfile: 'tactical' });
   advance(a, 60);
   const c = newCampaign();
-  c.battle = serialize(a);
+  c.saves.campaign = serialize(a);
   saveCampaign(store, c);
   const loaded = loadCampaign(store);
-  const b = deserialize(loaded.battle);
+  const b = deserialize(loaded.saves.campaign);
   assert.ok(b);
   advance(a, 60);
   advance(b, 60);
@@ -1164,7 +1166,7 @@ test('every world is open, with a recommended order and a 1-5 difficulty', () =>
   // Suggest the next unconquered world in the recommended order.
   assert.equal(nextWorld(c, 'vulkara').id, 'cryonis');
   c.planets.cryonis.completed = true;
-  assert.equal(nextWorld(c, 'vulkara').id, 'mycelion');
+  assert.equal(nextWorld(c, 'vulkara').id, 'xythera');
   assert.equal(nextWorld(c, 'noctyra').id, 'vulkara', 'wraps around');
   for (const p of PLANETS) c.planets[p.id].completed = true;
   assert.equal(nextWorld(c, 'noctyra'), null);
@@ -1178,9 +1180,9 @@ test('one Play button: a new player lands in the first lesson, others resume or 
   assert.deepEqual(playTarget(c), { kind: 'world', id: 'vulkara' }, 'after the first lesson: the first world');
   c.planets.vulkara.attempts = 1; c.planets.vulkara.completed = true;
   assert.deepEqual(playTarget(c), { kind: 'world', id: 'cryonis' }, 'next unconquered world');
-  c.battle = { v: 4 };
+  c.saves.tutorial = { v: 4, configId: 'tutorial' };
   assert.deepEqual(playTarget(c), { kind: 'resume' }, 'a saved battle comes first');
-  c.battle = null;
+  c.saves.tutorial = null;
   for (const p of PLANETS) c.planets[p.id].completed = true;
   assert.deepEqual(playTarget(c), { kind: 'world', id: 'vulkara' });
   // A player who skipped the tutorial but has played a world is not sent back to it.
@@ -1290,7 +1292,7 @@ test('terrain: land and sea read apart in grayscale; flat tones; 2x texels for t
 
 test('progressive tools: the first world shows Habitat, Extractor and Strike; each world adds more', () => {
   assert.deepEqual(WORLD_TOOLS.vulkara, ['habitat', 'extractor', 'strike']);
-  const order = ['vulkara', 'cryonis', 'mycelion', 'xythera'];
+  const order = ['vulkara', 'cryonis', 'xythera', 'mycelion'];
   for (let i = 1; i < order.length; i++) {
     const prev = WORLD_TOOLS[order[i - 1]], cur = WORLD_TOOLS[order[i]];
     assert.ok(prev.every(t => cur.includes(t)), `${order[i]} keeps every earlier tool`);
@@ -1340,4 +1342,43 @@ test('capitals: a long route stops at a nation\'s border, and a capital tile cos
   assert.equal(s.owner[c.y * s.w + c.x], enemy, 'a thin spearhead cannot slip through to the capital');
   assert.ok(tileCost(s, s.factions[PLAYER], c.y * s.w + c.x) >= s.factions[enemy].troops * CAPITAL_SIEGE);
   assert.equal(s.status, 'playing', 'no instant win');
+});
+
+test('saves: one slot per mode; a campaign world never wipes the tutorial or a skirmish', () => {
+  const c = newCampaign();
+  c.saves.tutorial = { v: 4, configId: 'tutorial', lesson: 3 };
+  c.saves.skirmish = { v: 4, configId: 'skirmish' };
+  c.lastSlot = 'skirmish';
+  assert.equal(slotOf('vulkara'), 'campaign');
+  assert.equal(slotOf('tutorial'), 'tutorial');
+  assert.equal(latestSave(c), c.saves.skirmish, 'Continue resumes the latest');
+  applyDefeat(c, getPlanet('vulkara'));
+  assert.ok(c.saves.tutorial && c.saves.skirmish, 'losing a world keeps the other slots');
+  // Saves from the single-slot era move into the right slot.
+  const old = normalizeCampaign({ version: 1, battle: { v: 4, configId: 'tutorial', lesson: 2 } });
+  assert.equal(old.saves.tutorial.lesson, 2);
+  assert.equal(old.saves.campaign, null);
+  const round = normalizeCampaign(JSON.parse(JSON.stringify(c)));
+  assert.deepEqual(round.saves, c.saves);
+  assert.equal(round.lastSlot, 'skirmish');
+});
+
+test('worlds are ordered by difficulty', () => {
+  const d = PLANETS.map(p => p.difficulty);
+  assert.deepEqual(d, [...d].sort((a, b) => a - b));
+});
+
+test('an army far below a big troop cap refills quickly', () => {
+  const s = battle('vulkara');
+  const f = s.factions[PLAYER];
+  f.troops = 700;
+  const small = regen(s, f) / growthMult(s, f);
+  f.tiles *= 8; // a big empire right after a conquest: the cap jumps
+  assert.ok(regen(s, f) / growthMult(s, f) > small * 1.5, 'regrowth grows with the cap, so the army climbs back quickly');
+});
+
+test('the Training Fort sits mid-continent, a short march from the landing', () => {
+  const s = createBattle('tutorial', loadout(), { lesson: 1, seed: 78, autoSpawn: true });
+  const a = site(s, 'player-capital'), b = site(s, 'enemy-capital');
+  assert.ok(Math.hypot(a.x - b.x, a.y - b.y) < s.w * 0.45, 'less than half the map away');
 });
