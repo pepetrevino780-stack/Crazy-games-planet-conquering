@@ -154,7 +154,16 @@ test('audio: music loops per world, effects normalised, mutes and volumes', asyn
   // Effects: no role/wave combination is harsh, and big moments stay biggest.
   for (const w of Object.keys(audio.WAVE_LOUDNESS)) for (const r of Object.keys(audio.ROLES)) assert.ok(audio.effectGain(w, r) <= 0.09);
   assert.ok(audio.effectGain('square', 'ui') < audio.effectGain('triangle', 'ui'), 'square waves are tamed');
-  assert.ok(audio.effectGain('triangle', 'big') > audio.effectGain('triangle', 'event'));
+  // Equal loudness: one level for every effect role (the repeating tick sits lower).
+  assert.equal(audio.effectGain('triangle', 'big'), audio.effectGain('triangle', 'event'));
+  assert.equal(audio.effectGain('triangle', 'ui'), audio.effectGain('triangle', 'event'));
+  assert.ok(audio.effectGain('square', 'tick') < audio.effectGain('square', 'ui'));
+  // Music 6 dB under the effects at equal sliders.
+  assert.ok(Math.abs(20 * Math.log10(audio.musicLevel({ music: 0.8 }) / 0.8) + 6) < 0.01);
+  // At most 4 effects per 250 ms.
+  const lim = audio.effectLimiter();
+  assert.deepEqual([0, 10, 20, 30, 40, 100].map(t => lim(t)), [true, true, true, true, false, false]);
+  assert.equal(lim(251), true, 'the window slides');
   // Master level: settings and every kind of mute.
   const v = { master: 0.7, music: 0.5, sfx: 0.8 };
   const on = { enabled: true, adMuted: false, portalMuted: false, hidden: false };
@@ -170,7 +179,7 @@ test('audio: music loops per world, effects normalised, mutes and volumes', asyn
 // ---------- Keyboard layouts ----------
 
 test('keys work by position on any layout, and Escape is never used', async () => {
-  const { keyAction, keyLabel, panKeys, setLayout, loadLayout } = await import('../js/keys.js');
+  const { keyAction, keyLabel, panKeys, setLayout, loadLayout, blockBrowserKey } = await import('../js/keys.js');
   // QWERTY.
   assert.deepEqual(keyAction({ code: 'KeyW', key: 'w' }), { action: 'panUp' });
   assert.deepEqual(keyAction({ code: 'Digit1', key: '1' }), { action: 'digit', digit: '1' });
@@ -187,6 +196,12 @@ test('keys work by position on any layout, and Escape is never used', async () =
   assert.equal(keyAction({ code: 'Escape', key: 'Escape' }), null);
   assert.deepEqual(keyAction({ code: 'Backspace', key: 'Backspace' }), { action: 'cancel' });
   assert.deepEqual(keyAction({ code: 'KeyX', key: 'x' }), { action: 'cancel' });
+  // Browser shortcuts are not game keys; Ctrl/Cmd+W is blocked only in fullscreen.
+  assert.equal(keyAction({ code: 'KeyW', key: 'w', ctrlKey: true }), null);
+  assert.equal(blockBrowserKey({ code: 'KeyW', ctrlKey: true }, true), true);
+  assert.equal(blockBrowserKey({ code: 'KeyW', metaKey: true }, true), true);
+  assert.equal(blockBrowserKey({ code: 'KeyW', ctrlKey: true }, null), false, 'windowed: the browser keeps Ctrl+W');
+  assert.equal(blockBrowserKey({ code: 'KeyW' }, true), false);
   // Hints in the player's layout.
   setLayout(null);
   assert.equal(panKeys(), 'WASD');

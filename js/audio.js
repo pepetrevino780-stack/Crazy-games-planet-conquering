@@ -22,11 +22,27 @@ const volumes = { master: 0.8, music: 0.5, sfx: 0.8 };
 
 // ---------- Pure helpers (tested without WebAudio) ----------
 
-// How loud each waveform sounds at the same gain, and how prominent each
-// kind of sound should be. Effect gain = BASE x role x wave.
+// How loud each waveform sounds at the same gain, so every effect plays at
+// the same loudness (quality spec A1). Effect gain = BASE x role x wave; only
+// the border tick, which repeats while land is taken, sits lower.
 const BASE = 0.075;
 export const WAVE_LOUDNESS = { square: 0.55, sawtooth: 0.6, triangle: 1, sine: 1.1, noise: 0.9 };
-export const ROLES = { tick: 0.2, ui: 0.45, event: 0.75, big: 1 };
+export const ROLES = { tick: 0.4, ui: 1, event: 1, big: 1 };
+// Music sits 6 dB under the effects.
+export const MUSIC_DB = -6;
+export const musicLevel = v => v.music * Math.pow(10, MUSIC_DB / 20);
+
+// At most MAX_EFFECTS effects start in any EFFECT_WINDOW ms; the rest are dropped.
+export const MAX_EFFECTS = 4, EFFECT_WINDOW = 250;
+export function effectLimiter(max = MAX_EFFECTS, windowMs = EFFECT_WINDOW) {
+  let stamps = [];
+  return now => {
+    stamps = stamps.filter(t => now - t < windowMs);
+    if (stamps.length >= max) return false;
+    stamps.push(now);
+    return true;
+  };
+}
 export const effectGain = (wave, role) => BASE * (ROLES[role] ?? 0.75) * (WAVE_LOUDNESS[wave] ?? 1);
 
 // The master level after settings and mutes.
@@ -109,7 +125,7 @@ function applyLevels(instant = false) {
   const t = ctx.currentTime, k = instant ? 0.001 : 0.08;
   bus.master.gain.setTargetAtTime(masterLevel(), t, k);
   bus.sfx.gain.setTargetAtTime(volumes.sfx, t, k);
-  bus.music.gain.setTargetAtTime(volumes.music * 0.55, t, k);
+  bus.music.gain.setTargetAtTime(musicLevel(volumes), t, k);
   bus.amb.gain.setTargetAtTime(volumes.sfx * 0.7, t, k);
 }
 
@@ -207,8 +223,10 @@ function crack() {
 }
 
 let lastTick = 0;
+const allowEffect = effectLimiter();
+const nowMs = () => (globalThis.performance ? performance.now() : Date.now());
 
-export const sfx = {
+const effects = {
   crash: () => boom(180, 40, 0.6, 'big'),
   // Gunfire on the fronts (the caller limits it to about 4 a second).
   skirmish: () => crack(),
@@ -216,7 +234,7 @@ export const sfx = {
   rumble: () => boom(90, 30, 0.9, 'big'),
   // A quiet tick while your border advances; rate-limited and slightly varied.
   tick: () => {
-    const now = globalThis.performance ? performance.now() : Date.now();
+    const now = nowMs();
     if (now - lastTick < 110) return;
     lastTick = now;
     tone([[1400 + Math.random() * 500, 0.02]], 'square', 'tick');
@@ -234,6 +252,8 @@ export const sfx = {
   defeat: () => tone([[392, 0.2], [330, 0.2], [262, 0.4]], 'sawtooth', 'big'),
   ability: () => tone([[1200, 0.05], [600, 0.1], [300, 0.16]], 'sawtooth', 'event'),
 };
+// Every effect goes through the limiter, so a busy moment never piles up.
+export const sfx = Object.fromEntries(Object.entries(effects).map(([k, fn]) => [k, (...a) => { if (allowEffect(nowMs())) fn(...a); }]));
 
 // ---------- Music ----------
 

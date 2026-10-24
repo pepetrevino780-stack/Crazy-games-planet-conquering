@@ -23,6 +23,8 @@ const BY_CHAR = { r: 'research', l: 'board', o: 'objectives', c: 'capital', '+':
  */
 export function keyAction(e) {
   if (!e || e.code === 'Escape' || e.key === 'Escape') return null;
+  // Browser shortcuts (Ctrl/Cmd/Alt + key) are never game keys.
+  if (e.ctrlKey || e.metaKey || e.altKey) return null;
   const d = /^(?:Digit|Numpad)(\d)$/.exec(e.code || '');
   if (d) return { action: 'digit', digit: d[1] };
   if (BY_CODE[e.code]) return { action: BY_CODE[e.code] };
@@ -30,6 +32,10 @@ export function keyAction(e) {
   if (BY_CHAR[ch]) return { action: BY_CHAR[ch] };
   return null;
 }
+
+// Ctrl/Cmd+W closes the tab: blocked only while the game is fullscreen,
+// where it is easy to press by accident (with W used to pan).
+export const blockBrowserKey = (e, fullscreen) => !!fullscreen && !!(e.ctrlKey || e.metaKey) && e.code === 'KeyW';
 
 // The label printed on a physical key in the player's layout (from
 // navigator.keyboard.getLayoutMap(), when the browser offers it).

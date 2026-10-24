@@ -19,7 +19,7 @@ import {
 import { isAllied, attitude, requestAlliance, gift, betray, isTraitor } from './sim/diplomacy.js';
 import { planRoute } from './sim/path.js';
 import { rateLimiter } from './battlefx.js';
-import { keyAction, keyLabel, panKeys, loadLayout } from './keys.js';
+import { keyAction, keyLabel, panKeys, loadLayout, blockBrowserKey } from './keys.js';
 import { MapRenderer, fmt } from './render.js';
 import { THEMES, TERRAIN, THEME_IDS, isLand } from './world/themes.js';
 import { iconURL, spriteCanvas, mixHex } from './art/sprites.js';
@@ -2041,6 +2041,7 @@ async function init() {
     renderer.zoomByFactor(Math.pow(1.0015, -Math.max(-300, Math.min(300, dy))), p.x, p.y);
   }, { passive: false });
 
+  window.addEventListener('keydown', e => { if (blockBrowserKey(e, document.fullscreenElement)) e.preventDefault(); }, true);
   // Keep the embedding page from scrolling on game keys.
   window.addEventListener('keydown', e => {
     if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) e.preventDefault();
