@@ -1159,7 +1159,8 @@ function battleEnded(n) {
     text = n.retreat ? `Retreated from ${name}: ${fmt(n.returned)} came home` : n.won ? `Won vs ${name}: ${fmt(n.returned)} survivors returned` : `Stalled vs ${name}: ${fmt(n.returned)} returned`;
     cls = n.won && !n.retreat ? 'won' : 'lost';
     if (n.returned > 0 && n.x !== null) {
-      renderer.pop(n.x, n.y, `+${fmt(n.returned)} returned`, '#7fe8ff');
+      // Only a sizeable return earns a floating number; small ones would clutter the map.
+      if (n.returned >= Math.max(20, battle.factions[PLAYER].troops * 0.02)) renderer.pop(n.x, n.y, `+${fmt(n.returned)} returned`, '#7fe8ff');
       const cap = capitalOf(battle, PLAYER);
       if (cap) renderer.march(n.x, n.y, cap.x, cap.y, battle.factions[PLAYER].color);
       const row = $('#st-troops').closest('.stat');
@@ -1572,7 +1573,7 @@ function processNotices() {
       case 'repelled': toast(`Attack by ${esc(battle.factions[n.attacker].name)} repelled.`, 'good', 2600); break;
       case 'objective': {
         const o = cfg.objectives.find(x => x.id === n.id);
-        goalDone(`${o.label} done`); sfx.objective();
+        goalDone('Goal complete'); sfx.objective();
         const cap = capitalOf(battle, PLAYER) || homeCapital(battle, PLAYER);
         if (cap) renderer.pop(cap.x, cap.y - 3, `+${o.reward} cores`, '#ffd25e');
         break;

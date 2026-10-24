@@ -28,7 +28,7 @@ const FPS = 30;
   const errs = []; page.on('pageerror', e => errs.push(String(e)));
   await page.route('**/crazygames-sdk-v3.js', r => r.abort());
   await page.goto('http://localhost:8080/');
-  await page.addStyleTag({ content: '#toasts, #tooltip { display: none !important; } * { cursor: none !important; }' });
+  await page.addStyleTag({ content: '#toasts, #tooltip, #banner { display: none !important; } * { cursor: none !important; }' });
   const run = async ms => page.evaluate(ms => { for (let t = 0; t < ms; t += 1000 / 30) window.__rec.step(1000 / 30); }, ms);
   await run(300);
   await page.click('#btn-play');

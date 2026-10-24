@@ -39,14 +39,33 @@ Upload the zip as an **HTML5** game in the CrazyGames developer portal.
 
 ### Resubmission note (paste into the portal)
 
-Changes since the quality rejection:
-- Renamed from "Alien Worlds" to **Planetfall Conquest** (the old name belonged to other games).
-- New players land straight in play: no menus or briefing screens on first launch; returning players get one Play button.
-- Onboarding shows instead of tells: one short line per step with an animated mouse/finger and key caps, only three core actions on the first world, and a controls card that fades after the first attack.
-- Music for every world, planet ambience, a battle bed, volume sliders, and support for the CrazyGames mute setting.
-- Keys follow the keyboard layout (ZQSD on AZERTY); Escape is never used in-game.
-- Cleaner phone layout (the HUD covers about half as much of the screen), labelled tool tiles, and a fix for a blank map on older iOS Safari.
-- New covers with gameplay, and preview videos at 16:9 and 2:3 that open on their cover.
+Changes since the second quality review (spec v2):
+
+Visuals
+- V1 Terrain repainted: a few flat tones per biome, no dithering on land, seas darker and desaturated, a soft highlight along the shore. Land and sea read apart in grayscale.
+- V2 One pixel scale: the map opens at 4 screen pixels per tile or more, zoom snaps to whole pixels, and buildings use the same texel size as the ground.
+- V3 The space backdrop never shows: the map always covers the window, even while the screen shakes.
+- V4 Territory is a solid tint with a bright 2 px border (no hatching).
+
+UI
+- U1 The HUD covers under 20% of the screen at 907x510 (about 5% at 1920x1080): one-row empire bar (troops / cap and the ratio), other resources in its tooltip, compact two-row tool tiles.
+- U2 One transient layer at a time: toasts queue one by one and wait while the training card, controls card or battle list is open.
+- U3 Tooltips appear after 400 ms of still hover, on the far side of the cursor, and never while dragging or attacking.
+- U4 The first world shows only Troops, Land and three tools (Habitat, Extractor, Strike); each later world unlocks more.
+- U5 Full tool names (Extractor, Starport, Expedition, Research); no text under 12 px.
+
+Gameplay
+- G1 The first landing starts with twice the troops and 1.5x faster attacks (1.5x on world 1): the first click takes land within a second.
+- G2 Three-step tutorial: tap land, drag a Habitat, take the enemy capital. The ratio step is gone; the first lesson is won in well under two minutes.
+- G3 A goal chip with one line and a progress bar; a finished goal shows a banner with the next goal.
+- G4 Floating numbers at 15 px, captured tiles flash, and the screen pulses when you take a capital.
+- Capitals now need a real army to storm (half the defender's troops), so a thin spearhead can no longer win a world in seconds.
+
+Audio and keys
+- A1 Effects play at one loudness, music sits 6 dB under them, and at most 4 effects play per 250 ms.
+- K1 Escape is never used; movement keys follow the physical layout (ZQSD on AZERTY); Ctrl/Cmd+W is blocked only in fullscreen.
+- M1 "Supports mobile" is left off until the game has been played on real phones.
+- P1 Store screenshots and both preview videos re-recorded with the new look (16:9 and 2:3, 17 s, opening on their cover, no toasts).
 
 ## 3. What the SDK integration does
 
