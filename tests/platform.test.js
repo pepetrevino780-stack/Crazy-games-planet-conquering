@@ -234,3 +234,8 @@ test('readable text: no font size under 12px in the stylesheet', async () => {
   const small = [...css.matchAll(/font-size:\s*(\d+(?:\.\d+)?)px/g)].filter(m => Number(m[1]) < 12).map(m => m[0]);
   assert.deepEqual(small, []);
 });
+
+test('floating numbers are at least 14px', async () => {
+  const { POP_PX } = await import('../js/render.js');
+  assert.ok(POP_PX >= 14);
+});

@@ -8,7 +8,7 @@ import {
 } from '../js/sim/engine.js';
 import {
   world, maxTroops, regen, borders, siteOwner, isShielded, isPowered, tileDefense, eventPhase, setOwner,
-  countSites, attackFronts, config, income, upgradeCost, buildCost,
+  countSites, attackFronts, config, income, upgradeCost, buildCost, tileCost, CAPITAL_SIEGE,
 } from '../js/sim/core.js';
 import { generateWorld, components } from '../js/world/generate.js';
 import { requestAlliance, gift, betray, isAllied, relation, isTraitor } from '../js/sim/diplomacy.js';
@@ -467,12 +467,8 @@ test('Vulkara training advances step by step, unlocks tools, and survives a save
   assert.equal(tutorialUnlocked(s).size, 0, 'nothing unlocked at first');
   let target = -1;
   for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === 0 && isLand(world(s).terrain[i]) && [i - 1, i + 1, i - s.w, i + s.w].some(j => s.owner[j] === PLAYER)) { target = i; break; }
-  assert.ok(playerAttack(s, target, 0.2).ok);
-  advance(s, 0.5);
-  assert.equal(tutorialStep(s).id, 'ratio');
   s.factions[PLAYER].minerals = 0;
-  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === 0 && isLand(world(s).terrain[i]) && [i - 1, i + 1, i - s.w, i + s.w].some(j => s.owner[j] === PLAYER)) { target = i; break; }
-  assert.ok(playerAttack(s, target, 0.6).ok);
+  assert.ok(playerAttack(s, target, 0.2).ok);
   advance(s, 0.5);
   assert.equal(tutorialStep(s).id, 'habitat');
   assert.ok(s.factions[PLAYER].minerals >= buildCost(s, PLAYER, 'habitat'), 'the build step tops up minerals');
@@ -700,6 +696,14 @@ test('every tutorial lesson can be finished, and finishing all pays a bonus once
     }
     return false;
   };
+  const capture = s => {
+    const me = s.factions[PLAYER];
+    const c = site(s, 'enemy-capital');
+    for (let t = 0; t < 150 && s.status === 'playing'; t++) {
+      const tiles = borderTiles(s, s.owner[c.y * s.w + c.x]);
+      if (tiles.length) { me.troops = Math.max(me.troops, 20000); playerAttack(s, c.y * s.w + c.x, 1); advance(s, 3); } else reach(s, c.x, c.y);
+    }
+  };
   const done = [];
   for (const L of TUTORIAL_LESSONS) {
     const s = lesson(L.id);
@@ -715,6 +719,7 @@ test('every tutorial lesson can be finished, and finishing all pays a bonus once
       for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === PLAYER && [T.PLAINS, T.WILD, T.HIGHLAND, T.RUINS].includes(world(s).terrain[i])) spots.push(i);
       assert.ok(spots.some(i => playerBuild(s, 'habitat', i).ok), 'lesson 1: a Habitat fits');
       advance(s, 1);
+      capture(s);
     } else if (L.id === 2) {
       advance(s, 0.5);
       const cap = site(s, 'player-capital');
@@ -762,11 +767,7 @@ test('every tutorial lesson can be finished, and finishing all pays a bonus once
       advance(s, 1);
     } else {
       advance(s, 0.5);
-      const c = site(s, 'enemy-capital');
-      for (let t = 0; t < 150 && s.status === 'playing'; t++) {
-        const tiles = borderTiles(s, s.owner[c.y * s.w + c.x]);
-        if (tiles.length) { me.troops = Math.max(me.troops, 20000); playerAttack(s, c.y * s.w + c.x, 1); advance(s, 3); } else reach(s, c.x, c.y);
-      }
+      capture(s);
     }
     assert.equal(s.status, 'won', `lesson ${L.id} (${L.name}) can be finished`);
     done.push(L.id);
@@ -1237,7 +1238,7 @@ test('balance knobs: Mycelion is gentler than Noctyra, and enemy fleets stay sma
 
 // ---------- Visual onboarding ----------
 
-test('training is one short line plus a picture per step; Vulkara teaches only the three core actions', () => {
+test('training is one short line plus a picture per step; Vulkara teaches three steps: take land, build, take the capital', () => {
   const all = [...getPlanet('vulkara').tutorial, ...TUTORIAL_LESSONS.flatMap(L => L.steps)];
   for (const st of all) {
     const words = st.text.split(/\s+/).length;
@@ -1245,10 +1246,10 @@ test('training is one short line plus a picture per step; Vulkara teaches only t
     assert.ok(st.icon, `"${st.id}" has a picture`);
   }
   const v = getPlanet('vulkara').tutorial;
-  assert.deepEqual(v.filter(st => st.waitFor).map(st => st.id), ['expand', 'ratio', 'habitat']);
+  assert.deepEqual(v.map(st => st.id), ['expand', 'habitat', 'capital']);
   const last = v[v.length - 1];
   for (const u of ['extractor', 'starport', 'research', 'energy', 'abilities']) assert.ok(last.unlock.includes(u), `${u} unlocks after the core actions`);
-  assert.deepEqual(TUTORIAL_LESSONS[0].steps.map(st => st.id), ['attack', 'ratio', 'build'], 'the first lesson is the same three actions');
+  assert.deepEqual(TUTORIAL_LESSONS[0].steps.map(st => st.id), ['attack', 'build', 'capital'], 'the first lesson is the same three steps');
   // Every icon the training uses is drawn in the sprite sheet.
   return import('../js/art/sprites.js').then(({ ICONS }) => {
     for (const name of ['mouse', 'hand', 'drag', 'slider', 'eye', 'wheel']) assert.ok(ICONS[name] && ICONS[name].rows.every(r => r.length === 9), name);
@@ -1296,4 +1297,47 @@ test('progressive tools: the first world shows Habitat, Extractor and Strike; ea
     assert.ok(cur.length > prev.length, `${order[i]} adds a tool`);
   }
   assert.equal(WORLD_TOOLS.noctyra, undefined, 'the last world has every tool');
+  assert.deepEqual(TUTORIAL_LESSONS[0].tools, WORLD_TOOLS.vulkara, 'the first lesson shows the first world\'s tools');
+});
+
+test('first landing: double troops and faster attacks; the first click takes land within a second', () => {
+  const plain = createBattle('tutorial', loadout(), { lesson: 2, seed: 3, autoSpawn: true });
+  const s = createBattle('tutorial', loadout(), { lesson: 1, seed: 3, autoSpawn: true });
+  assert.equal(Math.round(s.factions[PLAYER].troops), Math.round(plain.factions[PLAYER].troops * 2));
+  assert.equal(s.factions[PLAYER].speed, plain.factions[PLAYER].speed * 1.5);
+  assert.equal(battle('vulkara').factions[PLAYER].speed, battle('cryonis').factions[PLAYER].speed * 1.5, 'world 1 attacks 1.5x faster');
+  const tiles = () => s.owner.reduce((n, o) => n + (o === PLAYER), 0);
+  const t0 = tiles();
+  let target = -1;
+  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === 0 && isLand(world(s).terrain[i]) && [i - 1, i + 1, i - s.w, i + s.w].some(j => s.owner[j] === PLAYER)) { target = i; break; }
+  assert.ok(playerAttack(s, target, 0.2).ok);
+  advance(s, 1);
+  assert.ok(tiles() - t0 >= 25, `the first attack takes ${tiles() - t0} tiles in one second`);
+});
+
+test('the first lesson is won in under two minutes by simply pressing on the capital', () => {
+  const s = createBattle('tutorial', loadout(), { lesson: 1, seed: 4, autoSpawn: true });
+  const c = site(s, 'enemy-capital');
+  let built = false;
+  while (s.status === 'playing' && s.time < 120) {
+    if (!built) for (let i = 0; i < s.owner.length && !built; i++) if (s.owner[i] === PLAYER && [T.PLAINS, T.WILD, T.HIGHLAND].includes(world(s).terrain[i])) built = playerBuild(s, 'habitat', i).ok;
+    if (!s.attacks.some(a => a.attacker === PLAYER)) playerAttack(s, c.y * s.w + c.x, 0.4);
+    advance(s, 1);
+  }
+  assert.equal(s.status, 'won', `won at ${Math.round(s.time)} s`);
+  assert.ok(built, 'the Habitat step fits on the way');
+});
+
+test('capitals: a long route stops at a nation\'s border, and a capital tile costs half its owner\'s army', () => {
+  const s = battle('vulkara');
+  freezeAI(s);
+  advance(s, 0.5);
+  const c = site(s, 'enemy-capital');
+  const enemy = s.owner[c.y * s.w + c.x];
+  const res = playerAttack(s, c.y * s.w + c.x, 0.4);
+  assert.ok(res.ok && res.route, 'a far click marches a route');
+  advance(s, 4);
+  assert.equal(s.owner[c.y * s.w + c.x], enemy, 'a thin spearhead cannot slip through to the capital');
+  assert.ok(tileCost(s, s.factions[PLAYER], c.y * s.w + c.x) >= s.factions[enemy].troops * CAPITAL_SIEGE);
+  assert.equal(s.status, 'playing', 'no instant win');
 });

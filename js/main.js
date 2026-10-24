@@ -554,6 +554,36 @@ function banner(title, sub = '', major = false) {
   bannerTimer = setTimeout(() => el.classList.add('hidden'), 2600);
 }
 
+// A short golden pulse over the whole screen: a capital fell to you.
+function pulse() {
+  const el = $('#pulse');
+  el.classList.remove('hidden', 'show'); void el.offsetWidth; el.classList.add('show');
+}
+
+// The goal shown in the HUD chip, and how far along it is (0..1).
+function currentGoal() {
+  const cfg = config(battle);
+  const tut = battle.status === 'playing' ? tutorialStep(battle) : null;
+  if (tut) {
+    const n = tutorialSteps(battle).length;
+    return { label: tut.label, frac: n ? battle.tutorial / n : 0 };
+  }
+  const cur = currentObjective(battle);
+  if (cur) return { label: cur.label, frac: cur.type === 'tiles' ? Math.min(1, battle.factions[PLAYER].tiles / cur.n) : 0 };
+  const conds = cfg.victory.conds.map((c, i) => ({ c, pr: condProgress(battle, c, i) }));
+  const next = conds.find(x => !x.pr.done);
+  const frac = Math.max(...conds.map(x => (x.pr.done ? 1 : x.pr.frac || 0)), 0);
+  return { label: next ? next.c.label + (next.pr.text || '') : '', frac };
+}
+
+// A goal or training step is done: flash the chip; a finished goal also gets
+// the big banner with the next goal (spec G3).
+function goalDone(title) {
+  const chip = $('#obj-toggle');
+  chip.classList.remove('done'); void chip.offsetWidth; chip.classList.add('done');
+  if (title) { const next = currentGoal().label; banner(title, next ? `Next: ${next}` : ''); }
+}
+
 function tip(key, text) {
   if (!campaign.settings.tips || seenTips.has(key)) return;
   // The training card already explains things step by step.
@@ -671,7 +701,8 @@ function bindDrag() {
 
 // Campaign worlds show a growing set of tools; everything else shows them all.
 function worldHasTool(id) {
-  const list = battle && WORLD_TOOLS[config(battle).id];
+  const cfg = battle && config(battle);
+  const list = cfg && (cfg.tools || WORLD_TOOLS[cfg.id]);
   return !list || list.includes(id);
 }
 
@@ -761,13 +792,11 @@ function updateObjectives() {
   const cfg = config(battle);
   const cur = currentObjective(battle);
   const conds = cfg.victory.conds.map((c, i) => ({ c, pr: condProgress(battle, c, i) }));
-  const next = conds.find(x => !x.pr.done);
-  const tut = battle.status === 'playing' ? tutorialStep(battle) : null;
-  $('#hud-objective').textContent = battle.status === 'spawn' ? 'Choose your landing site' : tut ? tut.label : cur ? cur.label : next ? next.c.label + (next.pr.text || '') : '';
+  // One line and one bar: the goal to do now and how far along it is.
+  const goal = currentGoal();
+  $('#hud-objective').textContent = battle.status === 'spawn' ? 'Choose your landing site' : goal.label;
   $('#obj-count').textContent = cfg.objectives.length ? `${battle.objectivesDone.length}/${cfg.objectives.length}` : '';
-  // Victory progress bar: hold timers and land share report real progress.
-  const frac = Math.max(...conds.map(x => (x.pr.done ? 1 : x.pr.frac || 0)), 0);
-  $('#hud-progress').style.width = `${Math.min(100, frac * 100).toFixed(1)}%`;
+  $('#hud-progress').style.width = `${Math.min(100, goal.frac * 100).toFixed(1)}%`;
   const parts = conds.map(({ c, pr }) => `<div class="obj ${pr.done ? 'done' : ''}"><span class="mark">${pr.done ? '&#10003;' : '&#9733;'}</span><span>${esc(c.label)}${pr.text || ''}${pr.holding ? ' · holding' : ''}</span></div>`);
   parts.push('<div class="obj-sep"></div>');
   for (const o of cfg.objectives) {
@@ -1509,6 +1538,7 @@ function processNotices() {
           sfx.lost(); renderer.shake(0.5, 5);
         } else if (n.by === PLAYER) {
           banner(`${n.name} captured`, `${f.name} is in disarray`, f.kind === 'enemy');
+          pulse();
           if (n.loot) renderer.pop(n.x, n.y - 3, `+${fmt(n.loot)} minerals`, '#c9b8ff');
           sfx.fanfare(); renderer.ring(n.x, n.y, '#ffffff', 28); renderer.shake(0.3, 3);
         } else toast(`${esc(f.name)} lost its capital to ${by ? esc(by.name) : 'raiders'}.`);
@@ -1535,14 +1565,14 @@ function processNotices() {
         } else toast(`${esc(f.name)} has collapsed.`);
         if (cap) {
           renderer.ring(cap.x, cap.y, '#ffd25e', 16); renderer.burst(cap.x, cap.y, '#ffd25e', 24);
-          if (n.by === PLAYER) { renderer.ring(cap.x, cap.y, '#ffffff', 28); renderer.shake(0.3, 3); }
+          if (n.by === PLAYER) { renderer.ring(cap.x, cap.y, '#ffffff', 28); renderer.shake(0.3, 3); pulse(); }
         }
         break;
       }
       case 'repelled': toast(`Attack by ${esc(battle.factions[n.attacker].name)} repelled.`, 'good', 2600); break;
       case 'objective': {
         const o = cfg.objectives.find(x => x.id === n.id);
-        toast(`Objective complete: ${esc(o.label)} <b>+${o.reward}</b>`, 'good'); sfx.objective();
+        goalDone(`${o.label} done`); sfx.objective();
         const cap = capitalOf(battle, PLAYER) || homeCapital(battle, PLAYER);
         if (cap) renderer.pop(cap.x, cap.y - 3, `+${o.reward} cores`, '#ffd25e');
         break;
@@ -1566,7 +1596,7 @@ function processNotices() {
         sfx.build(); renderer.raise(n.id, performance.now()); renderer.ring(n.x, n.y, '#3fd0ff', 5); renderer.burst(n.x, n.y, '#8a7a6a', 10);
         if (n.owner === PLAYER && n.cost) renderer.pop(n.x, n.y, `-${fmt(n.cost)} minerals`, '#c9b8ff');
         break;
-      case 'tutorial': sfx.objective(); break;
+      case 'tutorial': sfx.objective(); goalDone(tutorialStep(battle) ? '' : 'Training complete'); break;
       case 'diplomacy': {
         const f = battle.factions[n.faction];
         if (n.kind === 'allied') { toast(`<b>${esc(f.name)}</b> accepted your alliance.`, 'good'); sfx.objective(); }

@@ -244,6 +244,7 @@ export function tileLocked(state, i) {
 }
 
 // Troops an attacker pays to take tile i.
+export const CAPITAL_SIEGE = 0.5;
 export function tileCost(state, attacker, i) {
   const t = world(state).terrain[i];
   const base = TERRAIN[t].cost;
@@ -254,6 +255,9 @@ export function tileCost(state, attacker, i) {
     const def = state.factions[o];
     const density = Math.max(1, def.troops / Math.max(1, def.tiles));
     cost = base * (1 + density * 0.45 * tileDefense(state, i));
+    // Storming a capital takes a real army, at least half of its owner's,
+    // so a thin spearhead can never slip in and take it.
+    if (state.sites.some(s => s.type === 'capital' && s.y * state.w + s.x === i)) cost = Math.max(cost, def.troops * CAPITAL_SIEGE);
   }
   return cost / atkMult(state, attacker);
 }

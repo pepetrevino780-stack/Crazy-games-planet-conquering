@@ -93,6 +93,10 @@ export const PLANETS = [
     lesson: 'Learn to Attack',
     tagline: 'A volcanic world of ash plains and magma seas. Expand fast and break the Cindari.',
     theme: 'vulkara', seed: 4101, size: [900, 570], scale: 3,
+    // The first world's attacks are 1.5x faster, so the first attack sweeps
+    // the screen (quality spec G1). The first tutorial lesson also doubles
+    // the starting troops.
+    boost: { speed: 1.5 },
     enemy: { name: 'Cindari Clans', color: '#ff4b3e', profile: 'passive', radius: 8, troops: 900, capitalName: 'Ember Throne', startDelay: 12 },
     nations: { count: 10, radius: 5, troops: 400, profiles: ['passive'] },
     sites: [{ type: 'vent', count: 4, where: 'middle' }, { type: 'ruin', count: 2, where: 'any' }],
@@ -101,8 +105,8 @@ export const PLANETS = [
     objectives: [
       { id: 'v1', type: 'tiles', n: 1200, label: 'Expand to 1,200 tiles', reward: 5,
         tip: 'Click unclaimed land next to your border. Wilderness is cheap to take.' },
-      { id: 'v2', type: 'ratioAttack', ratio: 0.5, label: 'Attack with a 50% ratio or more', reward: 5,
-        tip: 'The ratio sets how much of your army joins an attack. Troops regrow fastest when your army is not full.' },
+      { id: 'v2', type: 'build', building: 'extractor', label: 'Build an Extractor', reward: 5,
+        tip: 'Extractors pay minerals every second: more buildings, sooner.' },
       { id: 'v3', type: 'ownType', site: 'vent', n: 1, label: 'Seize a magma vent', reward: 5, highlight: 'vent',
         tip: 'Vents give energy and minerals. Eruptions pay out to whoever holds them.' },
       { id: 'v4', type: 'build', building: 'habitat', label: 'Build a Habitat', reward: 5,
@@ -110,15 +114,12 @@ export const PLANETS = [
     ],
     // After the standalone tutorial, only these steps run here.
     tutorialShort: ['habitat', 'capital'],
-    // Learn by doing, three core actions only: attack, the ratio, drag a
-    // building. Each step is one short line plus a picture (icon, keys).
-    // Everything else unlocks with the last step, and one-line hints appear
-    // the first time each feature becomes useful.
+    // Learn by doing, three steps (quality spec G2): take land, drag a
+    // Habitat, take the enemy capital. Each step is one short line plus a
+    // picture (icon, keys). Everything else unlocks with the last step.
     tutorial: [
-      { id: 'expand', label: 'Attack the land next to your border', point: 'frontier', waitFor: { type: 'attack' },
-        icon: 'click', text: 'Click the land next to your border.' },
-      { id: 'ratio', label: 'Attack with a 50% ratio', point: 'ratio', waitFor: { type: 'ratioAttack' },
-        icon: 'slider', text: 'Slide the ratio to 50%, then attack.' },
+      { id: 'expand', label: 'Tap the land next to your border', point: 'frontier', waitFor: { type: 'attack' },
+        icon: 'click', text: 'Tap the land next to your border.' },
       { id: 'habitat', label: 'Build a Habitat', point: 'tool:habitat', unlock: ['habitat'], waitFor: { type: 'build', building: 'habitat' },
         icon: 'drag', keys: ['1'], ensureBuild: 'habitat', text: 'Drag a Habitat onto your land.' },
       { id: 'capital', label: 'Capture the Ember Throne', point: 'site:enemy-capital',
@@ -130,7 +131,7 @@ export const PLANETS = [
       'Your troop cap grows with territory. Troops regrow fastest when your army is well below its cap, so keep attacking.',
       'Mountains, rivers and volcanoes are slow and costly to cross. Plains are fast.',
     ],
-    lessons: ['Expand into wilderness', 'Use the attack ratio', 'Grow your troop cap', 'Capture an enemy capital'],
+    lessons: ['Expand into wilderness', 'Grow your troop cap', 'Build an Extractor', 'Capture an enemy capital'],
     rewards: { base: 30 },
   },
   {
@@ -305,14 +306,15 @@ export function skirmishConfig(theme, seed, mode = 'classic') {
 // ---------- Standalone tutorial ----------
 // Seven short lessons on one small, calm map: one weak neighbour, no attacks
 // on you, no time pressure. Each lesson is a list of training steps; the
-// lesson ends when its last step is done (lesson 7 when you take the capital).
+// lesson ends when its last step is done (lessons 1 and 7 when you take the capital).
 
 const step = (id, label, waitFor, text, extra = {}) => ({ id, label, waitFor, text, ...extra });
 const flag = name => ({ type: 'flag', flag: name });
 
 // Tools shown on each campaign world (quality spec U4): the first world shows
-// only Habitat, Extractor and Strike; each later world adds a few. Tutorial
-// lessons and skirmishes show everything.
+// only Habitat, Extractor and Strike; each later world adds a few. The first
+// tutorial lesson shows the first world's set; the other lessons and
+// skirmishes show everything.
 const TOOL_STEPS = [
   ['habitat', 'extractor', 'strike'],
   ['bastion', 'starport', 'dropship'],
@@ -322,11 +324,12 @@ const TOOL_STEPS = [
 export const WORLD_TOOLS = Object.fromEntries(['vulkara', 'cryonis', 'mycelion', 'xythera'].map((id, i) => [id, TOOL_STEPS.slice(0, i + 1).flat()]));
 
 export const TUTORIAL_LESSONS = [
-  { id: 1, name: 'Attack and build', desc: 'Attack, set the ratio, drag a building.', setup: { minerals: 400 },
+  // The very first launch: three steps on the small map, won in under two minutes.
+  { id: 1, name: 'First landing', desc: 'Take land, build a Habitat, capture a capital.', setup: { minerals: 400 }, boost: { troops: 2, speed: 1.5 }, win: true, tools: WORLD_TOOLS.vulkara,
     steps: [
-      step('attack', 'Attack next to your border', { type: 'attack' }, 'Click the land next to your border.', { point: 'frontier', icon: 'click' }),
-      step('ratio', 'Attack with a 50% ratio', { type: 'ratioAttack' }, 'Slide the ratio to 50%, then attack.', { point: 'ratio', icon: 'slider' }),
+      step('attack', 'Tap the land next to your border', { type: 'attack' }, 'Tap the land next to your border.', { point: 'frontier', icon: 'click' }),
       step('build', 'Build a Habitat', { type: 'build', building: 'habitat' }, 'Drag a Habitat onto your land.', { point: 'tool:habitat', icon: 'drag', keys: ['1'] }),
+      step('capital', 'Capture the Training Fort', null, 'Capture the Training Fort to win.', { point: 'site:enemy-capital', icon: 'click' }),
     ] },
   { id: 2, name: 'Direction and survivors', desc: 'Troops push where you click, and survivors come home.', setup: {},
     steps: [
@@ -354,7 +357,7 @@ export const TUTORIAL_LESSONS = [
       step('research', 'Research something', flag('researched'), 'Open Research and pick one.', { point: 'tool:research', icon: 'click', keys: ['R'] }),
       step('muster', 'Use Rapid Muster', flag('ability_rally'), 'Muster, then click anywhere: free troops.', { point: 'tool:rally', icon: 'click', keys: ['8'] }),
     ] },
-  { id: 7, name: 'Win a world', desc: 'Objectives and capturing a capital.', setup: { troops: 3000 },
+  { id: 7, name: 'Win a world', desc: 'Objectives and capturing a capital.', setup: { troops: 3000 }, win: true,
     steps: [
       step('capital', 'Capture the Training Fort', null, 'Capture the Training Fort to win.', { point: 'site:enemy-capital', icon: 'click' }),
     ] },
@@ -364,13 +367,13 @@ export function tutorialConfig(lesson = 1) {
   const L = TUTORIAL_LESSONS[Math.max(0, Math.min(TUTORIAL_LESSONS.length - 1, lesson - 1))];
   return {
     id: 'tutorial', name: 'Tutorial', title: `Lesson ${L.id}: ${L.name}`, lesson: L.name, tagline: L.desc,
-    theme: 'vulkara', seed: 2024, size: [300, 190], scale: 1, tutorialWorld: true, lessonId: L.id, setup: L.setup,
+    theme: 'vulkara', seed: 2024, size: [300, 190], scale: 1, tutorialWorld: true, lessonId: L.id, setup: L.setup, boost: L.boost, tools: L.tools,
     grace: 99999,
     enemy: { name: 'Training Drones', color: '#ff4b3e', profile: 'passive', radius: 6, troops: 250, capitalName: 'Training Fort', startDelay: 99999 },
     nations: { count: 1, radius: 5, troops: 300, profiles: ['passive'], mainOnly: true },
     sites: [],
     events: null,
-    victory: L.id === 7
+    victory: L.win
       ? { mode: 'any', conds: [{ type: 'capture', site: 'enemy-capital', label: 'Capture the Training Fort' }] }
       : { mode: 'any', conds: [{ type: 'tutorialDone', label: `Finish: ${L.name}` }] },
     objectives: [],

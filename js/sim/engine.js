@@ -214,6 +214,8 @@ export function createBattle(configId, loadout, opts = {}) {
   const pf = state.factions[PLAYER];
   for (const k of ['minerals', 'energy', 'exotic']) if (setup[k]) pf[k] = setup[k];
   if (setup.troops) pf.troops += setup.troops;
+  // A boosted world (the first one) starts with more troops and faster attacks.
+  if (cfg.boost) { pf.troops *= cfg.boost.troops || 1; pf.speed = (pf.speed || 1) * (cfg.boost.speed || 1); }
   if (setup.abilities) pf.abilities = [...new Set([...pf.abilities, ...setup.abilities])];
   return state;
 }
@@ -732,6 +734,10 @@ function stepRoute(state, a, att) {
   const o = state.owner[i];
   // Cut off, or blocked by an ally / a shield: the march stops here.
   if (!adjacentTo(state, i, a.attacker) || (o && isAllied(state, a.attacker, o)) || tileLocked(state, i)) return 'stop';
+  // Routes only march through wilderness. At someone's land the march
+  // becomes a normal front against them, so a thin corridor can never slip
+  // through a nation to its capital.
+  if (o && o !== a.attacker) { a.target = o; return 'arrived'; }
   if (!captureTile(state, a, att, i)) return 'stop';
   a.pathPos++;
   // Widen the corridor a little: the neighbours of the tile just taken.
@@ -758,7 +764,7 @@ function advanceAttacks(state, dt) {
       while (a.progress >= 1 && res === 'ok') { res = stepRoute(state, a, att); a.progress -= 1; }
       if (res === 'stop') { endAttack(state, a, k); continue; }
       if (res === 'arrived') {
-        // At the click: carry on as a normal spearhead against whoever holds the land there.
+        // At the click, or at someone's land: carry on as a normal spearhead toward the click.
         a.path = null;
         a.frontier = null;
         if (a.target && !alive(state.factions[a.target])) a.target = 0;

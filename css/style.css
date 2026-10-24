@@ -360,6 +360,14 @@ kbd.cap { display: inline-block; min-width: 22px; padding: 2px 5px 4px; font-fam
 .banner.major { border-color: var(--gold); color: var(--gold); font-size: 30px; }
 .banner small { display: block; font-family: var(--font-body); color: var(--text); margin-top: 4px; font-size: 14px; }
 .banner.show { animation: bannerIn .5s steps(5); }
+/* Screen pulse when a capital falls to you (spec G4). */
+.pulse { position: absolute; top: 0; right: 0; bottom: 0; left: 0; pointer-events: none; z-index: 2; background: radial-gradient(circle at center, rgba(255, 233, 168, 0) 30%, rgba(255, 210, 94, 0.55) 100%); }
+.pulse.show { animation: pulseOut .7s steps(7) forwards; }
+@keyframes pulseOut { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .pulse.show { animation-duration: .3s; } }
+/* The goal chip flashes when a step or goal is done (spec G3). */
+.obj-line.done { animation: goalDone .6s steps(3) 2; }
+@keyframes goalDone { 50% { background: rgba(127, 240, 200, 0.35); } }
 @keyframes bannerIn { 0% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
 .spawn-banner small { display: block; font-family: var(--font-body); color: var(--muted); margin-top: 4px; font-size: 13px; }
 

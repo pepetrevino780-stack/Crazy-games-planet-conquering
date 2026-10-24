@@ -9,6 +9,10 @@ import { backdropCanvas } from './art/backdrop.js';
 import { spawnBattleFx, pushCapped } from './battlefx.js';
 import { rt, world, siteOwner, isShielded, isPowered, empActive, eventPhase, mapScale, PLAYER } from './sim/core.js';
 
+// Floating numbers stay readable (spec G4: at least 14 px), and freshly
+// captured tiles flash for FLASH seconds.
+export const POP_PX = 15;
+const FLASH = 0.35;
 const NEUTRAL = '#8a8478';
 const shadeColor = (c, k) => shadeHex(c, k);
 const hexRgb = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -264,12 +268,21 @@ export class MapRenderer {
       put(q1, L || D ? col.edge : col.rgb, L || D ? 255 : fillA);
       put(q1 + 4, Rt || D ? col.edge : col.rgb, Rt || D ? 255 : fillA);
     };
+    // What each tile last showed: tiles that just became ours flash (spec G4).
+    if (!this.seen || this.seen.length !== W * H) { this.seen = new Uint8Array(owner); this.flashes = []; }
+    const seen = this.seen;
     if (c.allDirty) {
       for (let i = 0; i < W * H; i++) paint(i);
+      seen.set(owner);
       c.allDirty = false;
       c.dirty.length = 0;
     } else if (c.dirty.length) {
+      const fresh = [];
       for (const i of c.dirty) {
+        if (seen[i] !== owner[i]) {
+          if (owner[i] === PLAYER && fresh.length < 4000) fresh.push(i);
+          seen[i] = owner[i];
+        }
         paint(i);
         const x = i % W;
         if (x > 0) paint(i - 1);
@@ -278,6 +291,7 @@ export class MapRenderer {
         if (i + W < W * H) paint(i + W);
       }
       c.dirty.length = 0;
+      if (fresh.length) { this.flashes.push({ tiles: fresh, life: FLASH }); if (this.flashes.length > 12) this.flashes.shift(); }
     } else return;
     this.overCtx.putImageData(this.overImg, 0, 0);
   }
@@ -579,11 +593,24 @@ export class MapRenderer {
     this.fx = this.fx.filter(f => !f.done);
   }
 
+  // Each batch of freshly captured tiles flashes white, then fades.
+  drawFlashes(o, z, dt, reduced) {
+    if (!this.flashes || !this.flashes.length) return;
+    const ctx = this.ctx, W = this.W, s = Math.ceil(z);
+    ctx.fillStyle = '#fff6dc';
+    for (const f of this.flashes) {
+      ctx.globalAlpha = (reduced ? 0.3 : 0.65) * Math.max(0, f.life / FLASH);
+      for (const i of f.tiles) { const x = i % W; ctx.fillRect(Math.floor(o.x + x * z), Math.floor(o.y + (i - x) / W * z), s, s); }
+    }
+    ctx.globalAlpha = 1;
+    this.flashes = this.flashes.filter(f => (f.life -= dt) > 0);
+  }
+
   drawPops(T, dt) {
     const ctx = this.ctx, d = this.dpr;
     this.pops = this.pops.filter(p => (p.life -= dt) > 0);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `700 ${Math.round(13 * d)}px "Alien Body", monospace`;
+    ctx.font = `700 ${Math.round(POP_PX * d)}px "Alien Body", monospace`;
     ctx.lineWidth = Math.max(2, 3 * d);
     ctx.strokeStyle = 'rgba(5,4,12,0.9)';
     for (const p of this.pops) {
@@ -691,6 +718,7 @@ export class MapRenderer {
     this.advanceReveal(ui.reducedMotion ? 99 : ui.dt || 0.016);
     this.updateOverlay();
     ctx.drawImage(this.over, o.x, o.y, this.W * z, this.H * z);
+    this.drawFlashes(o, z, ui.dt || 0.016, ui.reducedMotion);
     const hiOwner = ui.hoverOwner > 0 ? ui.hoverOwner : ui.inspectOwner;
     this.updateHighlight(hiOwner || 0, ui.now);
     if (hiOwner > 0) {
