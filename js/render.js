@@ -48,12 +48,14 @@ export class MapRenderer {
     this.state = state;
     const w = world(state);
     this.W = state.w; this.H = state.h;
-    this.base = this.makeCanvas(this.W, this.H);
+    // Terrain and territory are painted at 2x2 texels per tile: the same
+    // texel size as the building sprites (one pixel scale everywhere).
+    this.base = this.makeCanvas(this.W * 2, this.H * 2);
     this.baseSimple = null;
-    this.base.getContext('2d').putImageData(new ImageData(paintWorld(w, false), this.W, this.H), 0, 0);
-    this.over = this.makeCanvas(this.W, this.H);
+    this.base.getContext('2d').putImageData(new ImageData(paintWorld(w, false, 2), this.W * 2, this.H * 2), 0, 0);
+    this.over = this.makeCanvas(this.W * 2, this.H * 2);
     this.overCtx = this.over.getContext('2d');
-    this.overImg = this.overCtx.createImageData(this.W, this.H);
+    this.overImg = this.overCtx.createImageData(this.W * 2, this.H * 2);
     this.hi = this.makeCanvas(this.W, this.H);
     this.hiOwner = -1; this.hiTime = 0;
     this.colors = new Map();
@@ -63,29 +65,6 @@ export class MapRenderer {
     this.labelTime = -10;
     this.particles = []; this.fx = []; this.pops = []; this.shakeT = 0; this.holdOwner = 0; this.landing = 0; this.reveal = null;
     this.fit();
-  }
-
-  // A 16x16 tile of soft light and dark specks, repeated at 4 sub-pixels per
-  // map tile. Deterministic, so it never shimmers.
-  drawGrain(o, z) {
-    if (!this.grain) {
-      const c = this.makeCanvas(16, 16), g = c.getContext('2d');
-      let r = 7;
-      const rand = () => ((r = (r * 9301 + 49297) % 233280) / 233280);
-      for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
-        const v = rand();
-        if (v < 0.22) { g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(x, y, 1, 1); } else if (v > 0.86) { g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(x, y, 1, 1); }
-      }
-      this.grain = c;
-    }
-    const ctx = this.ctx, k = z / 4;
-    ctx.save();
-    ctx.globalAlpha = 0.22;
-    ctx.translate(o.x, o.y);
-    ctx.scale(k, k);
-    ctx.fillStyle = ctx.createPattern(this.grain, 'repeat');
-    ctx.fillRect(0, 0, this.W * 4, this.H * 4);
-    ctx.restore();
   }
 
   makeCanvas(w, h) {
@@ -126,9 +105,8 @@ export class MapRenderer {
   }
 
   maxZoom() {
-    // Capped at 6 device px per tile: closer, flat tiles look blocky beside
-    // the detailed building art.
-    return Math.max(this.minZoom(), 6 * this.dpr);
+    // 8 device px per tile = 4 px per texel, the closest crisp step.
+    return Math.max(this.minZoom(), 8 * this.dpr);
   }
 
   fit() {
@@ -146,16 +124,23 @@ export class MapRenderer {
     return { x: Math.round((this.cssW * d) / 2 - this.cam.cx * this.cam.zoom), y: Math.round((this.cssH * d) / 2 - this.cam.cy * this.cam.zoom) };
   }
 
-  // Keep a camera ({zoom, cx, cy}) inside the map. The map edge may slide
-  // under a HUD panel's width, never further: land near the edge can always
-  // be brought out from under the panels, and the backdrop only shows there.
+  // Keep a camera ({zoom, cx, cy}) inside the map: the map always covers the
+  // whole window, so the space backdrop never shows past its edge.
   clampCam(cam) {
-    const { W, H } = this, d = this.dpr, i = this.insets;
+    const { W, H } = this, d = this.dpr;
     cam.zoom = Math.max(this.minZoom(), Math.min(this.maxZoom(), cam.zoom));
     const vw = (this.cssW * d) / cam.zoom, vh = (this.cssH * d) / cam.zoom;
-    const l = (i.left * d) / cam.zoom, r = (i.right * d) / cam.zoom, t = (i.top * d) / cam.zoom, b = (i.bottom * d) / cam.zoom;
-    cam.cx = Math.max(vw / 2 - l, Math.min(W - vw / 2 + r, cam.cx));
-    cam.cy = Math.max(vh / 2 - t, Math.min(H - vh / 2 + b, cam.cy));
+    cam.cx = Math.max(vw / 2, Math.min(W - vw / 2, cam.cx));
+    cam.cy = Math.max(vh / 2, Math.min(H - vh / 2, cam.cy));
+  }
+
+  // One pixel scale: zoom settles on an even number of device pixels per
+  // tile (2 per texel), so terrain, territory and sprites stay crisp. Far
+  // out (below 2 px per tile) the overview zooms freely.
+  snapZoom(z) {
+    const d = this.dpr, min = this.minZoom();
+    if (z < 2 * d) return Math.max(min, z);
+    return Math.max(min, Math.min(this.maxZoom(), Math.round(z / (2 * d)) * 2 * d));
   }
 
   clamp() {
@@ -168,7 +153,9 @@ export class MapRenderer {
   zoomByFactor(f, sx, sy) {
     if (!this.target) this.fit();
     const t = this.target;
-    t.zoom = Math.max(this.minZoom(), Math.min(this.maxZoom(), t.zoom * f));
+    // The wheel moves a raw zoom smoothly; the camera settles on the snapped one.
+    t.raw = Math.max(this.minZoom(), Math.min(this.maxZoom(), (t.raw ?? t.zoom) * f));
+    t.zoom = this.snapZoom(t.raw);
     if (sx !== undefined) t.anchor = { sx, sy, tile: this.screenToTileF(sx, sy) };
     else t.anchor = { sx: this.cssW / 2, sy: this.cssH / 2, tile: this.screenToTileF(this.cssW / 2, this.cssH / 2) };
   }
@@ -210,7 +197,7 @@ export class MapRenderer {
     this.cam.cx -= (dxCss * d) / this.cam.zoom;
     this.cam.cy -= (dyCss * d) / this.cam.zoom;
     this.clampCam(this.cam);
-    if (this.target) { this.target.zoom = this.cam.zoom; this.target.cx = this.cam.cx; this.target.cy = this.cam.cy; this.target.anchor = null; }
+    if (this.target) { this.target.zoom = this.target.raw = this.snapZoom(this.cam.zoom); this.target.cx = this.cam.cx; this.target.cy = this.cam.cy; this.target.anchor = null; }
   }
 
   // Glide to put a tile in the middle of the free area between the HUD panels.
@@ -256,24 +243,26 @@ export class MapRenderer {
     const st = this.state, c = rt(st), W = this.W, H = this.H;
     const img = this.overImg.data;
     const owner = st.owner, terrain = world(st).terrain;
+    // Each tile is 2x2 texels: a solid 45% tint inside, and a bright border
+    // one texel wide (2 px at the default zoom) along the outer edge.
+    const W2 = W * 2;
+    const put = (q, rgb, a) => { img[q] = rgb[0]; img[q + 1] = rgb[1]; img[q + 2] = rgb[2]; img[q + 3] = a; };
+    const fillA = this.simple ? 215 : 115;
     const paint = i => {
       const o = owner[i];
-      const p = i * 4;
-      if (!o || !isLand(terrain[i]) || (o === this.holdOwner && !this.revealed(i))) { img[p + 3] = 0; return; }
       const x = i % W, y = (i - x) / W;
-      const col = this.colorOf(o);
-      const edge = (x > 0 && owner[i - 1] !== o && isLand(terrain[i - 1])) || (x < W - 1 && owner[i + 1] !== o && isLand(terrain[i + 1]))
-        || (y > 0 && owner[i - W] !== o && isLand(terrain[i - W])) || (y < H - 1 && owner[i + W] !== o && isLand(terrain[i + W]));
-      if (edge) {
-        img[p] = col.edge[0]; img[p + 1] = col.edge[1]; img[p + 2] = col.edge[2]; img[p + 3] = 255;
+      const q0 = ((y * 2) * W2 + x * 2) * 4, q1 = q0 + W2 * 4;
+      if (!o || !isLand(terrain[i]) || (o === this.holdOwner && !this.revealed(i))) {
+        img[q0 + 3] = 0; img[q0 + 7] = 0; img[q1 + 3] = 0; img[q1 + 7] = 0;
         return;
       }
-      img[p] = col.rgb[0]; img[p + 1] = col.rgb[1]; img[p + 2] = col.rgb[2];
-      // Ownership patterns, so colour is not the only cue.
-      let a = this.simple ? 215 : 118;
-      if (col.kind === 'player' && (x + y) % 5 === 0) a += 60;
-      else if (col.kind === 'enemy' && (x % 3 === 0 && y % 3 === 0)) a += 80;
-      img[p + 3] = a;
+      const col = this.colorOf(o);
+      const diff = j => owner[j] !== o && isLand(terrain[j]);
+      const L = x > 0 && diff(i - 1), Rt = x < W - 1 && diff(i + 1), U = y > 0 && diff(i - W), D = y < H - 1 && diff(i + W);
+      put(q0, L || U ? col.edge : col.rgb, L || U ? 255 : fillA);
+      put(q0 + 4, Rt || U ? col.edge : col.rgb, Rt || U ? 255 : fillA);
+      put(q1, L || D ? col.edge : col.rgb, L || D ? 255 : fillA);
+      put(q1 + 4, Rt || D ? col.edge : col.rgb, Rt || D ? 255 : fillA);
     };
     if (c.allDirty) {
       for (let i = 0; i < W * H; i++) paint(i);
@@ -555,7 +544,7 @@ export class MapRenderer {
         else if (r < 3.2) ctx.fillStyle = (dx * 3 + dy) % 4 ? '#3a2c2a' : '#5a4436';
         else if ((dx + dy * 2) % 3 === 0) ctx.fillStyle = '#7a6250';
         else continue;
-        ctx.fillRect(x, y, 1, 1);
+        ctx.fillRect(x * 2, y * 2, 2, 2); // the base is 2 texels per tile
       }
     }
   }
@@ -684,6 +673,9 @@ export class MapRenderer {
         o.x += Math.round((Math.random() * 2 - 1) * a); o.y += Math.round((Math.random() * 2 - 1) * a);
       }
     }
+    // Even while shaking, the map covers the whole canvas (no backdrop at the edges).
+    o.x = Math.min(0, Math.max(this.canvas.width - this.W * z, o.x));
+    o.y = Math.min(0, Math.max(this.canvas.height - this.H * z, o.y));
     ctx.imageSmoothingEnabled = false;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
@@ -696,9 +688,6 @@ export class MapRenderer {
     ctx.fillStyle = '#05040a';
     ctx.fillRect(o.x - z, o.y - z, (this.W + 2) * z, (this.H + 2) * z);
     ctx.drawImage(this.simple && this.baseSimple ? this.baseSimple : this.base, o.x, o.y, this.W * z, this.H * z);
-    // Close up, a fine texture inside each tile (4x4 sub-pixels) keeps the
-    // ground from reading as flat blocks next to the detailed sprites.
-    if (z / d >= 3.5 && !this.simple) this.drawGrain(o, z);
     this.advanceReveal(ui.reducedMotion ? 99 : ui.dt || 0.016);
     this.updateOverlay();
     ctx.drawImage(this.over, o.x, o.y, this.W * z, this.H * z);
@@ -775,7 +764,7 @@ export class MapRenderer {
     // shadow. Rails link each civilization's structures at both levels.
     const sc = Math.max(1, Math.round(z / 2));
     const near = z / d >= 2.6;
-    const ps = Math.max(1, Math.round(z * 0.38)); // device px per detailed-sprite pixel
+    const ps = Math.max(1, Math.round(z / 2)); // sprite texel = terrain texel (2 per tile)
     // Lights blink out of step with each other.
     const frameAt = (x, y) => (motion ? Math.floor(now * 2 + ((x * 7 + y * 13) % 10) / 10) % 2 : 0);
     this.drawRails(T, z, now, motion, near);

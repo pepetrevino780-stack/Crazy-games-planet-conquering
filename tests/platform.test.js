@@ -202,7 +202,7 @@ test('keys work by position on any layout, and Escape is never used', async () =
 
 // ---------- Mobile layout guards ----------
 
-test('phones: the map canvas never collapses, and the camera can clear the HUD panels', async () => {
+test('phones: the map canvas never collapses, the map always covers the window, and zoom stays on the pixel grid', async () => {
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../css/style.css', import.meta.url), 'utf8');
   // iOS Safari before 14.1 ignores the inset shorthand: it left the map blank.
@@ -213,12 +213,17 @@ test('phones: the map canvas never collapses, and the camera can clear the HUD p
   r.resize(0, 0, 2);
   assert.deepEqual([canvas.width, canvas.height], [300, 150], 'a zero-size layout is ignored');
   assert.ok(!r.cssW, 'still waiting for a real size');
-  r.resize(390, 844, 2, { top: 60, right: 0, bottom: 70, left: 180 });
-  assert.deepEqual([canvas.width, canvas.height], [780, 1688]);
-  // A 400x300 map: the camera may pan the left edge out from under a 180 px panel.
-  r.W = 400; r.H = 300;
-  const cam = { zoom: 8, cx: 0, cy: 150 };
-  r.clampCam(cam);
-  const vw = (390 * 2) / 8;
-  assert.ok(Math.abs(cam.cx - (vw / 2 - (180 * 2) / 8)) < 1e-9, 'left edge can sit at the panel edge');
+  r.resize(907, 510, 1, { top: 60, right: 0, bottom: 70, left: 180 });
+  r.W = 1200; r.H = 900;
+  // No backdrop: whatever the camera asks for, the map covers the viewport.
+  for (const cam of [{ zoom: 0.1, cx: 0, cy: 0 }, { zoom: 4, cx: -50, cy: 2999 }, { zoom: 8, cx: 1200, cy: 0 }]) {
+    r.clampCam(cam);
+    const vw = 907 / cam.zoom, vh = 510 / cam.zoom;
+    assert.ok(cam.zoom >= r.minZoom() - 1e-9);
+    assert.ok(cam.cx - vw / 2 >= -1e-9 && cam.cx + vw / 2 <= 1200 + 1e-9, 'covers horizontally');
+    assert.ok(cam.cy - vh / 2 >= -1e-9 && cam.cy + vh / 2 <= 900 + 1e-9, 'covers vertically');
+  }
+  // One pixel scale: close zooms settle on even device px per tile (2 per texel).
+  for (const z of [2.3, 3.1, 4.9, 6.2, 7.7]) assert.equal(r.snapZoom(z) % 2, 0, `zoom ${z}`);
+  assert.equal(r.snapZoom(3.2), 4);
 });

@@ -1263,3 +1263,26 @@ test('volume settings are saved and checked', () => {
   const n = normalizeCampaign(raw);
   assert.deepEqual(n.settings.volume, { master: 0.3, music: 0.5, sfx: 0.8 }, 'bad values fall back');
 });
+
+// ---------- Quality spec v2: visuals ----------
+
+test('terrain: land and sea read apart in grayscale; flat tones; 2x texels for the detail pass', async () => {
+  const { paintWorld, palettes, luma, SEA_MAX_RATIO } = await import('../js/world/paint.js');
+  for (const theme of THEME_IDS) {
+    const P = palettes(theme);
+    const ground = Math.min(...['plains', 'wild', 'highland'].map(k => Math.min(...P[k].map(luma))));
+    for (const c of [...P.deep, ...P.shallow]) assert.ok(luma(c) <= ground * SEA_MAX_RATIO + 1e-9, `${theme}: sea at least 40% darker than land`);
+    for (const k of ['plains', 'wild', 'highland', 'mountain']) assert.ok(P[k].length <= 4, `${theme} ${k}: at most 4 tones`);
+    // A real world: average land vs sea brightness.
+    const w = generateWorld({ theme, seed: 3, width: 160, height: 100 });
+    const px = paintWorld(w, false, 2);
+    assert.equal(px.length, 320 * 200 * 4, 'detail pass paints 2x2 texels per tile');
+    let land = 0, nl = 0, sea = 0, ns = 0;
+    for (let i = 0; i < w.terrain.length; i++) {
+      const x = i % 160, y = Math.floor(i / 160), p = ((y * 2) * 320 + x * 2) * 4;
+      const l = luma([px[p], px[p + 1], px[p + 2]]);
+      if (isLand(w.terrain[i])) { land += l; nl++; } else { sea += l; ns++; }
+    }
+    assert.ok(sea / ns <= (land / nl) * 0.6, `${theme}: sea ${(sea / ns).toFixed(2)} vs land ${(land / nl).toFixed(2)}`);
+  }
+});

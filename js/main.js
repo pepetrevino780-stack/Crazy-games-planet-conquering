@@ -1526,7 +1526,7 @@ function processNotices() {
       case 'start': {
         // Bring the camera in over the landing zone and crash-land the colony ship.
         // Glide in over the landing zone.
-        renderer.zoomTo(Math.max(renderer.target.zoom, 3.2 * renderer.dpr));
+        renderer.zoomTo(Math.max(renderer.target.zoom, 4 * renderer.dpr)); // default: 4 px per tile, 2 per texel
         centerOnCapital();
         const cap = battle.sites.find(s => s.id === 'player-capital');
         if (cap) renderer.crashLanding(cap.x, cap.y, { owner: PLAYER, color: battle.factions[PLAYER].color });
