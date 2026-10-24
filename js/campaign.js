@@ -310,6 +310,17 @@ export function skirmishConfig(theme, seed, mode = 'classic') {
 const step = (id, label, waitFor, text, extra = {}) => ({ id, label, waitFor, text, ...extra });
 const flag = name => ({ type: 'flag', flag: name });
 
+// Tools shown on each campaign world (quality spec U4): the first world shows
+// only Habitat, Extractor and Strike; each later world adds a few. Tutorial
+// lessons and skirmishes show everything.
+const TOOL_STEPS = [
+  ['habitat', 'extractor', 'strike'],
+  ['bastion', 'starport', 'dropship'],
+  ['spire', 'research', 'rally'],
+  ['ship', 'emp'],
+];
+export const WORLD_TOOLS = Object.fromEntries(['vulkara', 'cryonis', 'mycelion', 'xythera'].map((id, i) => [id, TOOL_STEPS.slice(0, i + 1).flat()]));
+
 export const TUTORIAL_LESSONS = [
   { id: 1, name: 'Attack and build', desc: 'Attack, set the ratio, drag a building.', setup: { minerals: 400 },
     steps: [

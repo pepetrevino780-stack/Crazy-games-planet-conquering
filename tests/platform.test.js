@@ -227,3 +227,10 @@ test('phones: the map canvas never collapses, the map always covers the window, 
   for (const z of [2.3, 3.1, 4.9, 6.2, 7.7]) assert.equal(r.snapZoom(z) % 2, 0, `zoom ${z}`);
   assert.equal(r.snapZoom(3.2), 4);
 });
+
+test('readable text: no font size under 12px in the stylesheet', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const css = await readFile(new URL('../css/style.css', import.meta.url), 'utf8');
+  const small = [...css.matchAll(/font-size:\s*(\d+(?:\.\d+)?)px/g)].filter(m => Number(m[1]) < 12).map(m => m[0]);
+  assert.deepEqual(small, []);
+});

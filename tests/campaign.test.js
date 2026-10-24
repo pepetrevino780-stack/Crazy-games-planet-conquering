@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PLANETS, AI_PROFILES, skirmishConfig, getPlanet, TUTORIAL_LESSONS } from '../js/campaign.js';
+import { PLANETS, AI_PROFILES, skirmishConfig, getPlanet, TUTORIAL_LESSONS, WORLD_TOOLS } from '../js/campaign.js';
 import {
   createBattle, step, advance, spawnPlayer, canSpawnAt, playerAttack, playerBuild, playerDropship,
   playerResearch, useAbility, serialize, deserialize, battleResult, analyzeDefeat, PLAYER,
@@ -1285,4 +1285,15 @@ test('terrain: land and sea read apart in grayscale; flat tones; 2x texels for t
     }
     assert.ok(sea / ns <= (land / nl) * 0.6, `${theme}: sea ${(sea / ns).toFixed(2)} vs land ${(land / nl).toFixed(2)}`);
   }
+});
+
+test('progressive tools: the first world shows Habitat, Extractor and Strike; each world adds more', () => {
+  assert.deepEqual(WORLD_TOOLS.vulkara, ['habitat', 'extractor', 'strike']);
+  const order = ['vulkara', 'cryonis', 'mycelion', 'xythera'];
+  for (let i = 1; i < order.length; i++) {
+    const prev = WORLD_TOOLS[order[i - 1]], cur = WORLD_TOOLS[order[i]];
+    assert.ok(prev.every(t => cur.includes(t)), `${order[i]} keeps every earlier tool`);
+    assert.ok(cur.length > prev.length, `${order[i]} adds a tool`);
+  }
+  assert.equal(WORLD_TOOLS.noctyra, undefined, 'the last world has every tool');
 });

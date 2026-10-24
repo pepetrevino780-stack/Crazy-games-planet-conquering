@@ -114,6 +114,19 @@
             <span id="hud-sub"></span>
           </div>
         </div>
+        <div id="empire" class="hud-box empire" data-tip-fn="resources">
+          <button id="empire-toggle" class="drawer-tab" title="Empire">&lt;</button>
+          <div class="stat big" data-tip-fn="stat" data-stat="troops"><img data-icon="troops" alt=""><span>Troops</span><b id="st-troops">0</b></div>
+          <div class="stat sub"><span></span><small id="st-troops-sub"></small></div>
+          <div class="stat" data-tip-fn="stat" data-stat="minerals"><img data-icon="minerals" alt=""><span>Minerals</span><b id="st-minerals">0</b><small id="st-minerals-rate"></small></div>
+          <div class="stat" data-tip-fn="stat" data-stat="energy"><img data-icon="energy" alt=""><span>Energy</span><b id="st-energy">0</b><small id="st-energy-rate"></small></div>
+          <div class="stat" data-tip-fn="stat" data-stat="exotic"><img data-icon="exotic" alt=""><span>Exotic</span><b id="st-exotic">0</b><small id="st-exotic-rate"></small></div>
+          <div class="stat" data-tip-fn="stat" data-stat="land"><img data-icon="territory" alt=""><span>Land</span><b id="st-land">0</b><small id="st-land-share"></small></div>
+          <label class="ratio" data-tip-fn="stat" data-stat="ratio">
+            <span>Ratio <b id="ratio-label">20% (0)</b></span>
+            <input id="ratio" type="range" min="5" max="100" step="5" value="20">
+          </label>
+        </div>
         <div class="hud-box hud-status">
           <button id="obj-toggle" class="obj-line" title="Objectives (O)"><span id="hud-objective"></span><span id="obj-count"></span></button>
           <div class="progress"><i id="hud-progress"></i></div>
@@ -131,19 +144,6 @@
       <div id="board" class="hud-box board hidden"></div>
       <div id="objectives" class="hud-box objectives hidden"></div>
 
-      <div id="empire" class="hud-box empire">
-        <button id="empire-toggle" class="drawer-tab" title="Empire">&lt;</button>
-        <div class="stat big" data-tip-fn="stat" data-stat="troops"><img data-icon="troops" alt=""><span>Troops</span><b id="st-troops">0</b></div>
-        <div class="stat sub"><span></span><small id="st-troops-sub"></small></div>
-        <div class="stat" data-tip-fn="stat" data-stat="minerals"><img data-icon="minerals" alt=""><span>Minerals</span><b id="st-minerals">0</b><small id="st-minerals-rate"></small></div>
-        <div class="stat" data-tip-fn="stat" data-stat="energy"><img data-icon="energy" alt=""><span>Energy</span><b id="st-energy">0</b><small id="st-energy-rate"></small></div>
-        <div class="stat" data-tip-fn="stat" data-stat="exotic"><img data-icon="exotic" alt=""><span>Exotic</span><b id="st-exotic">0</b><small id="st-exotic-rate"></small></div>
-        <div class="stat" data-tip-fn="stat" data-stat="land"><img data-icon="territory" alt=""><span>Land</span><b id="st-land">0</b><small id="st-land-share"></small></div>
-        <label class="ratio" data-tip-fn="stat" data-stat="ratio">
-          <span>Attack ratio <b id="ratio-label">20% (0)</b></span>
-          <input id="ratio" type="range" min="5" max="100" step="5" value="20">
-        </label>
-      </div>
 
       <div id="battles" class="hud-box battles hidden" aria-live="polite"></div>
       <button id="battles-chip" class="btn small battles-chip hidden"></button>

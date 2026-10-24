@@ -145,11 +145,11 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .star-marks .got { color: var(--gold); }
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; margin: 10px 0; }
 .stat-grid div { background: rgba(21, 18, 42, 0.8); border: 1px solid var(--line); padding: 6px 8px; }
-.stat-grid small { display: block; color: var(--muted); font-size: 11px; }
+.stat-grid small { display: block; color: var(--muted); font-size: 12px; }
 .stat-grid b { font-size: 18px; font-variant-numeric: tabular-nums; }
 .land-chart { width: 100%; max-width: 480px; height: auto; aspect-ratio: 480 / 150; image-rendering: pixelated; border: 1px solid var(--line); display: block; }
 .next-world { display: flex; gap: 12px; align-items: center; padding: 10px; margin: 10px 0; }
-.next-world small { color: var(--muted); font-family: var(--font-head); font-size: 11px; display: block; }
+.next-world small { color: var(--muted); font-family: var(--font-head); font-size: 12px; display: block; }
 .next-world p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
 .next-orb canvas { width: 56px; height: 56px; image-rendering: pixelated; display: block; }
 .reward-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-variant-numeric: tabular-nums; }
@@ -171,16 +171,16 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .hud-top { position: absolute; top: calc(6px + var(--safe-top)); left: 6px; right: 6px; display: flex; gap: 6px; align-items: flex-start; pointer-events: none; }
 .hud-top > * { pointer-events: auto; }
 .hud-box { padding: 5px 8px; }
-.hud-info { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.hud-info { display: flex; gap: 8px; align-items: center; min-width: 0; flex: none; }
 .hud-info b { font-family: var(--font-head); font-size: 13px; display: block; }
 .hud-info span { font-size: 12px; color: var(--muted); }
-.hud-status { flex: 1; min-width: 0; max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 3px; }
+.hud-status { flex: 1; min-width: 0; max-width: 420px; margin: 0 auto; display: flex; flex-direction: column; gap: 3px; }
 .obj-line { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; color: var(--gold); font-size: 14px; }
 .obj-line span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #obj-count { color: var(--muted); flex: none; }
 .progress { height: 5px; background: #1c1836; border: 1px solid #000; }
 .progress > i { display: block; height: 100%; width: 0; background: var(--good); }
-.status-row { display: flex; gap: 4px; flex-wrap: wrap; }
+.status-row { display: flex; gap: 4px; flex-wrap: nowrap; overflow: hidden; }
 .chip { background: var(--panel-2); border: 1px solid var(--line-hi); padding: 1px 7px; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .chip.warn { border-color: var(--gold); color: var(--gold); }
 .chip.alert { border-color: var(--bad); color: #fff; background: #4a0e18; }
@@ -193,7 +193,7 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .board td:nth-child(n+3) { text-align: right; }
 .board tr.me td { color: var(--cyan); }
 .board .sw { width: 8px; height: 8px; display: inline-block; margin-right: 5px; border: 1px solid #000; }
-.board .pers { color: var(--muted); font-size: 11px; }
+.board .pers { color: var(--muted); font-size: 12px; }
 .objectives { position: absolute; left: 50%; transform: translateX(-50%); top: var(--hud-top); width: min(440px, 92vw); max-height: calc(100% - var(--hud-top) - var(--hud-bottom) - 8px); overflow: auto; font-size: 13px; z-index: 3; }
 .obj { display: flex; gap: 6px; align-items: flex-start; padding: 3px 0; line-height: 1.3; }
 .obj .mark { width: 14px; flex: none; }
@@ -202,14 +202,26 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .obj .rw { margin-left: auto; color: var(--gold); white-space: nowrap; }
 .obj-sep { border-top: 1px solid var(--line); margin: 5px 0; }
 
-.empire { position: absolute; left: 6px; bottom: var(--hud-bottom); width: 226px; max-height: calc(100% - var(--hud-top) - var(--hud-bottom) - 6px); overflow: visible; display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; transition: transform .15s steps(3); }
-.empire.collapsed { transform: translateX(calc(-100% + 18px)); }
-.empire.collapsed > :not(.drawer-tab) { visibility: hidden; }
+/* The empire is one row in the top bar: Troops / cap, Land and the attack
+   ratio. Minerals, energy and exotic matter are in its tooltip. */
+.empire { display: flex; flex-direction: row; align-items: center; gap: 10px; padding: 4px 10px; flex: none; font-variant-numeric: tabular-nums; }
+.empire .stat { display: flex; gap: 5px; align-items: center; }
+.empire .drawer-tab, .empire .stat.sub, .empire .stat[data-stat="minerals"], .empire .stat[data-stat="energy"], .empire .stat[data-stat="exotic"] { display: none; }
+.empire .stat span { display: none; }
+.empire .stat small { display: none; }
+.empire .stat img { width: 18px; height: 18px; }
+.empire .ratio { flex-direction: row; align-items: center; gap: 6px; margin: 0; white-space: nowrap; }
+.empire .ratio > span { font-size: 12px; }
+.empire .ratio b { margin-left: 4px; }
+.empire .ratio input { width: 72px; height: 20px; }
+.hud-status { min-width: 200px; }
+/* Planet name and subtitle live in the Mission panel (?): the info box keeps the leaderboard button. */
+#screen-battle .hud-info > div { display: none; }
 .drawer-tab { position: absolute; right: -20px; top: 4px; width: 20px; height: 34px; background: var(--panel-2); border: var(--px) solid var(--line-hi); color: var(--text); padding: 0; cursor: pointer; }
 .stat { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 6px; font-size: 13px; }
 .stat span { color: var(--muted); }
 .stat b { font-size: 14px; white-space: nowrap; }
-.stat small { grid-column: 3; font-size: 11px; color: var(--good); text-align: right; }
+.stat small { grid-column: 3; font-size: 12px; color: var(--good); text-align: right; }
 .stat.big b { font-size: 16px; color: #e6fbff; }
 .stat.sub { margin-top: -3px; }
 .stat.sub small { color: var(--muted); }
@@ -232,10 +244,10 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .brow .line { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
 .brow .who { overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
 .vs { width: 14px; height: 14px; image-rendering: pixelated; vertical-align: middle; }
-.brow .tag { font-family: var(--font-head); font-size: 9px; color: var(--bad); margin-left: auto; }
+.brow .tag { font-family: var(--font-head); font-size: 12px; color: var(--bad); margin-left: auto; }
 .brow .bbar { height: 3px; margin-top: 3px; background: #4a1820; }
 .brow .bbar i { display: block; height: 100%; }
-.brow .retreat { margin-left: auto; padding: 0 5px; min-height: 0; font-size: 11px; }
+.brow .retreat { margin-left: auto; padding: 0 5px; min-height: 0; font-size: 12px; }
 .brow.done { cursor: default; animation: bflash .6s steps(3) 2; }
 .brow.done.won { border-color: var(--good); color: var(--good); }
 .brow.done.lost { border-color: var(--bad); color: var(--bad); }
@@ -262,14 +274,14 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .inspector .row span { color: var(--muted); }
 .inspector .note { font-size: 12px; color: var(--muted); margin: 1px 0 3px; }
 .board .ally { color: var(--good); }
-.board .persona { display: block; font-size: 11px; color: var(--muted); margin-left: 16px; }
+.board .persona { display: block; font-size: 12px; color: var(--muted); margin-left: 16px; }
 .inspector .tags { color: var(--cyan); font-size: 12px; margin-top: 4px; overflow-wrap: anywhere; }
 .inspector .close { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; padding: 0; background: transparent; border: 0; color: var(--muted); cursor: pointer; font-family: var(--font-head); }
 
 /* Tooltip that follows the pointer. */
 .tooltip { position: fixed; z-index: 50; max-width: min(300px, calc(100vw - 8px)); padding: 6px 8px; background: rgba(9, 7, 18, 0.95); border: var(--px) solid var(--line); font-size: 13px; line-height: 1.4; pointer-events: none; overflow-wrap: anywhere; }
 .tooltip b { font-family: var(--font-head); font-size: 12px; }
-.tooltip kbd { font-family: var(--font-head); font-size: 10px; padding: 0 4px; border: 1px solid var(--muted); color: var(--gold); }
+.tooltip kbd { font-family: var(--font-head); font-size: 12px; padding: 0 4px; border: 1px solid var(--muted); color: var(--gold); }
 .tooltip .ok { color: var(--good); }
 .tooltip .no { color: var(--bad); }
 .tooltip .warn { color: var(--gold); }
@@ -280,7 +292,7 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .tutorial { position: absolute; left: 50%; transform: translateX(-50%); top: var(--hud-top); width: min(400px, calc(100vw - 12px)); z-index: 1; border-color: var(--gold); font-size: 14px; line-height: 1.4; }
 .tutorial p { margin: 4px 0 0; }
 .tut-head { display: flex; justify-content: space-between; align-items: center; color: var(--gold); font-family: var(--font-head); font-size: 12px; }
-.tut-head .btn { padding: 1px 8px; font-size: 11px; min-height: 0; }
+.tut-head .btn { padding: 1px 8px; font-size: 12px; min-height: 0; }
 .tutorial.flash { animation: tflash .9s steps(4); }
 /* Training pictures: an animated mouse / finger and key caps, then one line. */
 .tut-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
@@ -298,6 +310,9 @@ kbd.cap { display: inline-block; min-width: 22px; padding: 2px 5px 4px; font-fam
 /* One-time controls card above the build bar. */
 .controls-help { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--hud-bottom) + 8px); display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; padding: 6px 12px; max-width: calc(100vw - 24px); font-size: 14px; pointer-events: none; transition: opacity .6s; }
 .controls-help.fade { opacity: 0; }
+.tut-controls { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 13px; }
+.tut-controls .ctl { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.tut-controls img { width: 24px; height: 24px; image-rendering: pixelated; }
 .controls-help .ctl { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .controls-help img { width: 27px; height: 27px; image-rendering: pixelated; }
 @keyframes tflash { 0%, 50% { background: rgba(80, 64, 16, 0.95); } 100% { background: rgba(13, 11, 24, 0.8); } }
@@ -305,7 +320,7 @@ kbd.cap { display: inline-block; min-width: 22px; padding: 2px 5px 4px; font-fam
 .glow { outline: 2px solid var(--gold); outline-offset: 2px; animation: glow 1s steps(2) infinite; }
 @keyframes glow { 50% { outline-color: transparent; } }
 
-.toasts { position: absolute; right: 6px; bottom: var(--hud-bottom); width: min(300px, 62vw); max-height: var(--toast-max, 40vh); overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; pointer-events: none; }
+.toasts { position: absolute; right: 6px; bottom: var(--hud-bottom); width: min(260px, 62vw); max-height: var(--toast-max, 40vh); overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; pointer-events: none; }
 .toast { background: rgba(21, 18, 42, 0.92); border: var(--px) solid var(--line); border-left: 4px solid var(--cyan); padding: 5px 8px; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; animation: tin .2s steps(3); }
 .toast.good { border-left-color: var(--good); }
 .chip.good { color: var(--good); border-color: var(--good); }
@@ -315,15 +330,22 @@ kbd.cap { display: inline-block; min-width: 22px; padding: 2px 5px 4px; font-fam
 @keyframes tin { from { transform: translateX(16px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 .toolbar { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(6px + var(--safe-bottom)); display: flex; gap: 3px; padding: 3px; border: var(--px) solid var(--line); max-width: calc(100vw - 12px); overflow-x: auto; }
-.tool { position: relative; min-width: 52px; min-height: 48px; flex-direction: column; gap: 1px; padding: 3px 5px; font-family: var(--font-body); font-size: 12px; }
+.tool { position: relative; min-width: 52px; min-height: 36px; flex-direction: column; gap: 1px; padding: 2px 5px; font-family: var(--font-body); font-size: 12px; }
 .tool { touch-action: pan-x; }
 .toolbar.more-right { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), rgba(0,0,0,0.25)); mask-image: linear-gradient(to right, #000 calc(100% - 36px), rgba(0,0,0,0.25)); }
 .toolbar.more-left { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 36px), rgba(0,0,0,0.25)); mask-image: linear-gradient(to left, #000 calc(100% - 36px), rgba(0,0,0,0.25)); }
 .toolbar.more-left.more-right { -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,0.25), #000 36px, #000 calc(100% - 36px), rgba(0,0,0,0.25)); mask-image: linear-gradient(to right, rgba(0,0,0,0.25), #000 36px, #000 calc(100% - 36px), rgba(0,0,0,0.25)); }
-.tool img { width: 22px; height: 22px; -webkit-user-drag: none; user-select: none; }
-.tool .key { position: absolute; top: 1px; left: 3px; font-size: 10px; color: var(--muted); }
-.tool .cost { font-size: 11px; color: var(--gold); }
-.tool .short { display: none; }
+.tool img { width: 18px; height: 18px; -webkit-user-drag: none; user-select: none; }
+.tool .key { position: absolute; top: 1px; left: 3px; font-size: 12px; color: var(--muted); }
+.tool .cost { font-size: 12px; color: var(--gold); line-height: 1; }
+.tool .label { line-height: 1; white-space: nowrap; }
+/* Two compact rows: icon and cost side by side, the full name below. */
+.tool { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; justify-content: center; align-items: center; column-gap: 3px; row-gap: 1px; }
+.tool img:not(.lockmark) { grid-column: 1; grid-row: 1; }
+.tool .cost { grid-column: 2; grid-row: 1; }
+.tool .label { grid-column: 1 / span 2; grid-row: 2; }
+.tool .cost:empty { display: none; }
+.tool .cost:empty ~ .label, .tool:has(.cost:empty) img:not(.lockmark) { grid-column: 1 / span 2; }
 .tool .cd { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--gold); }
 .tool.locked img { opacity: 0.35; }
 .tool .lockmark { display: none; position: absolute; top: 2px; right: 2px; width: 12px; height: 12px; opacity: 1; image-rendering: pixelated; }
@@ -355,12 +377,12 @@ kbd.cap { display: inline-block; min-width: 22px; padding: 2px 5px 4px; font-fam
   .campaign-side { width: 100%; }
 }
 @media (max-width: 1100px), (max-height: 700px) {
-  /* Small labels stay, so every tile (abilities too) says what it is. */
-  .tool .label { display: none; }
-  .tool .short { display: block; font-size: 9px; line-height: 1; }
-  .tool .cost { font-size: 10px; }
+  /* Full names stay (12 px), so every tile says what it is. */
+  .tool .label { font-size: 12px; line-height: 1; }
+  .tool .cost { font-size: 12px; }
   .tool img { width: 18px; height: 18px; }
-  .tool { min-width: 50px; min-height: 44px; }
+  .tool { min-width: 50px; min-height: 36px; }
+  .tool .key { display: none; }
 }
 @media (max-width: 760px), (max-height: 520px) {
   html, body { font-size: 14px; }
@@ -368,7 +390,6 @@ kbd.cap { display: inline-block; min-width: 22px; padding: 2px 5px 4px; font-fam
   .hud-info b { font-size: 12px; }
   .hud-status { max-width: none; }
   .btn.icon { min-width: 32px; min-height: 32px; }
-  .empire { width: 180px; }
   .stat { font-size: 12px; }
   .stat.big b { font-size: 14px; }
   .inspector { width: 210px; font-size: 12px; }
@@ -390,7 +411,7 @@ kbd.cap { display: inline-block; min-width: 22px; padding: 2px 5px 4px; font-fam
   .hud-controls { order: 2; flex: none; gap: 3px; }
   .hud-controls .btn.icon { min-width: 34px; min-height: 34px; padding: 2px; }
   .obj-line { font-size: 13px; }
-  .chip { font-size: 11px; padding: 0 5px; }
+  .chip { font-size: 12px; padding: 0 5px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .glow, .tutorial.flash, .banner.show { animation: none; }

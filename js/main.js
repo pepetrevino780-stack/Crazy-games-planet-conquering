@@ -1,5 +1,5 @@
 // Interface controller: screens, map input, HUD, notices, saving and portal hooks.
-import { PLANETS, getPlanet, BUILDINGS, RESEARCH, SITE_TYPES, PERSONAS, SKIRMISH_MODES, TUTORIAL_LESSONS } from './campaign.js';
+import { PLANETS, getPlanet, WORLD_TOOLS, BUILDINGS, RESEARCH, SITE_TYPES, PERSONAS, SKIRMISH_MODES, TUTORIAL_LESSONS } from './campaign.js';
 import {
   newCampaign, loadCampaign, saveCampaign, isUnlocked, UPGRADES, CIVS, ABILITIES, upgradeCost,
   buyUpgrade, unlockCiv, playerLoadout, cleanName, nextWorld, playTarget, completeLesson, TUTORIAL_REWARD, computeRewards, applyVictory, applyDefeat, assistLevel, starsFor,
@@ -323,8 +323,7 @@ function enterBattle() {
   $('#hud-sub').textContent = `${idx >= 0 ? `World ${idx + 1}/5 · ` : ''}${cfg.lesson} · ${battle.difficulty}`;
   buildToolbar();
   show('battle');
-  $('#empire').classList.toggle('collapsed', window.innerWidth < 760 && window.innerHeight > window.innerWidth);
-  $('#empire-toggle').textContent = $('#empire').classList.contains('collapsed') ? '>' : '<';
+  $('#empire').classList.remove('collapsed');
   renderer.attach(battle, campaign.settings.simple);
   renderer.setSimple(campaign.settings.simple);
   resize();
@@ -516,16 +515,32 @@ function endBattle() {
 
 // ---------- HUD ----------
 
+// One transient layer at a time (spec U2): a toast waits while the training
+// card, the controls card or the opened battle list is on screen, and only one
+// toast shows at once. Waiting toasts keep their order; old ones drop out.
+const toastQueue = [];
+const transientBusy = () => ['#tutorial', '#controls-help', '#battles'].some(s => !$(s).classList.contains('hidden'));
 function toast(html, kind = '', ms = 4200) {
   const box = $('#toasts');
-  if ([...box.children].some(c => c.innerHTML === html && !c.classList.contains('out'))) return;
+  const live = [...box.children].filter(c => !c.classList.contains('out'));
+  if (live.some(c => c.innerHTML === html) || toastQueue.some(t => t.html === html)) return;
+  if (live.length || (battle && transientBusy())) {
+    toastQueue.push({ html, kind, ms });
+    while (toastQueue.length > 3) toastQueue.shift();
+    return;
+  }
   const el = document.createElement('div');
   el.className = 'toast ' + kind;
   el.innerHTML = html;
   box.appendChild(el);
-  const max = window.innerWidth < 760 || window.innerHeight < 520 ? 1 : 4;
-  while (box.children.length > max) box.firstChild.remove();
-  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, ms);
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => { el.remove(); flushToasts(); }, 300); }, ms);
+}
+function flushToasts() {
+  // A card that opens over a showing toast wins: the toast fades out.
+  if (battle && transientBusy()) for (const c of $('#toasts').children) c.classList.add('out');
+  if (!toastQueue.length || (battle && transientBusy()) || [...$('#toasts').children].some(c => !c.classList.contains('out'))) return;
+  const t = toastQueue.shift();
+  toast(t.html, t.kind, Math.min(t.ms, 3500));
 }
 
 // Big centre-screen announcement for milestones such as a captured capital.
@@ -547,9 +562,6 @@ function tip(key, text) {
   toast(esc(text), 'tip', 6000);
 }
 
-// One-word names for the small tiles on phones (the tooltip has the full name).
-const SHORT_LABEL = { extractor: 'Mines', starport: 'Port', spire: 'Spire', dropship: 'Sail', ship: 'Ship', research: 'Lab' };
-
 function buildToolbar() {
   const bar = $('#toolbar');
   const f = battle.factions[PLAYER];
@@ -563,14 +575,18 @@ function buildToolbar() {
     ...Object.entries(ABILITIES).map(([id, a]) => ({ kind: 'ability', id, key: a.key, label: a.name.split(' ')[1], icon: iconURL(id, 3), locked: !f.abilities.includes(id) })),
   ];
   bar.innerHTML = '';
-  for (const t of tools) {
+  // Only this world's tools (spec U4); separators only between shown groups.
+  const shown = tools.filter((t, k) => t === 'sep' ? k > 0 && tools[k - 1] !== 'sep' : worldHasTool(t.id));
+  while (shown.length && shown[shown.length - 1] === 'sep') shown.pop();
+  for (let k = shown.length - 1; k > 0; k--) if (shown[k] === 'sep' && shown[k - 1] === 'sep') shown.splice(k, 1);
+  for (const t of shown) {
     if (t === 'sep') { const s = document.createElement('span'); s.className = 'tool-sep'; bar.appendChild(s); continue; }
     const b = document.createElement('button');
     b.className = 'btn tool' + (t.locked ? ' locked' : '');
     b.dataset.kind = t.kind; b.dataset.id = t.id;
     b.dataset.tipFn = 'tool';
     b.setAttribute('aria-label', t.kind === 'build' ? `${BUILDINGS[t.id].name}: ${BUILDINGS[t.id].desc}` : t.label);
-    b.innerHTML = `<span class="key">${t.key}</span><img src="${t.icon}" alt="" draggable="false"><span class="label">${esc(t.label)}</span><span class="short">${esc(SHORT_LABEL[t.id] || t.label)}</span><span class="cost"></span>${t.kind === 'ability' ? '<span class="cd"></span>' : ''}<img class="lockmark" src="${iconURL('lock', 2)}" alt="">`;
+    b.innerHTML = `<span class="key">${t.key}</span><img src="${t.icon}" alt="" draggable="false"><span class="label">${esc(t.label)}</span><span class="cost"></span>${t.kind === 'ability' ? '<span class="cd"></span>' : ''}<img class="lockmark" src="${iconURL('lock', 2)}" alt="">`;
     b.onclick = () => { if (performance.now() - dragEndedAt > 350) activateTool(t.kind, t.id); };
     if (t.kind === 'build') b.addEventListener('pointerdown', e => startDrag(e, t.id));
     bar.appendChild(b);
@@ -653,7 +669,14 @@ function bindDrag() {
   document.addEventListener('pointercancel', e => { if (drag && e.pointerId === drag.pid) endDrag(e, true); });
 }
 
+// Campaign worlds show a growing set of tools; everything else shows them all.
+function worldHasTool(id) {
+  const list = battle && WORLD_TOOLS[config(battle).id];
+  return !list || list.includes(id);
+}
+
 function toolUnlocked(kind, id) {
+  if (!worldHasTool(id)) return false;
   const open = tutorialUnlocked(battle);
   if (!open) return true;
   if (kind === 'ability' && !battle.factions[PLAYER].abilities.includes(id)) return false;
@@ -798,6 +821,15 @@ const TIP_FNS = {
     return `<b>${esc(a.name)}</b> <kbd>${a.key}</kbd><br>${esc(u.desc.replace(/^Ability: (.)/, (_, c) => c.toUpperCase()))}<br>Cooldown ${Math.round(a.cooldown * (f.cooldown || 1))}s.${owned ? '' : ' <span class="no">Unlock it in Command upgrades.</span>'}`;
   },
   stat(el) { return STAT_TIPS[el.dataset.stat](battle.factions[PLAYER]); },
+  // The empire row keeps only Troops, Land and the ratio; the rest is here.
+  resources() {
+    const f = battle.factions[PLAYER], inc = income(battle, f);
+    const open = tutorialUnlocked(battle);
+    const rows = [`<b>Your empire</b>`, `Troops ${fmt(f.troops)} / ${fmt(maxTroops(battle, f))} · +${fmt(regen(battle, f))}/s`, `Land ${fmt(f.tiles)} tiles (${((f.tiles / world(battle).landCount) * 100).toFixed(1)}%)`, `Minerals ${fmt(f.minerals)} · +${inc.minerals.toFixed(1)}/s`];
+    if (!open || open.has('energy')) rows.push(`Energy ${fmt(f.energy)} · +${inc.energy.toFixed(1)}/s`);
+    if (!open || open.has('exotic')) rows.push(`Exotic ${fmt(f.exotic)} · +${inc.exotic.toFixed(1)}/s`);
+    return rows.join('<br>');
+  },
   exile() {
     const f = battle.factions[PLAYER], home = homeCapital(battle, PLAYER);
     const holder = home ? battle.factions[battle.owner[home.y * battle.w + home.x]] : null;
@@ -864,7 +896,21 @@ function showTooltip(html, x, y) {
   placeTooltip(x, y);
 }
 
+// Map tooltips open near the screen edge away from the cursor, inside the
+// free map area, so they never cover what you point at (spec U3).
+function placeMapTooltip(x, y) {
+  tipXY = { x, y };
+  const el = $('#tooltip'), r = el.getBoundingClientRect();
+  const scr = window.getComputedStyle($("#screen-battle"));
+  const top = parseFloat(scr.getPropertyValue('--hud-top')) || 60, bottom = parseFloat(scr.getPropertyValue('--hud-bottom')) || 60;
+  const left = x < window.innerWidth / 2 ? window.innerWidth - r.width - 8 : 8;
+  const t = y < window.innerHeight / 2 ? window.innerHeight - bottom - r.height - 6 : top + 4;
+  el.style.left = `${Math.max(4, Math.round(left))}px`;
+  el.style.top = `${Math.max(4, Math.round(t))}px`;
+}
+
 function placeTooltip(x, y) {
+  if (tipSource === 'map') { placeMapTooltip(x, y); return; }
   tipXY = { x, y };
   const el = $('#tooltip');
   const r = el.getBoundingClientRect();
@@ -881,15 +927,28 @@ function hideTooltip() {
 }
 
 // Called with the HUD refresh so costs, rates and the hovered tile stay live.
+// Tooltips appear only after the pointer has rested 400 ms, and never while
+// dragging, building or attacking.
+const TIP_DELAY = 400;
+let lastMoveAt = 0, lastPressAt = 0, mapPressed = false, tipTimer = 0;
+const tipReady = () => {
+  const now = performance.now();
+  return now - lastMoveAt >= TIP_DELAY && now - lastPressAt >= 800 && !mapPressed && !drag?.active && !gesture?.moved;
+};
 function refreshTooltip() {
+  if (!tipReady()) {
+    if (tipSource === 'map') $('#tooltip').classList.add('hidden');
+    return;
+  }
   if (tipSource && tipSource !== 'map') {
     if (!tipSource.isConnected || tipSource.closest('.hidden')) hideTooltip();
     else showTooltip(tipHtml(tipSource), tipXY.x, tipXY.y);
   } else if (tipSource === 'map') {
-    if (hoverTile >= 0 && battle && battle.status !== 'spawn' && !gesture?.moved) showTooltip(tileTip(hoverTile), tipXY.x, tipXY.y);
+    if (hoverTile >= 0 && battle && battle.status !== 'spawn') showTooltip(tileTip(hoverTile), tipXY.x, tipXY.y);
     else hideTooltip();
   }
 }
+const scheduleTip = () => { clearTimeout(tipTimer); tipTimer = setTimeout(refreshTooltip, TIP_DELAY + 20); };
 
 function initTooltips() {
   // Native title tooltips would double up with ours.
@@ -902,17 +961,23 @@ function initTooltips() {
   document.addEventListener('pointerover', e => {
     if (e.pointerType === 'touch') return;
     const el = tipTarget(e);
-    if (el) { tipSource = el; showTooltip(tipHtml(el), e.clientX, e.clientY); }
-    else if (e.target.id === 'canvas' && battle) tipSource = 'map';
+    lastMoveAt = performance.now();
+    if (el) { if (tipSource !== el) $('#tooltip').classList.add('hidden'); tipSource = el; tipXY = { x: e.clientX, y: e.clientY }; scheduleTip(); }
+    else if (e.target.id === 'canvas' && battle) { tipSource = 'map'; $('#tooltip').classList.add('hidden'); scheduleTip(); }
     else if (tipSource) hideTooltip();
   });
   document.addEventListener('pointermove', e => {
     if (e.pointerType === 'touch') return;
     // The battle screen can appear under a resting cursor without a pointerover.
     if (!tipSource && e.target.id === 'canvas' && battle) tipSource = 'map';
-    if (tipSource === 'map') { tipXY = { x: e.clientX, y: e.clientY }; refreshTooltip(); }
-    else if (tipSource) placeTooltip(e.clientX, e.clientY);
+    lastMoveAt = performance.now();
+    tipXY = { x: e.clientX, y: e.clientY };
+    if (tipSource === 'map') { $('#tooltip').classList.add('hidden'); scheduleTip(); }
+    else if (tipSource) { if (!$('#tooltip').classList.contains('hidden')) placeTooltip(e.clientX, e.clientY); else scheduleTip(); }
   });
+  // Pressing on the map (to attack or drag) hides it until the pointer rests again.
+  $('#canvas').addEventListener('pointerdown', () => { mapPressed = true; lastPressAt = performance.now(); $('#tooltip').classList.add('hidden'); }, true);
+  window.addEventListener('pointerup', () => { if (mapPressed) { mapPressed = false; lastPressAt = performance.now(); scheduleTip(); } }, true);
   document.documentElement.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') hideTooltip(); });
   // Touch: long press shows the tooltip and swallows the tap that follows.
   document.addEventListener('pointerdown', e => {
@@ -1025,7 +1090,7 @@ function closeRadial() {
 // Incoming. Finished battles flash their result, then fade out.
 
 let finishedBattles = [];
-let battlesOpen = true;
+let battlesOpen = false;
 let battlesKey = '';
 
 function battleGroups() {
@@ -1086,8 +1151,10 @@ function updateBattles() {
   const now = performance.now();
   finishedBattles = finishedBattles.filter(f => f.until > now && !groups.some(g => g.key === f.key));
   const total = groups.length + finishedBattles.length;
-  // Phones: a summary chip that opens the list.
-  const compact = window.innerWidth < 760 || window.innerHeight < 520;
+  // A summary chip that opens the list (one transient layer at a time: the
+  // list closes while a training card is up).
+  const compact = true;
+  if (!$('#tutorial').classList.contains('hidden')) battlesOpen = false;
   chip.classList.toggle('hidden', !compact || !groups.length);
   chip.innerHTML = `<img class="vs" src="${iconURL('attack', 2)}" alt=""> ${groups.length} battle${groups.length === 1 ? '' : 's'}`;
   const show = total > 0 && (!compact || battlesOpen);
@@ -1189,22 +1256,29 @@ const touchFirst = () => !!window.matchMedia?.('(pointer: coarse)').matches;
 
 // One-time controls card: a drawing of the mouse (or finger) and keys. It
 // fades out after the first attack and never comes back.
+function controlsHtml() {
+  const item = (icon, label) => `<span class="ctl"><img src="${iconURL(icon, 3)}" alt="">${label}</span>`;
+  return touchFirst()
+    ? item('hand', 'Tap: attack') + item('drag', 'Drag: move') + item('wheel', 'Pinch: zoom')
+    : item('mouse', 'Click: attack') + item('drag', 'Drag: move') + item('wheel', 'Wheel: zoom') + '<span class="ctl"><kbd class="cap">1</kbd>–<kbd class="cap">5</kbd> build</span><span class="ctl"><kbd class="cap">␣</kbd> pause</span>';
+}
+
 function updateControlsHelp() {
   const el = $('#controls-help');
-  if (!campaign || campaign.settings.controlsSeen || battle.status !== 'playing') { el.classList.add('hidden'); return; }
+  // Never stacked with the training card: there, the controls are a row inside it.
+  const inCard = !$('#tutorial').classList.contains('hidden');
+  if (!campaign || campaign.settings.controlsSeen || battle.status !== 'playing' || inCard) {
+    el.classList.add('hidden');
+    if (campaign && !campaign.settings.controlsSeen && battle.flags.attacked) { campaign.settings.controlsSeen = true; persist(); $('#tutorial .tut-controls')?.remove(); }
+    return;
+  }
   if (battle.flags.attacked) {
     campaign.settings.controlsSeen = true; persist();
     el.classList.add('fade');
     setTimeout(() => el.classList.add('hidden'), 700);
     return;
   }
-  if (!el.dataset.built) {
-    el.dataset.built = '1';
-    const item = (icon, label) => `<span class="ctl"><img src="${iconURL(icon, 3)}" alt="">${label}</span>`;
-    el.innerHTML = touchFirst()
-      ? item('hand', 'Tap: attack') + item('drag', 'Drag: move') + item('wheel', 'Pinch: zoom')
-      : item('mouse', 'Click: attack') + item('drag', 'Drag: move') + item('wheel', 'Wheel: zoom') + '<span class="ctl"><kbd class="cap">1</kbd>–<kbd class="cap">5</kbd> build</span><span class="ctl"><kbd class="cap">␣</kbd> pause</span>';
-  }
+  if (!el.dataset.built) { el.dataset.built = '1'; el.innerHTML = controlsHtml(); }
   el.classList.remove('hidden', 'fade');
 }
 
@@ -1271,7 +1345,7 @@ function updateTutorial() {
     const keys = touchFirst() ? [] : step.keys || [];
     const visual = icon || keys.length ? `<span class="tut-visual">${icon ? `<img class="tut-icon anim-${step.icon}" src="${iconURL(icon, 4)}" alt="">` : ''}${keys.map(k => `<kbd class="cap">${esc(k)}</kbd>`).join('')}</span>` : '';
     const text = touchFirst() ? step.text.replace(/^Click/, 'Tap').replace(/, then click/, ', then tap') : step.text;
-    card.innerHTML = `<div class="tut-head"><span>TRAINING ${battle.tutorial + 1}/${steps.length}</span><button class="btn small ghost" id="btn-tut-skip" data-tip="Unlock every tool and stop the training.">Skip</button></div><div class="tut-row">${visual}<p>${esc(text)}</p></div>`;
+    card.innerHTML = `<div class="tut-head"><span>TRAINING ${battle.tutorial + 1}/${steps.length}</span><button class="btn small ghost" id="btn-tut-skip" data-tip="Unlock every tool and stop the training.">Skip</button></div><div class="tut-row">${visual}<p>${esc(text)}</p></div>${campaign && !campaign.settings.controlsSeen ? `<div class="tut-controls">${controlsHtml()}</div>` : ''}`;
     $('#btn-tut-skip').onclick = () => { skipTutorial(battle); sfx.click(); toast('Training skipped. Everything is unlocked; the field manual (?) has the details.', 'tip', 4000); updateHud(true); };
     card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash');
     tutPointer = null; tutPointerAt = 0;
@@ -1284,7 +1358,6 @@ function updateTutorial() {
   if (p.startsWith('tool:')) document.querySelector(`.tool[data-id="${p.slice(5)}"]`)?.classList.add('glow');
   if (p === 'ratio') {
     $('#empire .ratio').classList.add('glow');
-    if ($('#empire').classList.contains('collapsed')) $('#empire-toggle').classList.add('glow');
   }
 }
 
@@ -1343,6 +1416,7 @@ function updateInspector() {
 }
 
 function updateHud(force = false) {
+  flushToasts();
   if (battle) setBattleIntensity(battle.attacks.filter(a => a.attacker === PLAYER || a.target === PLAYER).length);
   if (battle) { updateControlsHelp(); contextHints(); }
   const now = performance.now();
@@ -1365,7 +1439,7 @@ function updateHud(force = false) {
   $('#st-exotic-rate').textContent = `+${inc.exotic.toFixed(1)}/s`;
   $('#st-land').textContent = fmt(f.tiles);
   $('#st-land-share').textContent = `${((f.tiles / world(battle).landCount) * 100).toFixed(1)}%`;
-  $('#ratio-label').textContent = `${Math.round(ratio * 100)}% (${fmt(f.troops * ratio)})`;
+  $('#ratio-label').textContent = `${Math.round(ratio * 100)}% · ${fmt(f.troops * ratio)}`;
   $('#hud-time').textContent = battle.status === 'spawn' ? `Landing ${Math.ceil(battle.spawnLeft)}s` : fmtTime(battle.time);
   // (The tutorial world is peaceful throughout: no countdown there.)
   const grace = battle.status === 'playing' && !config(battle).tutorialWorld ? graceLeft(battle) : 0;
@@ -1530,7 +1604,6 @@ function processNotices() {
         centerOnCapital();
         const cap = battle.sites.find(s => s.id === 'player-capital');
         if (cap) renderer.crashLanding(cap.x, cap.y, { owner: PLAYER, color: battle.factions[PLAYER].color });
-        setTimeout(() => toast('Landing complete. Expand into the wilderness!', 'good'), 1200);
         break;
       }
       default:
@@ -1762,15 +1835,15 @@ function layoutHud() {
   scr.style.setProperty('--below-tut', `${tutBottom}px`);
   const emp = $('#empire');
   const empRect = emp.getBoundingClientRect();
-  const empOpen = !emp.classList.contains('collapsed');
-  scr.style.setProperty('--board-max', `${Math.max(120, (empOpen ? empRect.top : H - bottom) - top - 8)}px`);
+  void empRect; // the empire row now lives in the top bar
+  scr.style.setProperty('--board-max', `${Math.max(120, H - bottom - top - 8)}px`);
   // The pinned inspector sits under the battle panel.
   const bat = $('#battles');
   scr.style.setProperty('--insp-top', `${bat.classList.contains('hidden') ? top : Math.round(bat.getBoundingClientRect().bottom + 6)}px`);
   const insp = $('#inspector');
   const inspBottom = insp.classList.contains('hidden') ? top : insp.getBoundingClientRect().bottom + 6;
   scr.style.setProperty('--toast-max', `${Math.max(60, H - bottom - inspBottom)}px`);
-  return { top, bottom, left: empOpen ? Math.round(empRect.right + 4) : 0, right: 0 };
+  return { top, bottom, left: 0, right: 0 };
 }
 
 let lastPointerTouch = false;
