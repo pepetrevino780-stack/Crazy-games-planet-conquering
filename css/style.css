@@ -222,7 +222,7 @@ h1 span { display: block; font-size: 0.42em; margin-top: 8px; color: var(--viole
 .empire .ratio { flex-direction: row; align-items: center; gap: 6px; margin: 0; white-space: nowrap; }
 .empire .ratio > span { font-size: 12px; }
 .empire .ratio b { margin-left: 0; }
-.empire .ratio .word { font-style: normal; }
+.empire .ratio .word { font-style: normal; margin-right: 4px; }
 .empire .ratio input { width: 72px; height: 20px; }
 .hud-status { min-width: 200px; }
 /* Planet name and subtitle live in the Mission panel (?): the info box keeps the leaderboard button. */
