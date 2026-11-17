@@ -39,7 +39,7 @@ has damage, knockback and the coin economy, `magnets.json`, `maps.json`, `upgrad
 
 `npm run playtest -- shots 4 520` runs a bot through a full run at 4× speed (needs `npm run dev`
 on port 5173, or `URL=...`). With the current numbers it reaches the boss at 6:00, takes 80+
-hits, swings between 90 and 150 junk, and finishes around 7:30. The bot is a decent player, so
+hits, swings between 90 and 150 junk, and finishes around 7:30–8:00. The bot is a decent player, so
 humans will find it harder; playtest with real people before trusting the numbers.
 
 ## Before submitting (needs a human)

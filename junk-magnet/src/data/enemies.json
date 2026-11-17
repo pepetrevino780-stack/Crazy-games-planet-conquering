@@ -6,7 +6,7 @@
     "spitter": { "name": "Spitter", "hp": 18, "speed": 85, "radius": 15, "xp": 2, "scrap": 2, "drops": [2, 4], "cost": 3, "unlockAt": 90, "weight": 5, "group": 1, "texture": "bot-spitter", "range": 300, "fireInterval": 2.3, "bulletSpeed": 185, "windup": 0.4, "volleyFromWave": 7, "volley": 3, "volleySpread": 0.28 },
     "shield": { "name": "Shield Bot", "hp": 45, "speed": 55, "radius": 18, "xp": 3, "scrap": 3, "drops": [3, 5], "cost": 4, "unlockAt": 150, "weight": 4, "group": 1, "texture": "bot-shield", "shieldArc": 1.0, "turnRate": 1.4, "elite": true },
     "antimag": { "name": "Anti-Mag", "hp": 40, "speed": 58, "radius": 17, "xp": 3, "scrap": 3, "drops": [3, 5], "cost": 5, "unlockAt": 200, "weight": 3, "group": 1, "texture": "bot-antimag", "auraRadius": 115, "shortOut": 3.5, "elite": true },
-    "boss": { "name": "The Compactor", "hp": 17000, "speed": 80, "radius": 52, "xp": 40, "scrap": 150, "drops": [24, 24], "cost": 0, "unlockAt": 99999, "weight": 0, "group": 1, "texture": "boss", "elite": true, "chargeSpeed": 560, "chargeTime": 1.0, "telegraph": 0.8, "walkTime": 2.4, "recover": 0.8, "compactRadius": 220, "compactEvery": 3, "junkKnock": 0.3 }
+    "boss": { "name": "The Compactor", "hp": 12000, "speed": 80, "radius": 52, "xp": 40, "scrap": 150, "drops": [24, 24], "cost": 0, "unlockAt": 99999, "weight": 0, "group": 1, "texture": "boss", "elite": true, "chargeSpeed": 560, "chargeTime": 1.0, "telegraph": 0.8, "walkTime": 2.4, "recover": 0.8, "compactRadius": 220, "compactEvery": 3, "junkKnock": 0.3 }
   },
   "waves": {
     "firstWaveAt": 30,
