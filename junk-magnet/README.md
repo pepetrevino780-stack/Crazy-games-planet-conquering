@@ -47,5 +47,5 @@ humans will find it harder; playtest with real people before trusting the number
 - [ ] Playtest with 2–3 people who haven't seen it; watch where they hesitate
 - [ ] Check 60 FPS on a low-end Chromebook and a phone (headless testing can't measure real GPU speed)
 - [ ] Check SDK events in the CrazyGames QA tool (local runs skip the SDK entirely)
-- [ ] Record the 15–20 s gameplay preview video
+- [x] Record the 15–20 s gameplay preview video (`store/preview-*.mp4`, rebuild with `tools/make-previews.sh`)
 - [ ] Daily Seed "leaderboard" is your own best for the day on this device; a shared board needs a backend

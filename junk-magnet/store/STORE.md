@@ -23,3 +23,7 @@ survive until The Compactor arrives at 6:00.
 `cover-1920x1080.png`, `cover-800x1200.png`, `cover-800x800.png`.
 
 **Rating:** PEGI 12-safe. Robots pop apart into junk, no blood.
+
+**Preview videos** (17 s, 30 fps, no sound, real gameplay at normal speed, opening on the cover
+for 0.5 s): `preview-landscape-1920x1080.mp4` and `preview-portrait-1080x1620.mp4`. Rebuild
+with `npm run dev` running, then `./tools/make-previews.sh`.
