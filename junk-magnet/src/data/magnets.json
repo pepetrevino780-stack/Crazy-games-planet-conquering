@@ -1,0 +1,14 @@
+{
+  "horseshoe": {
+    "name": "Horseshoe",
+    "color": "#E8423F",
+    "radius": 18,
+    "speed": 230,
+    "accel": 12,
+    "magnetRadius": 170,
+    "spin": 2.6,
+    "bumpDamage": 20,
+    "bumpCooldown": 0.6,
+    "bumpKnockback": 320
+  }
+}

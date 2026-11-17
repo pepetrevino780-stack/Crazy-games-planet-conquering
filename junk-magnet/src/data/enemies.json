@@ -1,0 +1,11 @@
+{
+  "tinBot": {
+    "name": "Tin Bot",
+    "hp": 20,
+    "speed": 62,
+    "radius": 15,
+    "color": "#9BE564",
+    "dropMin": 2,
+    "dropMax": 5
+  }
+}

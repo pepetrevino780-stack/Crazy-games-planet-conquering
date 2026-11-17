@@ -1,0 +1,15 @@
+{
+  "maxAttached": 150,
+  "maxLoose": 200,
+  "damageScale": 0.1,
+  "hitCooldown": 0.35,
+  "hitKnockback": 150,
+  "ring": { "firstRadius": 46, "spacing": 20, "pieceSpacing": 18 },
+  "types": [
+    { "id": "bolt", "mass": 1, "radius": 5, "color": "#A7B0BA", "weight": 40 },
+    { "id": "gear", "mass": 1.5, "radius": 6, "color": "#D9772B", "weight": 25 },
+    { "id": "can", "mass": 2, "radius": 7, "color": "#A7B0BA", "weight": 20 },
+    { "id": "pipe", "mass": 3, "radius": 8, "color": "#D9772B", "weight": 13 },
+    { "id": "tv", "mass": 6, "radius": 11, "color": "#F2C14E", "weight": 2 }
+  ]
+}
