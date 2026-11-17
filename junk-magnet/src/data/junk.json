@@ -1,0 +1,25 @@
+{
+  "maxAttached": 150,
+  "maxLoose": 200,
+  "damageScale": 0.1,
+  "hitCooldown": 0.35,
+  "hitKnockback": 30,
+  "enemyHitCooldown": 0.08,
+  "bossHitCooldown": 0.15,
+  "pieceSpacing": 18,
+  "knockFraction": 0.2,
+  "shatterFraction": 0.4,
+  "invulnTime": 0.7,
+  "noPickupTime": 1.1,
+  "critChance": 0.1,
+  "economy": { "coinsPerScrap": 0.25, "overflowPerCoin": 10, "junkPerCoin": 5, "winBonus": 100 },
+  "pulse": { "duration": 0.5, "damageMult": 2.5, "shockDamage": 14, "shockKnockback": 460 },
+  "types": [
+    { "id": "bolt", "mass": 1, "radius": 5, "weight": 40 },
+    { "id": "gear", "mass": 1.5, "radius": 6, "weight": 25 },
+    { "id": "can", "mass": 2, "radius": 7, "weight": 20 },
+    { "id": "pipe", "mass": 3, "radius": 8, "weight": 13 },
+    { "id": "tv", "mass": 6, "radius": 11, "weight": 2 },
+    { "id": "cube", "mass": 8, "radius": 9, "weight": 0 }
+  ]
+}

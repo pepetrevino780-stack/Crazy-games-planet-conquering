@@ -1,0 +1,22 @@
+{
+  "xp": { "base": 8, "linear": 4, "quad": 0.5 },
+  "rarityWeight": { "common": 10, "rare": 5 },
+  "cards": [
+    { "id": "strongerField", "name": "Stronger Field", "desc": "+25% magnet radius. Grab junk from further away.", "rarity": "common", "max": 5, "value": 0.25 },
+    { "id": "spinCycle", "name": "Spin Cycle", "desc": "Junk orbits 30% faster. Faster junk hits harder.", "rarity": "common", "max": 5, "value": 0.3 },
+    { "id": "heavyMetal", "name": "Heavy Metal", "desc": "Junk is 50% heavier and hits harder. You are 15% slower.", "rarity": "common", "max": 3, "value": 0.5, "slow": 0.15 },
+    { "id": "quickCharge", "name": "Quick Charge", "desc": "Pulse recharges 20% faster.", "rarity": "common", "max": 3, "value": 0.2 },
+    { "id": "hotScrap", "name": "Hot Scrap", "desc": "Junk sets robots on fire. Burning bots take damage over time.", "rarity": "common", "max": 3, "values": [0, 8, 14, 20], "duration": 2 },
+    { "id": "explosiveCans", "name": "Explosive Cans", "desc": "Cans explode on impact, hurting every robot nearby.", "rarity": "common", "max": 3, "radius": [0, 55, 70, 85], "damage": [0, 18, 28, 40], "cooldown": 1.5 },
+    { "id": "spareHeart", "name": "Spare Heart", "desc": "+1 heart, and heal all hearts.", "rarity": "rare", "max": 2, "value": 1 },
+    { "id": "polarityFlip", "name": "Polarity Flip", "desc": "Pulse also pulls in all loose junk on the map.", "rarity": "rare", "max": 1 },
+    { "id": "secondRing", "name": "Second Ring", "desc": "Junk forms counter-rotating rings that spin 15% faster.", "rarity": "rare", "max": 1, "value": 0.15 },
+    { "id": "scrapShield", "name": "Scrap Shield", "desc": "The first hit each wave loses no junk.", "rarity": "rare", "max": 1 },
+    { "id": "moltenCore", "name": "Molten Core", "desc": "Evolution! Every piece burns hot and explodes on impact.", "rarity": "epic", "max": 1, "requires": ["hotScrap", "explosiveCans"], "burn": 30, "radius": 45, "damage": 22, "cooldown": 2 },
+    { "id": "buzzsaw", "name": "Buzzsaw", "desc": "Evolution! Junk spins 50% faster and deals 50% more damage.", "rarity": "epic", "max": 1, "requires": ["spinCycle", "secondRing"], "spin": 0.5, "damage": 0.5 }
+  ],
+  "fallback": [
+    { "id": "scrapPile", "name": "Scrap Pile", "desc": "+25 scrap coins to spend in the Garage.", "rarity": "common", "max": 99, "value": 25 },
+    { "id": "patchUp", "name": "Patch Up", "desc": "Heal one heart.", "rarity": "common", "max": 99, "value": 1 }
+  ]
+}

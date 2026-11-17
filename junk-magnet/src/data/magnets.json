@@ -1,0 +1,26 @@
+{
+  "horseshoe": {
+    "name": "Horseshoe", "desc": "The classic. Round rings of junk, steady spin.", "price": 0, "texture": "magnet-horseshoe",
+    "radius": 18, "speed": 230, "accel": 12, "magnetRadius": 170, "spin": 2.6, "layout": "rings",
+    "ringFirst": 46, "ringSpacing": 20, "pulseCooldown": 4, "pulseRange": 150, "hearts": 3,
+    "bumpDamage": 20, "bumpCooldown": 0.5, "bumpKnockback": 320
+  },
+  "fridge": {
+    "name": "Fridge Magnet", "desc": "Junk sticks in a long flat bar. Swing it like a bat.", "price": 350, "texture": "magnet-fridge",
+    "radius": 18, "speed": 225, "accel": 12, "magnetRadius": 190, "spin": 1.7, "layout": "line",
+    "ringFirst": 34, "ringSpacing": 13, "pulseCooldown": 4, "pulseRange": 150, "hearts": 3,
+    "bumpDamage": 20, "bumpCooldown": 0.5, "bumpKnockback": 320
+  },
+  "electro": {
+    "name": "Electromagnet", "desc": "Pulse every 2 seconds, with a shorter blast.", "price": 600, "texture": "magnet-electro",
+    "radius": 18, "speed": 235, "accel": 13, "magnetRadius": 150, "spin": 2.6, "layout": "rings",
+    "ringFirst": 46, "ringSpacing": 20, "pulseCooldown": 2, "pulseRange": 90, "hearts": 3,
+    "bumpDamage": 20, "bumpCooldown": 0.5, "bumpKnockback": 320
+  },
+  "blackhole": {
+    "name": "Black Hole", "desc": "Tight orbit. Eats 12 junk to restore a lost heart.", "price": 900, "texture": "magnet-blackhole",
+    "radius": 18, "speed": 225, "accel": 12, "magnetRadius": 180, "spin": 3.0, "layout": "rings",
+    "ringFirst": 38, "ringSpacing": 16, "pulseCooldown": 4, "pulseRange": 140, "hearts": 3,
+    "bumpDamage": 20, "bumpCooldown": 0.5, "bumpKnockback": 320, "eatCost": 12, "eatInterval": 1.5
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "junkyard": {
+    "name": "Junkyard", "desc": "Tyre piles and crushed cars. Where it all starts.", "price": 0,
+    "floor": "#1E1B24", "detail": "#2E2838", "props": "junkyard",
+    "looseFriction": 3.5, "accelMult": 1, "conveyors": []
+  },
+  "factory": {
+    "name": "Factory", "desc": "Conveyor belts drag you, the bots and the junk.", "price": 450,
+    "floor": "#17262A", "detail": "#22393E", "props": "factory",
+    "looseFriction": 3.5, "accelMult": 1,
+    "conveyors": [
+      { "x": 500, "y": 560, "w": 900, "h": 90, "dx": 1, "dy": 0 },
+      { "x": 1500, "y": 1260, "w": 900, "h": 90, "dx": -1, "dy": 0 },
+      { "x": 2050, "y": 300, "w": 90, "h": 700, "dx": 0, "dy": 1 },
+      { "x": 650, "y": 1000, "w": 90, "h": 700, "dx": 0, "dy": -1 }
+    ],
+    "conveyorSpeed": 110
+  },
+  "station": {
+    "name": "Space Station", "desc": "Low gravity: you slide, and loose junk drifts.", "price": 800,
+    "floor": "#141A33", "detail": "#222B4F", "props": "station",
+    "looseFriction": 0.6, "accelMult": 0.4, "conveyors": []
+  }
+}

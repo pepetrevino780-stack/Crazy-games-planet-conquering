@@ -1,0 +1,29 @@
+{
+  "contactTime": 0.3,
+  "types": {
+    "tin": { "name": "Tin Bot", "hp": 20, "speed": 62, "radius": 15, "xp": 1, "scrap": 1, "drops": [2, 5], "cost": 1, "unlockAt": 0, "weight": 10, "group": 1, "texture": "bot-tin" },
+    "sprinter": { "name": "Sprinter", "hp": 8, "speed": 165, "radius": 11, "xp": 1, "scrap": 1, "drops": [1, 2], "cost": 3, "unlockAt": 60, "weight": 6, "group": 5, "texture": "bot-sprinter" },
+    "spitter": { "name": "Spitter", "hp": 18, "speed": 85, "radius": 15, "xp": 2, "scrap": 2, "drops": [2, 4], "cost": 3, "unlockAt": 90, "weight": 5, "group": 1, "texture": "bot-spitter", "range": 300, "fireInterval": 2.3, "bulletSpeed": 185, "windup": 0.4, "volleyFromWave": 7, "volley": 3, "volleySpread": 0.28 },
+    "shield": { "name": "Shield Bot", "hp": 45, "speed": 55, "radius": 18, "xp": 3, "scrap": 3, "drops": [3, 5], "cost": 4, "unlockAt": 150, "weight": 4, "group": 1, "texture": "bot-shield", "shieldArc": 1.0, "turnRate": 1.4, "elite": true },
+    "antimag": { "name": "Anti-Mag", "hp": 40, "speed": 58, "radius": 17, "xp": 3, "scrap": 3, "drops": [3, 5], "cost": 5, "unlockAt": 200, "weight": 3, "group": 1, "texture": "bot-antimag", "auraRadius": 115, "shortOut": 3.5, "elite": true },
+    "boss": { "name": "The Compactor", "hp": 12000, "speed": 80, "radius": 52, "xp": 40, "scrap": 150, "drops": [24, 24], "cost": 0, "unlockAt": 99999, "weight": 0, "group": 1, "texture": "boss", "elite": true, "chargeSpeed": 560, "chargeTime": 1.0, "telegraph": 0.8, "walkTime": 2.4, "recover": 0.8, "compactRadius": 220, "compactEvery": 3, "junkKnock": 0.3 }
+  },
+  "waves": {
+    "firstWaveAt": 30,
+    "interval": 30,
+    "baseBudget": 12,
+    "budgetPerWave": 9,
+    "budgetQuad": 1.5,
+    "burstFraction": 0.3,
+    "calmEvery": 120,
+    "calmLength": 10,
+    "surgeMult": 1.4,
+    "hpPerWave": 0.3,
+    "speedPerWave": 0.02,
+    "bossAt": 360,
+    "bossWarning": 5,
+    "bossBudgetMult": 0.5,
+    "enrageAt": 480
+  },
+  "intro": { "firstBotAt": 3, "firstBotSpeed": 0.6, "packAt": 10, "packSize": 6, "clusterAt": 20, "clusterSize": 8, "trickle": 0.5 }
+}
