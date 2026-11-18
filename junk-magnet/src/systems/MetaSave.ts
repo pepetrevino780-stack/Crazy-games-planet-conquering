@@ -18,6 +18,7 @@ export interface SaveData {
   best: { score: number; time: number; kills: number; junk: number; wins: number };
   runs: number;
   daily: { key: string; best: number; runs: number };
+  challenges: { progress: Record<string, number>; done: string[] };
 }
 
 const KEY = 'junk-magnet-save-v1';
@@ -34,6 +35,7 @@ function defaults(): SaveData {
     best: { score: 0, time: 0, kills: 0, junk: 0, wins: 0 },
     runs: 0,
     daily: { key: '', best: 0, runs: 0 },
+    challenges: { progress: {}, done: [] },
   };
 }
 
@@ -53,6 +55,7 @@ export const Meta = {
           settings: { ...fresh.settings, ...saved.settings },
           best: { ...fresh.best, ...saved.best },
           daily: { ...fresh.daily, ...saved.daily },
+          challenges: { progress: { ...saved.challenges?.progress }, done: [...(saved.challenges?.done ?? [])] },
         };
         return;
       }

@@ -54,13 +54,14 @@ export class UpgradeScene extends Phaser.Scene {
     const h = this.scale.height;
     if (this.stacked) return { cw: Math.min(520, w - 44), ch: Math.min(190, (h - 300) / 3 - 20) };
     const cw = Math.min(260, (w - 80) / 3);
-    return { cw, ch: Math.round(cw * 1.32) };
+    return { cw, ch: Math.round(cw * 1.42) };
   }
 
   private showCards(): void {
     for (const c of this.cards) c.destroy();
     this.cards = [];
     this.defs = this.g.rollCards();
+    this.title.setText(this.g.rareReward ? 'RARE UPGRADE!' : 'LEVEL UP!');
     this.locked = false;
     this.selected = -1;
     const { cw, ch } = this.cardSize();
@@ -107,6 +108,7 @@ export class UpgradeScene extends Phaser.Scene {
     let tag = lv === 0 ? 'NEW' : `LV ${lv} → ${lv + 1}`;
     if (def.rarity === 'epic') tag = 'EVOLUTION';
     if (def.max >= 99) tag = 'BONUS';
+    const hint = def.rarity === 'epic' ? null : this.g.upgrades.comboHint(def.id);
     const tagColor = def.rarity === 'common' ? CSS.steel : def.rarity === 'rare' ? CSS.cyan : CSS.brass;
     const nameColor = def.rarity === 'epic' ? CSS.brass : CSS.text;
     const pipsAt = (px: number, py: number, size: number, align: 'center' | 'left') => {
@@ -135,6 +137,7 @@ export class UpgradeScene extends Phaser.Scene {
       const tagText = this.add.text(cw / 2 - 26, -ch / 2 + 40, tag, displayStyle(18, tagColor)).setOrigin(1, 0.5);
       c.add([icon, name, desc, tagText]);
       pipsAt(textX, ch / 2 - 26, 14, 'left');
+      if (hint) c.add(this.add.text(cw / 2 - 26, ch / 2 - 26, hint, bodyStyle(15, CSS.cyan)).setOrigin(1, 0.5));
       return c;
     }
 
@@ -151,6 +154,13 @@ export class UpgradeScene extends Phaser.Scene {
     const tagText = this.add.text(0, ch / 2 - 34 * k, tag, displayStyle(Math.round(20 * k), tagColor)).setOrigin(0.5);
     c.add([icon, name, desc, tagText]);
     pipsAt(0, ch / 2 - 62 * k, 14 * k, 'center');
+    if (hint) {
+      c.add(
+        this.add
+          .text(0, ch / 2 - 84 * k, hint, { ...bodyStyle(Math.round(14 * k), CSS.cyan), align: 'center', wordWrap: { width: cw - 36 } })
+          .setOrigin(0.5, 1),
+      );
+    }
     return c;
   }
 

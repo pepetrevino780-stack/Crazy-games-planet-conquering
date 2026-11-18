@@ -2,12 +2,30 @@ import Phaser from 'phaser';
 import { ARENA, CAPS, DEPTH } from '../config';
 import enemyData from '../data/enemies.json';
 import type { Rng } from '../rng';
-import type { Belt, Repeller } from './JunkSystem';
+import type { Belt, JunkSystem, Repeller } from './JunkSystem';
 import type { Juice } from './Juice';
+import type { Player } from './Player';
 import { Pool } from './Pool';
 import { TS } from './Textures';
 
-export type EnemyKind = 'tin' | 'sprinter' | 'spitter' | 'shield' | 'antimag' | 'boss';
+export type EnemyKind =
+  | 'tin'
+  | 'sprinter'
+  | 'spitter'
+  | 'shield'
+  | 'antimag'
+  | 'thief'
+  | 'splitter'
+  | 'splitling'
+  | 'burrower'
+  | 'magnetbot'
+  | 'bomber'
+  | 'repair'
+  | 'crusher'
+  | 'tyre'
+  | 'press'
+  | 'mine'
+  | 'boss';
 
 export interface EnemyDef {
   name: string;
@@ -23,6 +41,9 @@ export interface EnemyDef {
   group: number;
   texture: string;
   elite?: boolean;
+  noElite?: boolean;
+  map?: string;
+  armor?: number;
   range?: number;
   fireInterval?: number;
   bulletSpeed?: number;
@@ -34,6 +55,28 @@ export interface EnemyDef {
   turnRate?: number;
   auraRadius?: number;
   shortOut?: number;
+  fleeSpeed?: number;
+  carryMax?: number;
+  splitInto?: string;
+  splitCount?: number;
+  tunnelTime?: number;
+  surfaceTime?: number;
+  emergeRadius?: number;
+  pullEvery?: number;
+  pullCount?: number;
+  fuseRange?: number;
+  fuse?: number;
+  blastRadius?: number;
+  blastDamage?: number;
+  healRadius?: number;
+  healRate?: number;
+  stompRadius?: number;
+  stompEvery?: number;
+  bounces?: number;
+  slamRadius?: number;
+  slamEvery?: number;
+  pullRadius?: number;
+  pullStrength?: number;
   chargeSpeed?: number;
   chargeTime?: number;
   telegraph?: number;
@@ -44,8 +87,17 @@ export interface EnemyDef {
   junkKnock?: number;
 }
 
-export const ENEMY_DEFS = enemyData.types as Record<EnemyKind, EnemyDef>;
+interface Squad {
+  id: string;
+  unlockAt: number;
+  weight: number;
+  cost: number;
+  members: Record<string, number>;
+}
+
+export const ENEMY_DEFS = enemyData.types as unknown as Record<EnemyKind, EnemyDef>;
 const KINDS = Object.keys(ENEMY_DEFS) as EnemyKind[];
+const SQUADS = enemyData.squads as unknown as Squad[];
 const WAVES = enemyData.waves;
 const INTRO = enemyData.intro;
 export const CONTACT_TIME = enemyData.contactTime;
@@ -57,12 +109,18 @@ export const BOSS_RECOVER = 3;
 export const BOSS_SLAM_TELEGRAPH = 4;
 export const BOSS_ENTER = 5;
 
+/** Generic modes for the newer robots (walk → telegraph → act). */
+export const MODE_MOVE = 0;
+export const MODE_TELEGRAPH = 1;
+export const MODE_ACT = 2;
+
 export interface Enemy {
   active: boolean;
   kind: EnemyKind;
   def: EnemyDef;
   sprite: Phaser.GameObjects.Image;
   extra: Phaser.GameObjects.Image;
+  glow: Phaser.GameObjects.Image;
   x: number;
   y: number;
   hp: number;
@@ -85,6 +143,19 @@ export interface Enemy {
   hurtCd: number;
   auraOff: number;
   harmless: boolean;
+  /** Underground (Burrower): can't be hit and can't hit. */
+  hidden: boolean;
+  stun: number;
+  elite: boolean;
+  xp: number;
+  scrap: number;
+  carried: number;
+  armor: number;
+  fuse: number;
+  tx: number;
+  ty: number;
+  bounces: number;
+  healing: boolean;
   seed: number;
   age: number;
   mode: number;
@@ -106,6 +177,9 @@ export interface Bullet {
 
 export interface EnemyHost {
   juice: Juice;
+  junk: JunkSystem;
+  player: Player;
+  mapId: string;
   spawnRng: Rng;
   spawnDistance(): number;
   onEnemyKilled(e: Enemy): void;
@@ -114,6 +188,14 @@ export interface EnemyHost {
   onBossSlam(e: Enemy): void;
   onBossTelegraph(e: Enemy): void;
   onBossWallHit(e: Enemy): void;
+  onMinibossWarning(): void;
+  onMinibossSpawned(e: Enemy): void;
+  onCrusherStomp(e: Enemy): void;
+  onBurrowerEmerge(e: Enemy): void;
+  onPressSlam(e: Enemy): void;
+  onMagnetPull(e: Enemy, pieces: number): void;
+  onThiefEscaped(e: Enemy): void;
+  queueExplosion(x: number, y: number, r: number, damage: number, hurtsPlayer: boolean): void;
   onSpitterFire(): void;
 }
 
@@ -123,11 +205,15 @@ export class EnemySpawner {
   activeCount = 0;
   wave = 0;
   boss: Enemy | null = null;
+  crusher: Enemy | null = null;
   bossSpawned = false;
+  minibossSpawned = false;
+  private time = 0;
   private bossWarned = false;
+  private minibossWarned = false;
   private credit = 0;
   private rate = 0;
-  private nextKind: EnemyKind | null = null;
+  private next: { kind?: EnemyKind; squad?: Squad; cost: number } | null = null;
   private introStep = 0;
   private trickle = 0;
   private menuTimer = 0;
@@ -143,6 +229,7 @@ export class EnemySpawner {
       def: ENEMY_DEFS.tin,
       sprite: scene.add.image(0, 0, 'bot-tin').setDepth(DEPTH.enemy).setVisible(false),
       extra: scene.add.image(0, 0, 'shield-plate').setDepth(DEPTH.enemy + 1).setVisible(false),
+      glow: scene.add.image(0, 0, 'elite-glow').setDepth(DEPTH.enemy - 0.5).setVisible(false),
       x: 0,
       y: 0,
       hp: 0,
@@ -163,6 +250,18 @@ export class EnemySpawner {
       hurtCd: 0,
       auraOff: 0,
       harmless: false,
+      hidden: false,
+      stun: 0,
+      elite: false,
+      xp: 1,
+      scrap: 1,
+      carried: 0,
+      armor: 1,
+      fuse: 0,
+      tx: 0,
+      ty: 0,
+      bounces: 0,
+      healing: false,
       seed: 0,
       age: 0,
       mode: 0,
@@ -186,24 +285,39 @@ export class EnemySpawner {
     return 1 + WAVES.hpPerWave * this.wave;
   }
 
+  /** The boss or mini-boss currently on the field (for the HUD bar). */
+  get bigOne(): Enemy | null {
+    if (this.boss?.active) return this.boss;
+    if (this.crusher?.active) return this.crusher;
+    return null;
+  }
+
   spawn(kind: EnemyKind, x: number, y: number, speedScale = 1): Enemy | null {
     const e = this.pool.obtain();
     if (!e) return null;
     const def = ENEMY_DEFS[kind];
     const r = def.radius;
+    const big = kind === 'boss' || kind === 'crusher';
     e.kind = kind;
     e.def = def;
     e.x = Phaser.Math.Clamp(x, ARENA.margin + r, ARENA.width - ARENA.margin - r);
     e.y = Phaser.Math.Clamp(y, ARENA.margin + r, ARENA.height - ARENA.margin - r);
-    e.maxHp = e.hp = kind === 'boss' ? def.hp : def.hp * this.hpMult;
-    const speedMult = kind === 'boss' ? 1 : Math.min(1.4, 1 + WAVES.speedPerWave * this.wave);
-    e.speed = def.speed * speedScale * speedMult * (0.9 + Math.random() * 0.2);
-    e.radius = r;
+    // Glowing elites after 4:00: more HP, faster, more scrap.
+    const eliteChance = WAVES.eliteChance + WAVES.eliteChancePerWave * Math.max(0, this.wave - 8);
+    e.elite = !def.noElite && !big && this.time >= WAVES.eliteFrom && this.host.spawnRng.next() < eliteChance;
+    const hp = big ? def.hp : def.hp * this.hpMult;
+    e.maxHp = e.hp = hp * (e.elite ? WAVES.eliteHp : 1);
+    const speedMult = big ? 1 : Math.min(1.4, 1 + WAVES.speedPerWave * this.wave);
+    e.speed = def.speed * speedScale * speedMult * (e.elite ? WAVES.eliteSpeed : 1) * (0.9 + Math.random() * 0.2);
+    e.radius = r * (e.elite ? 1.15 : 1);
+    e.xp = def.xp * (e.elite ? WAVES.eliteXp : 1);
+    e.scrap = def.scrap * (e.elite ? WAVES.eliteScrap : 1);
+    e.armor = def.armor ?? 1;
     e.kx = e.ky = 0;
     e.flash = 0;
     e.facing = Math.random() * Math.PI * 2;
     e.touch = 0;
-    e.fireTimer = (def.fireInterval ?? 2) * (0.5 + Math.random() * 0.5);
+    e.fireTimer = (def.fireInterval ?? def.pullEvery ?? def.stompEvery ?? def.slamEvery ?? 2) * (0.5 + Math.random() * 0.5);
     e.windup = 0;
     e.burnDps = 0;
     e.burnTimer = 0;
@@ -212,13 +326,33 @@ export class EnemySpawner {
     e.hurtCd = 0;
     e.auraOff = 0;
     e.harmless = false;
+    e.hidden = kind === 'burrower';
+    e.stun = 0;
+    e.carried = 0;
+    e.fuse = 0;
+    e.bounces = 0;
+    e.healing = false;
     e.seed = Math.random() * 100;
     e.age = 0;
-    e.mode = kind === 'boss' ? BOSS_ENTER : 0;
-    e.modeTimer = kind === 'boss' ? 2 : 0;
+    e.mode = kind === 'boss' || kind === 'crusher' ? BOSS_ENTER : MODE_MOVE;
+    e.modeTimer = kind === 'boss' || kind === 'crusher' ? 2 : kind === 'burrower' ? (def.tunnelTime ?? 3.5) : 0;
     e.cycle = 0;
-    e.sprite.setTexture(def.texture).clearTint().setPosition(e.x, e.y).setScale(0).setAlpha(1).setRotation(0).setVisible(true);
-    e.sprite.setDepth(kind === 'boss' ? DEPTH.enemy + 2 : DEPTH.enemy);
+    e.sprite
+      .setTexture(e.hidden ? 'mound' : def.texture)
+      .clearTint()
+      .setPosition(e.x, e.y)
+      .setScale(0)
+      .setAlpha(1)
+      .setRotation(0)
+      .setVisible(true);
+    e.sprite.setDepth(big ? DEPTH.enemy + 2 : e.hidden ? DEPTH.loose - 1 : DEPTH.enemy);
+    if (kind === 'tyre') {
+      // Rolls straight at where you are now, bouncing off walls.
+      const p = this.host.player;
+      const a = Math.atan2(p.y - e.y, p.x - e.x);
+      e.cdx = Math.cos(a);
+      e.cdy = Math.sin(a);
+    }
     if (kind === 'shield') {
       e.extra.setTexture('shield-plate').setOrigin(0.5, 1.25).setScale(TS * (def.radius / 17)).setDepth(DEPTH.enemy + 1).setAlpha(1).setVisible(true);
     } else if (kind === 'antimag') {
@@ -228,19 +362,21 @@ export class EnemySpawner {
     } else {
       e.extra.setVisible(false);
     }
+    e.glow.setVisible(e.elite).setScale((e.radius / 20) * 0.5).setPosition(e.x, e.y);
     this.activeCount++;
     return e;
   }
 
   /** Returns true if the hit killed the enemy. */
   damage(e: Enemy, amount: number, fromX: number, fromY: number, knockback: number): boolean {
-    if (!e.active) return false;
-    e.hp -= amount;
+    if (!e.active || e.hidden) return false;
+    e.hp -= amount * e.armor;
     if (knockback > 0) {
       const dx = e.x - fromX;
       const dy = e.y - fromY;
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const k = e.kind === 'boss' ? knockback * 0.04 : knockback;
+      const heavy = e.kind === 'boss' || e.kind === 'crusher' || e.kind === 'tyre';
+      const k = heavy ? knockback * 0.04 : knockback;
       e.kx = (dx / dist) * k;
       e.ky = (dy / dist) * k;
     }
@@ -255,16 +391,34 @@ export class EnemySpawner {
     return false;
   }
 
-  private kill(e: Enemy): void {
+  /** `silent`: removed without counting as a kill (escaped thief, a mine or bomber blowing itself up). */
+  kill(e: Enemy, silent = false): void {
+    if (!e.active) return;
     this.activeCount--;
     e.sprite.setVisible(false);
     e.extra.setVisible(false);
+    e.glow.setVisible(false);
     this.pool.release(e);
     if (e === this.boss) this.boss = null;
-    this.host.onEnemyKilled(e);
+    if (e === this.crusher) this.crusher = null;
+    const d = e.def;
+    if (e.kind === 'bomber' || e.kind === 'mine') {
+      this.host.queueExplosion(e.x, e.y, d.blastRadius ?? 100, (d.blastDamage ?? 30) * this.hpMult, true);
+    }
+    if (!silent) this.host.onEnemyKilled(e);
+    if (!silent && d.splitInto) {
+      for (let i = 0; i < (d.splitCount ?? 3); i++) {
+        const a = (i / (d.splitCount ?? 3)) * Math.PI * 2 + e.seed;
+        const s = this.spawn(d.splitInto as EnemyKind, e.x + Math.cos(a) * 18, e.y + Math.sin(a) * 18);
+        if (s) {
+          s.kx = Math.cos(a) * 260;
+          s.ky = Math.sin(a) * 260;
+        }
+      }
+    }
   }
 
-  /** Clear everything (used when the run ends). */
+  /** Clear bullets (used when the run ends). */
   freezeAll(): void {
     for (const b of this.bullets.items) {
       if (b.active) {
@@ -291,21 +445,37 @@ export class EnemySpawner {
     const rng = this.host.spawnRng;
     const def = ENEMY_DEFS[kind];
     const p = this.spawnPoint(px, py, rng.range(0, Math.PI * 2), this.host.spawnDistance());
-    for (let i = 0; i < def.group; i++) {
-      this.spawn(kind, p.x + rng.range(-40, 40), p.y + rng.range(-40, 40));
+    for (let i = 0; i < def.group; i++) this.spawn(kind, p.x + rng.range(-40, 40), p.y + rng.range(-40, 40));
+  }
+
+  /** Mixed squads: e.g. Shield Bots with a Repair Drone behind them. */
+  private spawnSquad(squad: Squad, px: number, py: number): void {
+    const rng = this.host.spawnRng;
+    const p = this.spawnPoint(px, py, rng.range(0, Math.PI * 2), this.host.spawnDistance());
+    for (const [kind, count] of Object.entries(squad.members)) {
+      for (let i = 0; i < count; i++) this.spawn(kind as EnemyKind, p.x + rng.range(-50, 50), p.y + rng.range(-50, 50));
     }
   }
 
-  private pickKind(t: number): EnemyKind {
+  private pickNext(t: number): { kind?: EnemyKind; squad?: Squad; cost: number } {
     const rng = this.host.spawnRng;
-    const options = KINDS.filter((k) => ENEMY_DEFS[k].unlockAt <= t && ENEMY_DEFS[k].weight > 0);
-    const total = options.reduce((s, k) => s + ENEMY_DEFS[k].weight, 0);
+    const map = this.host.mapId;
+    const kinds = KINDS.filter((k) => {
+      const d = ENEMY_DEFS[k];
+      return d.unlockAt <= t && d.weight > 0 && (!d.map || d.map === map);
+    });
+    const squads = SQUADS.filter((s) => s.unlockAt <= t);
+    const total = kinds.reduce((s, k) => s + ENEMY_DEFS[k].weight, 0) + squads.reduce((s, q) => s + q.weight, 0);
     let roll = rng.next() * total;
-    for (const k of options) {
+    for (const k of kinds) {
       roll -= ENEMY_DEFS[k].weight;
-      if (roll < 0) return k;
+      if (roll < 0) return { kind: k, cost: ENEMY_DEFS[k].cost };
     }
-    return 'tin';
+    for (const q of squads) {
+      roll -= q.weight;
+      if (roll < 0) return { squad: q, cost: q.cost };
+    }
+    return { kind: 'tin', cost: 1 };
   }
 
   /** Scripted first 30 seconds, then waves every 30 s driven by a growing budget. */
@@ -341,6 +511,21 @@ export class EnemySpawner {
       return;
     }
 
+    // Mini-boss: a goal halfway to the Compactor.
+    if (!this.minibossWarned && t >= WAVES.minibossAt - WAVES.minibossWarning) {
+      this.minibossWarned = true;
+      this.host.onMinibossWarning();
+    }
+    if (!this.minibossSpawned && t >= WAVES.minibossAt) {
+      this.minibossSpawned = true;
+      const p = this.spawnPoint(px, py, Math.PI / 2, dist + 40);
+      const c = this.spawn('crusher', p.x, p.y);
+      if (c) {
+        this.crusher = c;
+        this.host.onMinibossSpawned(c);
+      }
+    }
+
     // Boss.
     if (!this.bossWarned && t >= WAVES.bossAt - WAVES.bossWarning) {
       this.bossWarned = true;
@@ -362,23 +547,23 @@ export class EnemySpawner {
     if (wave !== this.wave) {
       this.wave = wave;
       let budget = WAVES.baseBudget + WAVES.budgetPerWave * (wave - 1) + WAVES.budgetQuad * (wave - 1) ** 2;
+      const calmHere = waveStart >= WAVES.calmEvery && waveStart % WAVES.calmEvery < WAVES.calmLength;
       // The wave that starts on a calm gets compressed into a surge.
-      if (waveStart >= WAVES.calmEvery && waveStart % WAVES.calmEvery < WAVES.calmLength) budget *= WAVES.surgeMult;
+      if (calmHere) budget *= WAVES.surgeMult;
       if (this.bossSpawned) budget *= WAVES.bossBudgetMult;
-      const calmHere = waveStart % WAVES.calmEvery < WAVES.calmLength && waveStart >= WAVES.calmEvery;
       const spendTime = WAVES.interval - (calmHere ? WAVES.calmLength : 0) - 2;
       this.credit += budget * WAVES.burstFraction * (calmHere ? 0 : 1);
       this.rate = (budget * (1 - (calmHere ? 0 : WAVES.burstFraction))) / spendTime;
     }
     if (calm) return;
     this.credit += this.rate * dt;
-    while (this.activeCount < CAPS.enemies - 5) {
-      if (!this.nextKind) this.nextKind = this.pickKind(t);
-      const cost = ENEMY_DEFS[this.nextKind].cost;
-      if (this.credit < cost) break;
-      this.credit -= cost;
-      this.spawnGroup(this.nextKind, px, py);
-      this.nextKind = null;
+    while (this.activeCount < CAPS.enemies - 8) {
+      if (!this.next) this.next = this.pickNext(t);
+      if (this.credit < this.next.cost) break;
+      this.credit -= this.next.cost;
+      if (this.next.squad) this.spawnSquad(this.next.squad, px, py);
+      else if (this.next.kind) this.spawnGroup(this.next.kind, px, py);
+      this.next = null;
     }
   }
 
@@ -392,6 +577,7 @@ export class EnemySpawner {
   }
 
   update(dt: number, t: number, px: number, py: number, menu: boolean, belts: Belt[], beltSpeed: number): void {
+    this.time = t;
     if (menu) this.runMenu(dt, px, py);
     else this.runSpawns(dt, t, px, py);
 
@@ -402,6 +588,8 @@ export class EnemySpawner {
       const e = items[i];
       if (!e.active) continue;
       e.age += dt;
+      if (e.numCd > 0) e.numCd -= dt;
+      if (e.hurtCd > 0) e.hurtCd -= dt;
       const dx = px - e.x;
       const dy = py - e.y;
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -410,69 +598,18 @@ export class EnemySpawner {
       let mx = nx * e.speed;
       let my = ny * e.speed;
 
-      switch (e.kind) {
-        case 'sprinter': {
-          const w = Math.sin(e.age * 6 + e.seed) * 0.5;
-          mx = (nx - ny * w) * e.speed;
-          my = (ny + nx * w) * e.speed;
-          break;
+      if (e.stun > 0) {
+        e.stun -= dt;
+        mx = my = 0;
+      } else {
+        const m = this.behave(e, dt, dist, nx, ny, menu, enraged);
+        if (m === null) continue; // removed this frame
+        if (m) {
+          mx = m.mx;
+          my = m.my;
         }
-        case 'shield': {
-          // Turns slowly: circle around it to hit its unshielded side.
-          const want = Math.atan2(dy, dx);
-          const diff = Phaser.Math.Angle.Wrap(want - e.facing);
-          const turn = (e.def.turnRate ?? 1.4) * dt;
-          e.facing += Phaser.Math.Clamp(diff, -turn, turn);
-          mx = Math.cos(e.facing) * e.speed;
-          my = Math.sin(e.facing) * e.speed;
-          e.extra.setPosition(e.x, e.y).setRotation(e.facing + Math.PI / 2);
-          break;
-        }
-        case 'antimag': {
-          if (e.auraOff > 0) e.auraOff -= dt;
-          e.extra.setPosition(e.x, e.y).setAlpha(e.auraOff > 0 ? 0.15 : 0.85 + Math.sin(e.age * 5) * 0.15);
-          e.extra.rotation += dt * 0.6;
-          break;
-        }
-        case 'spitter': {
-          const range = e.def.range ?? 300;
-          const strafe = e.seed > 50 ? 1 : -1;
-          if (dist > range + 40) {
-            /* approach */
-          } else if (dist < range - 70) {
-            mx = -mx;
-            my = -my;
-          } else {
-            mx = -ny * strafe * e.speed * 0.7;
-            my = nx * strafe * e.speed * 0.7;
-          }
-          e.facing = Math.atan2(dy, dx);
-          e.extra.setPosition(e.x, e.y).setRotation(e.facing);
-          if (!menu && dist < range + 200) {
-            if (e.windup > 0) {
-              e.windup -= dt;
-              mx *= 0.2;
-              my *= 0.2;
-              if (e.windup <= 0) this.fire(e, nx, ny);
-            } else {
-              e.fireTimer -= dt;
-              if (e.fireTimer <= 0) {
-                e.windup = e.def.windup ?? 0.4;
-                e.fireTimer = e.def.fireInterval ?? 2.6;
-              }
-            }
-          }
-          break;
-        }
-        case 'boss':
-          ({ mx, my } = this.updateBoss(e, dt, nx, ny, enraged));
-          break;
-        default:
-          break;
       }
 
-      if (e.numCd > 0) e.numCd -= dt;
-      if (e.hurtCd > 0) e.hurtCd -= dt;
       if (e.burnTimer > 0) {
         e.burnTimer -= dt;
         if (!this.host.juice.low && Math.random() < dt * 8) {
@@ -507,54 +644,360 @@ export class EnemySpawner {
         e.flash -= dt;
         if (e.flash <= 0) e.sprite.clearTint();
       }
-      // Keep bots from stacking into one blob; the boss shoves everyone aside.
-      for (let j = i + 1; j < items.length; j++) {
-        const o = items[j];
-        if (!o.active) continue;
-        const sx = o.x - e.x;
-        const sy = o.y - e.y;
-        const min = e.radius + o.radius;
-        const d2 = sx * sx + sy * sy;
-        if (d2 >= min * min || d2 === 0) continue;
-        const d = Math.sqrt(d2);
-        const push = min - d;
-        const ux = sx / d;
-        const uy = sy / d;
-        if (e.kind === 'boss') {
-          o.x += ux * push;
-          o.y += uy * push;
-        } else if (o.kind === 'boss') {
-          e.x -= ux * push;
-          e.y -= uy * push;
-        } else {
-          e.x -= ux * push * 0.5;
-          e.y -= uy * push * 0.5;
-          o.x += ux * push * 0.5;
-          o.y += uy * push * 0.5;
-        }
-      }
-
-      // Pop in, then waddle (squash and stretch).
-      const appear = Math.min(1, e.age / 0.25);
-      const pop = appear < 1 ? Phaser.Math.Easing.Back.Out(appear) : 1;
-      const bob = e.kind === 'boss' ? 0.03 : 0.07;
-      const wob = Math.sin(e.age * 11 + e.seed) * bob;
-      let sx = 1 + wob;
-      let sy = 1 - wob;
-      if (e.windup > 0 || (e.kind === 'boss' && (e.mode === BOSS_TELEGRAPH || e.mode === BOSS_SLAM_TELEGRAPH))) {
-        const k = Math.sin(e.age * 40) * 0.08;
-        sx += k;
-        sy -= k;
-        if (e.flash <= 0) e.sprite.setTint(Math.sin(e.age * 30) > 0 ? 0xffb0c8 : 0xffffff);
-      } else if (e.flash <= 0 && e.sprite.isTinted && e.burnTimer <= 0) {
-        e.sprite.clearTint();
-      }
-      if (e.burnTimer > 0 && e.flash <= 0) e.sprite.setTint(0xffb27a);
-      e.sprite.setPosition(e.x, e.y).setScale(TS * pop * sx, TS * pop * sy);
-      if (e.extra.visible) e.extra.setPosition(e.x, e.y);
+      if (!e.hidden) this.separate(e, i, items);
+      this.draw(e);
     }
 
     this.updateBullets(dt);
+  }
+
+  /** Keep bots from stacking into one blob; big ones shove everyone aside. */
+  private separate(e: Enemy, i: number, items: Enemy[]): void {
+    const heavyE = e.kind === 'boss' || e.kind === 'crusher';
+    for (let j = i + 1; j < items.length; j++) {
+      const o = items[j];
+      if (!o.active || o.hidden) continue;
+      const sx = o.x - e.x;
+      const sy = o.y - e.y;
+      const min = e.radius + o.radius;
+      const d2 = sx * sx + sy * sy;
+      if (d2 >= min * min || d2 === 0) continue;
+      const d = Math.sqrt(d2);
+      const push = min - d;
+      const ux = sx / d;
+      const uy = sy / d;
+      const heavyO = o.kind === 'boss' || o.kind === 'crusher';
+      if (heavyE && !heavyO) {
+        o.x += ux * push;
+        o.y += uy * push;
+      } else if (heavyO && !heavyE) {
+        e.x -= ux * push;
+        e.y -= uy * push;
+      } else {
+        e.x -= ux * push * 0.5;
+        e.y -= uy * push * 0.5;
+        o.x += ux * push * 0.5;
+        o.y += uy * push * 0.5;
+      }
+    }
+  }
+
+  private draw(e: Enemy): void {
+    // Pop in, then waddle (squash and stretch).
+    const appear = Math.min(1, e.age / 0.25);
+    const pop = appear < 1 ? Phaser.Math.Easing.Back.Out(appear) : 1;
+    const heavy = e.kind === 'boss' || e.kind === 'crusher';
+    const bob = heavy ? 0.03 : e.kind === 'tyre' || e.kind === 'mine' ? 0 : 0.07;
+    const wob = Math.sin(e.age * 11 + e.seed) * bob;
+    let sx = 1 + wob;
+    let sy = 1 - wob;
+    const telegraphing =
+      e.windup > 0 ||
+      e.fuse > 0 ||
+      (heavy && (e.mode === BOSS_TELEGRAPH || e.mode === BOSS_SLAM_TELEGRAPH)) ||
+      ((e.kind === 'press' || e.kind === 'burrower' || e.kind === 'crusher') && e.mode === MODE_TELEGRAPH);
+    if (telegraphing) {
+      const k = Math.sin(e.age * 40) * 0.08;
+      sx += k;
+      sy -= k;
+      if (e.flash <= 0) e.sprite.setTint(Math.sin(e.age * 30) > 0 ? 0xffb0c8 : 0xffffff);
+    } else if (e.stun > 0 && e.flash <= 0) {
+      e.sprite.setTint(Math.sin(e.age * 25) > 0 ? 0x9ff6ff : 0xffffff);
+    } else if (e.flash <= 0 && e.sprite.isTinted && e.burnTimer <= 0) {
+      e.sprite.clearTint();
+    }
+    if (e.burnTimer > 0 && e.flash <= 0 && !telegraphing) e.sprite.setTint(0xffb27a);
+    const scale = e.elite ? 1.15 : 1;
+    e.sprite.setPosition(e.x, e.y).setScale(TS * pop * sx * scale, TS * pop * sy * scale);
+    if (e.extra.visible) e.extra.setPosition(e.x, e.y);
+    if (e.elite) {
+      e.glow.setPosition(e.x, e.y).setAlpha(0.65 + Math.sin(e.age * 6) * 0.3);
+    }
+  }
+
+  /** Per-kind behaviour. Returns the desired velocity, undefined to chase, or null if removed. */
+  private behave(
+    e: Enemy,
+    dt: number,
+    dist: number,
+    nx: number,
+    ny: number,
+    menu: boolean,
+    enraged: boolean,
+  ): { mx: number; my: number } | undefined | null {
+    const d = e.def;
+    const host = this.host;
+    switch (e.kind) {
+      case 'sprinter':
+      case 'splitling': {
+        const w = Math.sin(e.age * 6 + e.seed) * 0.5;
+        return { mx: (nx - ny * w) * e.speed, my: (ny + nx * w) * e.speed };
+      }
+      case 'shield': {
+        // Turns slowly: circle around it to hit its unshielded side.
+        const want = Math.atan2(ny, nx);
+        const diff = Phaser.Math.Angle.Wrap(want - e.facing);
+        const turn = (d.turnRate ?? 1.4) * dt;
+        e.facing += Phaser.Math.Clamp(diff, -turn, turn);
+        e.extra.setRotation(e.facing + Math.PI / 2);
+        return { mx: Math.cos(e.facing) * e.speed, my: Math.sin(e.facing) * e.speed };
+      }
+      case 'antimag': {
+        if (e.auraOff > 0) e.auraOff -= dt;
+        e.extra.setAlpha(e.auraOff > 0 ? 0.15 : 0.85 + Math.sin(e.age * 5) * 0.15);
+        e.extra.rotation += dt * 0.6;
+        return undefined;
+      }
+      case 'spitter':
+        return this.spitter(e, dt, dist, nx, ny, menu);
+      case 'thief': {
+        // Grab loose junk, then run off the screen with it.
+        const carryMax = d.carryMax ?? 5;
+        e.carried += host.junk.absorbNear(e.x, e.y, e.radius + 12, carryMax - e.carried);
+        e.sprite.setTexture(e.carried > 0 ? 'bot-thief-full' : 'bot-thief');
+        if (e.carried >= carryMax || (e.carried > 0 && e.age > 8)) {
+          const flee = d.fleeSpeed ?? 170;
+          if (dist > host.spawnDistance() * 1.15) {
+            host.onThiefEscaped(e);
+            this.kill(e, true);
+            return null;
+          }
+          return { mx: -nx * flee, my: -ny * flee };
+        }
+        const target = host.junk.nearestLoose(e.x, e.y, 700);
+        if (target) {
+          const tx = target.x - e.x;
+          const ty = target.y - e.y;
+          const td = Math.hypot(tx, ty) || 1;
+          return { mx: (tx / td) * e.speed, my: (ty / td) * e.speed };
+        }
+        // Nothing to steal yet: hover around the edge of your ball.
+        const radial = dist > 240 ? 1 : dist < 180 ? -1 : 0;
+        return { mx: (nx * radial - ny * 0.8) * e.speed, my: (ny * radial + nx * 0.8) * e.speed };
+      }
+      case 'burrower':
+        return this.burrower(e, dt, dist, nx, ny);
+      case 'magnetbot': {
+        // Keeps its distance and rips pieces off your ball.
+        const range = d.range ?? 260;
+        e.carried += host.junk.absorbNear(e.x, e.y, e.radius + 14, 99);
+        let mx = 0;
+        let my = 0;
+        if (dist > range + 30) (mx = nx * e.speed), (my = ny * e.speed);
+        else if (dist < range - 60) (mx = -nx * e.speed), (my = -ny * e.speed);
+        else (mx = -ny * e.speed * 0.5), (my = nx * e.speed * 0.5);
+        if (e.modeTimer > 0) e.modeTimer -= dt;
+        if (!menu && dist < range + 120) {
+          e.fireTimer -= dt;
+          if (e.fireTimer <= 0) {
+            e.fireTimer = d.pullEvery ?? 3.2;
+            e.modeTimer = 0.45;
+            const n = host.junk.steal(d.pullCount ?? 3, e.x, e.y);
+            host.onMagnetPull(e, n);
+          }
+        }
+        return { mx, my };
+      }
+      case 'bomber': {
+        // Walks in, lights its fuse, explodes. Pulse it away before it gets to you.
+        if (e.fuse > 0) {
+          e.fuse -= dt;
+          if (e.fuse <= 0) {
+            this.kill(e, true);
+            return null;
+          }
+          return { mx: nx * e.speed * 0.3, my: ny * e.speed * 0.3 };
+        }
+        if (!menu && dist < (d.fuseRange ?? 95)) e.fuse = d.fuse ?? 0.8;
+        return undefined;
+      }
+      case 'repair': {
+        // Stays behind the nearest ally (away from you) and heals everyone around it.
+        let anchor: Enemy | null = null;
+        let best = 1e12;
+        const healR = d.healRadius ?? 150;
+        e.healing = false;
+        for (const o of this.pool.items) {
+          if (!o.active || o === e || o.kind === 'repair' || o.hidden) continue;
+          const od = (o.x - e.x) ** 2 + (o.y - e.y) ** 2;
+          if (od < best) {
+            best = od;
+            anchor = o;
+          }
+          if (od < healR * healR && o.hp < o.maxHp && o.kind !== 'boss') {
+            o.hp = Math.min(o.maxHp, o.hp + o.maxHp * (d.healRate ?? 0.12) * dt);
+            e.healing = true;
+          }
+        }
+        if (!anchor) return undefined;
+        const ax = anchor.x - nx * 80 - e.x;
+        const ay = anchor.y - ny * 80 - e.y;
+        const ad = Math.hypot(ax, ay);
+        if (ad < 10) return { mx: 0, my: 0 };
+        return { mx: (ax / ad) * e.speed, my: (ay / ad) * e.speed };
+      }
+      case 'crusher':
+        return this.crusherAI(e, dt, dist, nx, ny);
+      case 'tyre': {
+        e.sprite.rotation += (e.speed / e.radius) * dt;
+        const r = e.radius + 2;
+        if (e.x <= ARENA.margin + r || e.x >= ARENA.width - ARENA.margin - r) {
+          e.cdx = e.x <= ARENA.margin + r ? Math.abs(e.cdx) : -Math.abs(e.cdx);
+          e.bounces++;
+        }
+        if (e.y <= ARENA.margin + r || e.y >= ARENA.height - ARENA.margin - r) {
+          e.cdy = e.y <= ARENA.margin + r ? Math.abs(e.cdy) : -Math.abs(e.cdy);
+          e.bounces++;
+        }
+        if (e.bounces > (d.bounces ?? 3)) {
+          this.kill(e, true);
+          return null;
+        }
+        return { mx: e.cdx * e.speed, my: e.cdy * e.speed };
+      }
+      case 'press': {
+        // Walks up, plants itself and stamps: junk inside the circle gets crushed into cubes.
+        if (e.mode === MODE_TELEGRAPH) {
+          e.modeTimer -= dt;
+          if (e.modeTimer <= 0) {
+            host.onPressSlam(e);
+            e.mode = MODE_MOVE;
+            e.fireTimer = d.slamEvery ?? 3;
+          }
+          return { mx: 0, my: 0 };
+        }
+        e.fireTimer -= dt;
+        if (!menu && dist < 150 && e.fireTimer <= 0) {
+          e.mode = MODE_TELEGRAPH;
+          e.modeTimer = d.telegraph ?? 1;
+          return { mx: 0, my: 0 };
+        }
+        return undefined;
+      }
+      case 'mine': {
+        // Drifts in and drags you toward it; touching it sets it off.
+        const pr = d.pullRadius ?? 280;
+        if (!menu && dist < pr) {
+          const pull = (d.pullStrength ?? 150) * (1 - dist / pr) * dt;
+          host.player.x -= nx * pull;
+          host.player.y -= ny * pull;
+        }
+        e.sprite.rotation += dt * 1.5;
+        if (!menu && dist < e.radius + host.player.radius + 4) {
+          this.kill(e, true);
+          return null;
+        }
+        return undefined;
+      }
+      case 'boss':
+        return this.updateBoss(e, dt, nx, ny, enraged);
+      default:
+        return undefined;
+    }
+  }
+
+  private spitter(e: Enemy, dt: number, dist: number, nx: number, ny: number, menu: boolean): { mx: number; my: number } {
+    const range = e.def.range ?? 300;
+    const strafe = e.seed > 50 ? 1 : -1;
+    let mx = nx * e.speed;
+    let my = ny * e.speed;
+    if (dist > range + 40) {
+      /* approach */
+    } else if (dist < range - 70) {
+      mx = -mx;
+      my = -my;
+    } else {
+      mx = -ny * strafe * e.speed * 0.7;
+      my = nx * strafe * e.speed * 0.7;
+    }
+    e.facing = Math.atan2(ny, nx);
+    e.extra.setRotation(e.facing);
+    if (!menu && dist < range + 200) {
+      if (e.windup > 0) {
+        e.windup -= dt;
+        mx *= 0.2;
+        my *= 0.2;
+        if (e.windup <= 0) this.fire(e, nx, ny);
+      } else {
+        e.fireTimer -= dt;
+        if (e.fireTimer <= 0) {
+          e.windup = e.def.windup ?? 0.4;
+          e.fireTimer = e.def.fireInterval ?? 2.6;
+        }
+      }
+    }
+    return { mx, my };
+  }
+
+  /** Tunnels toward you, marks a spot, pops up under it, then stays exposed for a while. */
+  private burrower(e: Enemy, dt: number, dist: number, nx: number, ny: number): { mx: number; my: number } {
+    const d = e.def;
+    const p = this.host.player;
+    e.modeTimer -= dt;
+    if (e.mode === MODE_MOVE) {
+      if (e.hidden && (dist < 40 || e.modeTimer <= 0)) {
+        e.mode = MODE_TELEGRAPH;
+        e.modeTimer = d.telegraph ?? 0.9;
+        e.tx = p.x;
+        e.ty = p.y;
+        return { mx: 0, my: 0 };
+      }
+      if (!e.hidden) {
+        // Exposed: slow chase, then dig back down.
+        if (e.modeTimer <= 0) {
+          e.hidden = true;
+          e.modeTimer = d.tunnelTime ?? 3.5;
+          e.sprite.setTexture('mound').setDepth(DEPTH.loose - 1);
+          this.host.juice.puff(e.x, e.y, 0x6b5a48, 4);
+        }
+        return { mx: nx * 50, my: ny * 50 };
+      }
+      return { mx: nx * e.speed, my: ny * e.speed };
+    }
+    if (e.mode === MODE_TELEGRAPH) {
+      // Slide under the marked spot while the warning circle flashes.
+      e.x += (e.tx - e.x) * Math.min(1, dt * 10);
+      e.y += (e.ty - e.y) * Math.min(1, dt * 10);
+      if (e.modeTimer <= 0) {
+        e.hidden = false;
+        e.mode = MODE_MOVE;
+        e.modeTimer = d.surfaceTime ?? 3.2;
+        e.sprite.setTexture(d.texture).setDepth(DEPTH.enemy);
+        this.host.onBurrowerEmerge(e);
+      }
+      return { mx: 0, my: 0 };
+    }
+    return { mx: 0, my: 0 };
+  }
+
+  /** Crusher mini-boss: slow, armoured, stomps (knocks junk loose) when you get close. */
+  private crusherAI(e: Enemy, dt: number, dist: number, nx: number, ny: number): { mx: number; my: number } {
+    const d = e.def;
+    e.modeTimer -= dt;
+    if (e.mode === BOSS_ENTER) {
+      if (e.modeTimer <= 0) (e.mode = MODE_MOVE), (e.fireTimer = 1);
+      return { mx: nx * e.speed * 2, my: ny * e.speed * 2 };
+    }
+    if (e.mode === MODE_TELEGRAPH) {
+      if (e.modeTimer <= 0) {
+        this.host.onCrusherStomp(e);
+        e.mode = MODE_ACT;
+        e.modeTimer = 0.6;
+      }
+      return { mx: 0, my: 0 };
+    }
+    if (e.mode === MODE_ACT) {
+      if (e.modeTimer <= 0) (e.mode = MODE_MOVE), (e.fireTimer = d.stompEvery ?? 3.6);
+      return { mx: 0, my: 0 };
+    }
+    e.fireTimer -= dt;
+    if (e.fireTimer <= 0 && dist < (d.stompRadius ?? 190) + 60) {
+      e.mode = MODE_TELEGRAPH;
+      e.modeTimer = d.telegraph ?? 0.9;
+      this.host.onBossTelegraph(e);
+      return { mx: 0, my: 0 };
+    }
+    return { mx: nx * e.speed, my: ny * e.speed };
   }
 
   private updateBoss(e: Enemy, dt: number, nx: number, ny: number, enraged: boolean): { mx: number; my: number } {

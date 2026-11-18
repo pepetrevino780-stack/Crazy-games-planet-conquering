@@ -131,7 +131,8 @@ const DT = 1000 / FPS;
     for (const [id, n] of [['strongerField', 1], ['spinCycle', 2], ['hotScrap', 2], ['secondRing', 1]]) for (let i = 0; i < n; i++) s.upgrades.take(id);
     s.stats = s.upgrades.stats(s.magnetDef);
     s.player.stats = s.stats;
-    s.level = 7;
+    s.level = 9;
+    s.updateCap();
     s.xpNeed = 1e9;
     s.runTime = 148;
     s.player.invuln = 1e9;
@@ -172,7 +173,12 @@ const DT = 1000 / FPS;
   await page.evaluate(() => {
     const s = window.__g();
     s.player.invuln = 1e9;
-    for (let i = 0; i < 60; i++) s.junk.spawnLoose(s.player.x + Math.cos(i) * 60, s.player.y + Math.sin(i) * 60, i % 4);
+    s.level = 16;
+    s.updateCap();
+    // Skip the Crusher: this clip is about the Compactor.
+    s.enemies.minibossWarned = true;
+    s.enemies.minibossSpawned = true;
+    for (let i = 0; i < 110; i++) s.junk.spawnLoose(s.player.x + Math.cos(i) * 60, s.player.y + Math.sin(i) * 60, i % 4);
     window.__advance(45, true);
   });
   // C: warning banner, the Compactor drops in on screen, charges, falls; everything explodes.

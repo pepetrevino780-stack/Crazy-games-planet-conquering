@@ -32,7 +32,7 @@ const SIZES = [
       g.scene.stop('HUD');
       g.player.invuln = 1e9;
       g.player.hasMoved = true;
-      for (let i = 0; i < 150; i++) g.junk.spawnLoose(g.player.x + Math.cos(i) * 40, g.player.y + Math.sin(i) * 40, i % 17 === 0 ? 4 : i % 4);
+      g.level = 16; g.updateCap(); for (let i = 0; i < 150; i++) g.junk.spawnLoose(g.player.x + Math.cos(i) * 40, g.player.y + Math.sin(i) * 40, i % 17 === 0 ? 4 : i % 4);
     });
     await page.waitForTimeout(2500);
     await page.evaluate((zoom) => {
