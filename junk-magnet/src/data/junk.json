@@ -8,7 +8,11 @@
     3,
     5,
     5,
-    5
+    5,
+    6,
+    7,
+    8,
+    9
   ],
   "maxLoose": 200,
   "damageScale": 0.1,
@@ -45,7 +49,7 @@
       "id": "bolt",
       "mass": 1,
       "radius": 5,
-      "weight": 40
+      "weight": 34
     },
     {
       "id": "gear",
@@ -76,11 +80,43 @@
       "mass": 8,
       "radius": 9,
       "weight": 0
+    },
+    {
+      "id": "battery",
+      "mass": 1.5,
+      "radius": 6,
+      "weight": 5,
+      "power": "shock",
+      "desc": "zaps nearby robots"
+    },
+    {
+      "id": "fuel",
+      "mass": 2,
+      "radius": 7,
+      "weight": 4,
+      "power": "explode",
+      "desc": "explodes on impact"
+    },
+    {
+      "id": "spring",
+      "mass": 1,
+      "radius": 6,
+      "weight": 4,
+      "power": "bounce",
+      "desc": "bounces robots away"
+    },
+    {
+      "id": "gold",
+      "mass": 2,
+      "radius": 6,
+      "weight": 3,
+      "power": "gold",
+      "desc": "worth extra scrap"
     }
   ],
   "health": {
     "max": 100,
-    "junkArmor": 0.4,
+    "junkArmor": 0.35,
     "dropEvery": 45,
     "dropHeal": 25,
     "dropLife": 15,
@@ -88,5 +124,24 @@
     "heartbeat": 0.15,
     "invuln": 0.5,
     "halfHealth": 0.5
+  },
+  "powers": {
+    "shock": {
+      "targets": 2,
+      "range": 130,
+      "damage": 10,
+      "cooldown": 1.4
+    },
+    "explode": {
+      "radius": 48,
+      "damage": 18,
+      "cooldown": 2
+    },
+    "bounce": {
+      "knockback": 520
+    },
+    "gold": {
+      "scrap": 4
+    }
   }
 }

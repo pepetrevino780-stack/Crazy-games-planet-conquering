@@ -12,6 +12,9 @@ export const FLUNG = 3;
 const TAU = Math.PI * 2;
 
 export const CAN_TYPE = junkData.types.findIndex((t) => t.id === 'can');
+/** Loose junk on the floor is dimmed so robots and your ball stay readable late in a run. */
+const LOOSE_TINT = 0xa49cb0;
+const LOOSE_ALPHA = 0.8;
 const CUBE_TYPE = junkData.types.findIndex((t) => t.id === 'cube');
 
 export interface JunkPiece {
@@ -69,7 +72,6 @@ export interface JunkFrame {
 }
 
 const types = junkData.types;
-const dropWeight = types.reduce((sum, t) => sum + t.weight, 0);
 
 export class JunkSystem {
   readonly attached: JunkPiece[] = [];
@@ -80,6 +82,8 @@ export class JunkSystem {
   cap = junkData.capStart;
   /** Pieces upgraded to a heavier type this run. */
   upgradedPieces = 0;
+  /** Power of the piece that just stuck (gold pays scrap). */
+  lastAttachedPower = '';
   onUpgrade: (x: number, y: number) => void = () => {};
   /** Radius of the outermost occupied ring, for broad-phase checks and camera zoom. */
   cloudRadius: number;
@@ -136,13 +140,17 @@ export class JunkSystem {
 
   /** Lucky Find multiplies how often gold TVs drop. */
   tvMult = 1;
+  /** Gold Rush daily modifier. */
+  goldMult = 1;
 
   rollType(rng: Rng): number {
     const tv = types.findIndex((t) => t.id === 'tv');
-    const total = dropWeight + types[tv].weight * (this.tvMult - 1);
+    const gold = types.findIndex((t) => t.id === 'gold');
+    const mult = (i: number) => (i === tv ? this.tvMult : i === gold ? this.goldMult : 1);
+    const total = types.reduce((sum, t, i) => sum + t.weight * mult(i), 0);
     let roll = rng.next() * total;
     for (let i = 0; i < types.length; i++) {
-      roll -= types[i].weight * (i === tv ? this.tvMult : 1);
+      roll -= types[i].weight * mult(i);
       if (roll < 0) return i;
     }
     return 0;
@@ -177,11 +185,11 @@ export class JunkSystem {
     p.bounce = 0;
     p.sprite
       .setTexture(`junk-${def.id}`)
-      .clearTint()
+      .setTint(LOOSE_TINT)
       .setPosition(x, y)
       .setRotation(p.rot)
       .setScale(TS)
-      .setAlpha(1)
+      .setAlpha(LOOSE_ALPHA)
       .setDepth(DEPTH.loose)
       .setVisible(true);
     this.looseCount++;
@@ -243,7 +251,7 @@ export class JunkSystem {
     p.age = 0;
     p.noPickup = junkData.noPickupTime;
     p.spin = (Math.random() - 0.5) * 20;
-    p.sprite.setDepth(DEPTH.loose).clearTint();
+    p.sprite.setDepth(DEPTH.loose).setTint(LOOSE_TINT).setAlpha(LOOSE_ALPHA);
     this.looseCount++;
   }
 
@@ -283,6 +291,13 @@ export class JunkSystem {
       p.sprite.setVisible(false);
       this.pool.release(p);
     }
+  }
+
+  /** Junk from robots killed far away by aimed attacks flies straight to you. */
+  magnetize(p: JunkPiece): void {
+    p.state = PULLED;
+    p.pullSpeed = 260;
+    p.noPickup = 0;
   }
 
   /** Junk Shotgun: pull the outermost pieces off the ball and return their types. */
@@ -496,9 +511,10 @@ export class JunkSystem {
       return;
     }
     p.state = ATTACHED;
+    this.lastAttachedPower = (types[p.type] as { power?: string }).power ?? '';
     p.hitTimer = 0;
     p.bounce = 1;
-    p.sprite.setDepth(DEPTH.junk);
+    p.sprite.setDepth(DEPTH.junk).clearTint().setAlpha(1);
     if (this.hotTinted) p.sprite.setTint(0xffb070);
     this.attached.push(p);
     this.onAttach(this.attached.length);

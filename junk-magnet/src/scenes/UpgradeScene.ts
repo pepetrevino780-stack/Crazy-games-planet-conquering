@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
 import { CSS, PAL, RARITY_COLOR, bodyStyle, displayStyle } from '../config';
 import { Audio } from '../systems/AudioManager';
-import type { CardDef } from '../systems/UpgradeSystem';
+import { CrazySDK } from '../systems/CrazySDK';
+import { Button } from '../ui/widgets';
+import { pathDef, type CardDef } from '../systems/UpgradeSystem';
 import type { GameScene } from './GameScene';
 
 /** Pick 1 of 3: sticker-style cards slide in while the game is frozen in slow motion. */
@@ -39,6 +41,34 @@ export class UpgradeScene extends Phaser.Scene {
     kb?.on('keydown-ENTER', () => this.pick(this.selected));
     kb?.on('keydown-SPACE', () => this.pick(this.selected));
 
+    // Optional rewarded ad: reroll the cards once per run.
+    if (CrazySDK.adsAvailable && !this.g.rerollUsed) {
+      const btn: Button = new Button(this, this.scale.width / 2, this.scale.height - 44, {
+        width: 280,
+        height: 52,
+        label: '▶ REROLL CARDS (ad)',
+        fill: PAL.cyan,
+        textColor: CSS.outline,
+        fontSize: 22,
+        onClick: () => {
+          if (this.locked) return;
+          this.locked = true;
+          btn.setEnabled(false);
+          CrazySDK.rewarded(
+            () => {
+              this.g.rerollUsed = true;
+              btn.setVisible(false);
+              this.showCards();
+            },
+            () => {
+              this.locked = false;
+              if (!this.g.rerollUsed) btn.setEnabled(true);
+            },
+          );
+        },
+      });
+      btn.text.setStroke(CSS.outline, 0);
+    }
     this.scale.on('resize', this.layout, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off('resize', this.layout, this));
     this.showCards();
@@ -116,6 +146,9 @@ export class UpgradeScene extends Phaser.Scene {
     if (def.rarity === 'epic') tag = 'EVOLUTION';
     if (def.max >= 99) tag = 'BONUS';
     const hint = def.rarity === 'epic' ? null : this.g.upgrades.comboHint(def.id);
+    // Build path badge, e.g. "FIRE 2/6".
+    const path = def.path ? pathDef(def.path) : null;
+    const pathLabel = path ? `${path.name} ${Math.min(path.perkAt, this.g.upgrades.pathLevel(def.path!))}/${path.perkAt}` : '';
     const tagColor = def.rarity === 'common' ? CSS.steel : CSS.brass;
     const nameColor = def.rarity === 'epic' ? CSS.brass : CSS.text;
     const pipsAt = (px: number, py: number, size: number, align: 'center' | 'left') => {
@@ -143,6 +176,7 @@ export class UpgradeScene extends Phaser.Scene {
         .setOrigin(0, 0);
       const tagText = this.add.text(cw / 2 - 26, -ch / 2 + 40, tag, displayStyle(18, tagColor)).setOrigin(1, 0.5);
       c.add([icon, name, desc, tagText]);
+      if (path) c.add(this.add.text(cw / 2 - 26, -ch / 2 + 64, pathLabel, displayStyle(15, path.color)).setOrigin(1, 0.5));
       pipsAt(textX, ch / 2 - 26, 14, 'left');
       if (hint) c.add(this.add.text(cw / 2 - 26, ch / 2 - 26, hint, bodyStyle(15, CSS.cyan)).setOrigin(1, 0.5));
       return c;
@@ -160,6 +194,7 @@ export class UpgradeScene extends Phaser.Scene {
       .setOrigin(0.5, 0);
     const tagText = this.add.text(0, ch / 2 - 34 * k, tag, displayStyle(Math.round(20 * k), tagColor)).setOrigin(0.5);
     c.add([icon, name, desc, tagText]);
+    if (path) c.add(this.add.text(0, -ch / 2 + 30 * k, pathLabel, displayStyle(Math.round(15 * k), path.color)).setOrigin(0.5));
     pipsAt(0, ch / 2 - 62 * k, 14 * k, 'center');
     if (hint) {
       c.add(

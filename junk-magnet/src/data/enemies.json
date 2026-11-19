@@ -222,7 +222,7 @@
       "fuse": 0.8,
       "blastRadius": 115,
       "blastDamage": 40,
-      "junkKnock": 0.2,
+      "junkKnock": 0.35,
       "dmg": 2.5
     },
     "repair": {
@@ -246,7 +246,7 @@
     },
     "crusher": {
       "name": "Crusher",
-      "hp": 6500,
+      "hp": 13000,
       "speed": 45,
       "radius": 40,
       "xp": 25,
@@ -266,7 +266,7 @@
       "stompRadius": 190,
       "stompEvery": 3.6,
       "telegraph": 0.9,
-      "junkKnock": 0.15,
+      "junkKnock": 0.4,
       "dmg": 1.5,
       "chargeSpeed": 480,
       "chargeTime": 0.9,
@@ -341,9 +341,77 @@
       "noElite": true,
       "dmg": 2.0
     },
+    "driller": {
+      "name": "Driller",
+      "hp": 70,
+      "speed": 72,
+      "radius": 16,
+      "xp": 3,
+      "scrap": 3,
+      "drops": [
+        3,
+        4
+      ],
+      "cost": 4,
+      "unlockAt": 120,
+      "weight": 4,
+      "group": 1,
+      "texture": "bot-driller",
+      "dmg": 1.5,
+      "junkArmor": 0.3,
+      "noKnock": true
+    },
+    "magnetron": {
+      "name": "Magnetron",
+      "hp": 18000,
+      "speed": 60,
+      "radius": 46,
+      "xp": 30,
+      "scrap": 90,
+      "drops": [
+        18,
+        18
+      ],
+      "cost": 0,
+      "unlockAt": 99999,
+      "weight": 0,
+      "group": 1,
+      "texture": "magnetron",
+      "elite": true,
+      "noElite": true,
+      "armor": 0.6,
+      "range": 300,
+      "pullEvery": 4.5,
+      "pullFraction": 0.12,
+      "ringEvery": 3.2,
+      "ringBullets": 12,
+      "minionEvery": 9,
+      "dmg": 1.6,
+      "telegraph": 0.8
+    },
+    "golden": {
+      "name": "Golden Robot",
+      "hp": 45,
+      "speed": 190,
+      "radius": 14,
+      "xp": 5,
+      "scrap": 25,
+      "drops": [
+        4,
+        6
+      ],
+      "cost": 0,
+      "unlockAt": 99999,
+      "weight": 0,
+      "group": 1,
+      "texture": "bot-golden",
+      "noElite": true,
+      "escapeAfter": 13,
+      "dmg": 0.5
+    },
     "boss": {
       "name": "The Compactor",
-      "hp": 12000,
+      "hp": 30000,
       "speed": 80,
       "radius": 52,
       "xp": 40,
@@ -365,7 +433,7 @@
       "recover": 0.8,
       "compactRadius": 220,
       "compactEvery": 3,
-      "junkKnock": 0.3,
+      "junkKnock": 0.45,
       "noElite": true,
       "dmg": 2.0,
       "chargeDamage": 30
@@ -387,7 +455,7 @@
     "bossWarning": 5,
     "bossBudgetMult": 1.0,
     "enrageAt": 480,
-    "minibossAt": 165,
+    "minibossAt": 150,
     "minibossWarning": 4,
     "eliteFrom": 240,
     "eliteChance": 0.12,
@@ -395,7 +463,9 @@
     "eliteHp": 2.2,
     "eliteSpeed": 1.2,
     "eliteScrap": 3,
-    "eliteXp": 2
+    "eliteXp": 2,
+    "midbossAt": 270,
+    "midbossWarning": 4
   },
   "intro": {
     "firstBotAt": 3,
@@ -446,7 +516,6 @@
       "damage": 4,
       "min": 5,
       "max": 10,
-      "chaseRange": 320,
       "flank": 0,
       "ripChance": 0,
       "fireRate": 1,
@@ -524,5 +593,66 @@
       }
     }
   ],
-  "phaseWarning": "THEY'RE GETTING ANGRY"
+  "phaseWarning": "THEY'RE GETTING ANGRY",
+  "ring": {
+    "contactTime": 0.7,
+    "damageMult": 1.2,
+    "knock": 0.05,
+    "movingReduction": 0.5
+  },
+  "golden": {
+    "firstAt": 45,
+    "every": 70,
+    "chance": 0.6
+  },
+  "modes": {
+    "normal": {
+      "name": "NORMAL",
+      "hp": 1,
+      "dmg": 1,
+      "speed": 1,
+      "scrap": 1
+    },
+    "hard": {
+      "name": "HARD",
+      "hp": 1.5,
+      "dmg": 1.3,
+      "speed": 1.1,
+      "scrap": 1.5
+    },
+    "nightmare": {
+      "name": "NIGHTMARE",
+      "hp": 2.2,
+      "dmg": 1.7,
+      "speed": 1.2,
+      "scrap": 2.2
+    }
+  },
+  "dailyModifiers": [
+    {
+      "id": "explode",
+      "name": "EVERYTHING EXPLODES",
+      "desc": "Every robot explodes when it breaks."
+    },
+    {
+      "id": "speed",
+      "name": "DOUBLE SPEED",
+      "desc": "Robots move 50% faster. XP is worth 50% more."
+    },
+    {
+      "id": "sprinters",
+      "name": "ONLY SPRINTERS",
+      "desc": "Sprinter swarms only (bosses still come)."
+    },
+    {
+      "id": "glass",
+      "name": "GLASS CANNON",
+      "desc": "You deal double damage, and take double damage."
+    },
+    {
+      "id": "gold",
+      "name": "GOLD RUSH",
+      "desc": "Gold junk everywhere: scrap rains down."
+    }
+  ]
 }

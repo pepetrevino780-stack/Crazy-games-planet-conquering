@@ -81,5 +81,7 @@ export function applyRun(run: RunStats): ChallengeProgress[] {
 export function formatProgress(c: ChallengeProgress): string {
   const t = c.def.type;
   const fmt = (v: number) => (t === 'noHeartTime' || t === 'time' ? `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, '0')}` : String(Math.floor(v)));
-  return `${fmt(c.value)}/${fmt(c.def.target)}`;
+  // Single-run goals show your best run, so they don't look like they add up across runs.
+  const best = c.def.type === 'kills' ? '' : 'best ';
+  return `${best}${fmt(c.value)}/${fmt(c.def.target)}`;
 }

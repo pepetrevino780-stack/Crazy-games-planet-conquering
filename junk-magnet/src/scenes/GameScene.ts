@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { ARENA, CSS, DEPTH, PAL } from '../config';
 import enemyData from '../data/enemies.json';
+import achievementData from '../data/achievements.json';
+const ACHIEVEMENTS = achievementData.list;
 import magnetsData from '../data/magnets.json';
 import mapsData from '../data/maps.json';
 import { Rng, hashString, todayKey } from '../rng';
@@ -12,6 +14,8 @@ import {
   BOSS_SLAM_TELEGRAPH,
   BOSS_TELEGRAPH,
   CONTACT_TIME,
+  isBig,
+  RING,
   CRUSHER_AIM,
   CRUSHER_CHARGE,
   ENEMY_DEFS,
@@ -29,7 +33,7 @@ import { Meta } from '../systems/MetaSave';
 import { applyRun, type ChallengeProgress } from '../systems/Challenges';
 import { Player, type MagnetDef } from '../systems/Player';
 import { makeFloor } from '../systems/Textures';
-import { UpgradeSystem, cardById, xpForLevel, type CardDef, type PlayerStats } from '../systems/UpgradeSystem';
+import { UpgradeSystem, cardById, pathDef, xpForLevel, type CardDef, type PlayerStats } from '../systems/UpgradeSystem';
 
 export interface RunConfig {
   mode: 'menu' | 'run';
@@ -55,6 +59,8 @@ export interface RunResult {
   dailyBest: number;
   mapName: string;
   challenges: ChallengeProgress[];
+  achievements: { id: string; title: string; desc: string }[];
+  modeName: string;
 }
 
 interface MapDef {
@@ -68,14 +74,46 @@ interface MapDef {
   accelMult: number;
   conveyors: Belt[];
   conveyorSpeed?: number;
+  hazards?: Hazard[];
 }
 
+interface Hazard {
+  type: 'crusher' | 'fence';
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  every?: number;
+  offset: number;
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
+  on?: number;
+  off?: number;
+}
+
+const HAZARD_DMG = (mapsData as unknown as { hazardDamage: Record<string, number> }).hazardDamage;
+
 export const MAGNETS = magnetsData as Record<string, MagnetDef>;
-export const MAPS = mapsData as Record<string, MapDef>;
+export const MAPS = Object.fromEntries(
+  Object.entries(mapsData).filter(([k]) => k !== 'hazardDamage'),
+) as unknown as Record<string, MapDef>;
 const WAVES = enemyData.waves;
 const MAX_EXPLOSIONS_PER_FRAME = 6;
+export const MODES = enemyData.modes as Record<string, { name: string; hp: number; dmg: number; speed: number; scrap: number }>;
+export const DAILY_MODS = enemyData.dailyModifiers;
+/** Hard unlocks after your first win, Nightmare after a win on Hard. */
+export function modeUnlocked(mode: string): boolean {
+  const wins = Meta.data.modeWins;
+  if (mode === 'normal') return true;
+  if (mode === 'hard') return Meta.data.best.wins > 0;
+  return (wins.hard ?? 0) > 0;
+}
+const BLACK_HOLE = cardById('blackHolePulse') as unknown as { pull: number; duration: number; radius: number; damageMult: number };
+const JUNK_POWER = JUNK.types.map((t) => (t as { power?: string }).power ?? '');
 
-type State = 'menu' | 'intro' | 'playing' | 'levelup' | 'dying' | 'won' | 'over';
+type State = 'menu' | 'intro' | 'playing' | 'levelup' | 'dying' | 'reviving' | 'won' | 'over';
 
 export class GameScene extends Phaser.Scene implements EnemyHost {
   cfg: RunConfig = { mode: 'menu' };
@@ -117,10 +155,29 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
   rareReward = false;
   readonly runKills: Record<string, number> = {};
   lowHpAt = -1;
+  reviveUsed = false;
+  private savedJunk: number[] = [];
   healthTimer = 0;
   phaseLabel = 'CALM';
   phaseAt = -1;
-  private pickups: Phaser.GameObjects.Image[] = [];
+  pickups: Phaser.GameObjects.Image[] = [];
+  chests: Phaser.GameObjects.Image[] = [];
+  chestsOpened = 0;
+  modeId = 'normal';
+  modifier = '';
+  mods = { hp: 1, speed: 1, onlySprinters: false };
+  pulses = 0;
+  frenzies = 0;
+  pathsDone = 0;
+  fullHealthAt120 = false;
+  private vortex: { x: number; y: number; t: number; dmg: number } | null = null;
+  private killTimes: number[] = [];
+  private streakLevel = 0;
+  frenzyTimer = 0;
+  private hazardClock = 0;
+  private hazardGfx!: Phaser.GameObjects.Graphics;
+  private shopPending = false;
+  rerollUsed = false;
   hurtFlash = 0;
 
   private nextDoubling = 16;
@@ -182,10 +239,25 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     this.rareReward = false;
     for (const k of Object.keys(this.runKills)) delete this.runKills[k];
     this.lowHpAt = -1;
+    this.reviveUsed = false;
+    this.savedJunk = [];
     this.healthTimer = 0;
     this.phaseLabel = 'CALM';
     this.phaseAt = -1;
     this.pickups = [];
+    this.chests = [];
+    this.chestsOpened = 0;
+    this.pulses = 0;
+    this.frenzies = 0;
+    this.pathsDone = 0;
+    this.fullHealthAt120 = false;
+    this.vortex = null;
+    this.killTimes = [];
+    this.streakLevel = 0;
+    this.frenzyTimer = 0;
+    this.hazardClock = 0;
+    this.shopPending = false;
+    this.rerollUsed = false;
     this.hurtFlash = 0;
     this.nextDoubling = 16;
     this.shieldWave = -1;
@@ -219,6 +291,15 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     }
     if (!this.isRun) this.mapId = 'junkyard';
     this.mapDef = MAPS[this.mapId];
+    // Difficulty mode (the Daily Seed is always Normal, with a daily modifier instead).
+    this.modeId = !this.daily && MODES[save.mode] && modeUnlocked(save.mode) ? save.mode : 'normal';
+    this.modifier = this.daily ? DAILY_MODS[seed % DAILY_MODS.length].id : '';
+    const md = MODES[this.modeId];
+    this.mods = {
+      hp: md.hp,
+      speed: md.speed * (this.modifier === 'speed' ? 1.5 : 1),
+      onlySprinters: this.modifier === 'sprinters',
+    };
     this.spawnRng = new Rng(seed);
     this.lootRng = new Rng(seed ^ 0x9e3779b9);
 
@@ -235,6 +316,8 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     this.player = new Player(this, this.magnetDef, this.stats, ARENA.width / 2, ARENA.height / 2);
     this.field = this.add.graphics().setDepth(DEPTH.field);
     this.weapons = new Weapons(this, this);
+    this.hazardGfx = this.add.graphics().setDepth(DEPTH.belt + 0.8);
+    for (let i = 0; i < 3; i++) this.chests.push(this.add.image(0, 0, 'chest').setScale(0.7).setDepth(DEPTH.loose + 1).setVisible(false));
     for (let i = 0; i < 4; i++) this.pickups.push(this.add.image(0, 0, 'health-pack').setScale(0.55).setDepth(DEPTH.loose + 1).setVisible(false));
 
     this.junk.onAttach = (count) => {
@@ -243,6 +326,11 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
         return;
       }
       Audio.clink();
+      if (this.isRun && this.junk.lastAttachedPower === 'gold') {
+        this.scrapKills += JUNK.powers.gold.scrap;
+        this.juice.sparks(this.player.x, this.player.y - 20, 4, PAL.brass);
+        Audio.coin();
+      }
       if (this.isRun && count >= this.nextDoubling) {
         this.nextDoubling *= 2;
         this.juice.punchZoom(0.09);
@@ -271,7 +359,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
       kb.on('keydown-SHIFT', () => (Controls.specialQueued = true));
       kb.on('keydown-P', () => this.openPause());
     }
-    const onBlur = () => this.openPause();
+    const onBlur = () => this.openPause(true);
     this.game.events.on(Phaser.Core.Events.BLUR, onBlur);
     this.game.events.on(Phaser.Core.Events.HIDDEN, onBlur);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -335,6 +423,8 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
         p.stretch = 0.8;
         this.state = 'playing';
         CrazySDK.gameplayStart();
+        if (this.modifier) this.banner(DAILY_MODS.find((m) => m.id === this.modifier)!.name);
+        else if (this.modeId !== 'normal') this.banner(`${MODES[this.modeId].name} MODE`);
       },
     });
   }
@@ -357,6 +447,9 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
       return;
     }
     this.kills++;
+    this.noteKill();
+    // Fire path perk: burning robots explode when they die.
+    if ((this.stats.firePerk && e.burnTimer > 0) || this.modifier === 'explode') this.queueExplosion(e.x, e.y, 60, 20 * (1 + 0.08 * this.level), false);
     if (this.healthTimer >= JUNK.health.dropEvery) {
       this.healthTimer = 0;
       this.dropHealth(e.x, e.y);
@@ -368,7 +461,8 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     // Thieves and Magnet Bots give back what they stole.
     const drops = (first ? 3 : this.lootRng.int(e.def.drops[0], e.def.drops[1])) + e.carried;
     for (let i = 0; i < drops; i++) {
-      this.junk.spawnLoose(e.x, e.y, first ? 0 : this.junk.rollType(this.lootRng), e.kind === 'boss' || e.kind === 'crusher' ? 500 : undefined);
+      const piece = this.junk.spawnLoose(e.x, e.y, first ? 0 : this.junk.rollType(this.lootRng), isBig(e.kind) ? 500 : undefined);
+      if (piece && e.weaponHit) this.junk.magnetize(piece);
     }
     if (elite) {
       this.hitStop = Math.max(this.hitStop, 0.05);
@@ -378,15 +472,17 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
       this.win(e);
       return;
     }
+    // Treasure chests: always from the Magnetron and Golden Robots, sometimes from elites.
+    if (e.kind === 'magnetron' || e.kind === 'golden' || (e.elite && this.lootRng.next() < 0.12)) this.dropChest(e.x, e.y);
     if (e.kind === 'crusher') {
       // The mini-boss pays out a guaranteed rare upgrade.
       this.juice.confetti(e.x, e.y, 50);
-      this.banner('RARE UPGRADE!');
+      this.dropChest(e.x, e.y);
       this.rareReward = true;
       this.pendingLevels++;
       if (this.state === 'playing') this.startLevelUp();
     }
-    this.gainXp(e.xp);
+    this.gainXp(e.xp * (this.modifier === 'speed' ? 1.5 : 1));
   }
 
   onBossWarning(): void {
@@ -403,6 +499,15 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
   onMinibossWarning(): void {
     this.banner('CRUSHER INCOMING');
     Audio.alarm();
+  }
+
+  onMidbossWarning(): void {
+    this.banner('MAGNETRON INCOMING');
+    Audio.alarm();
+  }
+
+  onMidbossSpawned(): void {
+    this.juice.shake(0.4);
   }
 
   onMinibossSpawned(): void {
@@ -447,6 +552,10 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
 
   onMagnetPull(_e: Enemy, pieces: number): void {
     if (pieces > 0) Audio.hurt();
+  }
+
+  onGoldenEscaped(e: Enemy): void {
+    this.juice.label(e.x, e.y, 'IT GOT AWAY!', CSS.brass, 22);
   }
 
   onThiefEscaped(e: Enemy): void {
@@ -514,7 +623,268 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
 
   /** Called by the Upgrade overlay. Returns true if another level-up is waiting. */
   chooseCard(id: string): boolean {
+    this.applyCard(id);
+    this.pendingLevels--;
+    this.rareReward = false;
+    return this.pendingLevels > 0;
+  }
+
+  /** Chest reward: apply a card without using up a level-up. */
+  chooseCardFree(id: string): void {
+    this.applyCard(id);
+  }
+
+  /** Distinct cards for a chest (up to 5). */
+  chestCards(n: number): string[] {
+    const out: string[] = [];
+    for (let tries = 0; out.length < n && tries < 6; tries++) {
+      for (const c of this.upgrades.roll(3)) {
+        if (out.length >= n) break;
+        if (c.max < 99 && out.includes(c.id)) continue;
+        if (c.max < 99 && this.upgrades.level(c.id) + out.filter((x) => x === c.id).length >= c.max) continue;
+        out.push(c.id);
+      }
+    }
+    while (out.length < n) out.push('patchUp');
+    return out;
+  }
+
+  /** Kill-streak announcer: SMASHING! → JUNK STORM! → SCRAP FRENZY! (damage boost). */
+  private noteKill(): void {
+    const t = this.runTime;
+    this.killTimes.push(t);
+    while (this.killTimes.length && this.killTimes[0] < t - 5) this.killTimes.shift();
+    const n = this.killTimes.length;
+    const tiers: [number, string][] = [
+      [15, 'SMASHING!'],
+      [30, 'JUNK STORM!'],
+      [50, 'SCRAP FRENZY!'],
+    ];
+    let level = 0;
+    for (let i = 0; i < tiers.length; i++) if (n >= tiers[i][0]) level = i + 1;
+    if (level > this.streakLevel) {
+      this.streakLevel = level;
+      this.banner(tiers[level - 1][1]);
+      Audio.levelUp();
+      if (level === 3) {
+        this.frenzyTimer = 5;
+        this.frenzies++;
+      }
+    } else if (n < 10) {
+      this.streakLevel = 0;
+    }
+  }
+
+  /** Car crushers and electric fences hurt robots and you alike. */
+  private updateHazards(dt: number): void {
+    const list = this.mapDef.hazards ?? [];
+    const g = this.hazardGfx;
+    g.clear();
+    if (!this.isRun || list.length === 0) return;
+    const active = this.state === 'playing';
+    if (active) this.hazardClock += dt;
+    const p = this.player;
+    for (const hz of list) {
+      if (hz.type === 'crusher') {
+        const every = hz.every ?? 5;
+        const prev = (this.hazardClock - dt + hz.offset) % every;
+        const t = (this.hazardClock + hz.offset) % every;
+        const x = hz.x ?? 0;
+        const y = hz.y ?? 0;
+        const w = hz.w ?? 160;
+        const h = hz.h ?? 160;
+        const warn = t > every - 1;
+        const down = t < 0.4;
+        g.fillStyle(0x2a2533, 0.9);
+        g.fillRect(x, y, w, h);
+        g.lineStyle(6, PAL.outline);
+        g.strokeRect(x, y, w, h);
+        g.lineStyle(4, warn ? (Math.sin(this.clock * 30) > 0 ? PAL.red : PAL.brass) : PAL.brass, 0.9);
+        g.strokeRect(x + 6, y + 6, w - 12, h - 12);
+        if (down) {
+          g.fillStyle(0x6e7681, 1);
+          g.fillRect(x + 4, y + 4, w - 8, h - 8);
+          g.lineStyle(4, PAL.outline);
+          g.strokeRect(x + 4, y + 4, w - 8, h - 8);
+        } else if (warn) {
+          g.fillStyle(PAL.red, 0.18);
+          g.fillRect(x, y, w, h);
+        }
+        if (active && t < prev) {
+          // SLAM.
+          const cx = x + w / 2;
+          const cy = y + h / 2;
+          this.juice.shake(0.25);
+          Audio.crush();
+          for (let i = 0; i < 6; i++) this.juice.emit(cx, cy, 'p-puff', 0x8a7f99, { speed: 300, life: 0.5, scale: 1.4, endScale: 2.2, alpha: 0.5 });
+          for (const e of this.enemies.pool.items) {
+            if (!e.active || e.hidden || isBig(e.kind)) continue;
+            if (e.x > x && e.x < x + w && e.y > y && e.y < y + h) this.enemies.damage(e, HAZARD_DMG.crusherRobot, cx, cy, 0);
+          }
+          if (p.x > x && p.x < x + w && p.y > y && p.y < y + h) this.playerHit(cx, cy, 0.25, this.phaseDamage(HAZARD_DMG.crusherPlayer));
+          this.junk.crushNear(cx, cy, Math.min(w, h) / 2);
+        }
+      } else {
+        const cycle = (hz.on ?? 3) + (hz.off ?? 3);
+        const t = (this.hazardClock + hz.offset) % cycle;
+        const on = t < (hz.on ?? 3);
+        const x1 = hz.x1 ?? 0;
+        const y1 = hz.y1 ?? 0;
+        const x2 = hz.x2 ?? 0;
+        const y2 = hz.y2 ?? 0;
+        const soon = !on && t > cycle - 0.6;
+        g.lineStyle(10, PAL.outline, 0.8);
+        g.lineBetween(x1, y1, x2, y2);
+        g.lineStyle(4, on ? PAL.cyan : soon ? PAL.brass : 0x4a4458, on ? 0.95 : 0.8);
+        if (on) {
+          // Crackling line.
+          const n = 10;
+          g.beginPath();
+          g.moveTo(x1, y1);
+          for (let i = 1; i < n; i++) {
+            const k = i / n;
+            g.lineTo(x1 + (x2 - x1) * k + (Math.random() - 0.5) * 10, y1 + (y2 - y1) * k + (Math.random() - 0.5) * 10);
+          }
+          g.lineTo(x2, y2);
+          g.strokePath();
+        } else {
+          g.lineBetween(x1, y1, x2, y2);
+        }
+        for (const [px, py] of [
+          [x1, y1],
+          [x2, y2],
+        ]) {
+          g.fillStyle(PAL.outline);
+          g.fillCircle(px, py, 11);
+          g.fillStyle(0x6e7681);
+          g.fillCircle(px, py, 8);
+        }
+        if (!on || !active) continue;
+        const near = (ex: number, ey: number, r: number) => {
+          const vx = x2 - x1;
+          const vy = y2 - y1;
+          const k = Phaser.Math.Clamp(((ex - x1) * vx + (ey - y1) * vy) / (vx * vx + vy * vy), 0, 1);
+          return Math.hypot(ex - (x1 + vx * k), ey - (y1 + vy * k)) < r;
+        };
+        for (const e of this.enemies.pool.items) {
+          if (!e.active || e.hidden) continue;
+          if (near(e.x, e.y, e.radius + 8)) {
+            this.enemies.damage(e, HAZARD_DMG.fenceRobotDps * dt, e.x, e.y, 0);
+            e.stun = Math.max(e.stun, 0.15);
+          }
+        }
+        if (near(p.x, p.y, p.radius + 8)) this.playerHit(p.x, p.y, 0.08, this.phaseDamage(HAZARD_DMG.fencePlayer));
+      }
+    }
+  }
+
+  /** Junk shop between phases: a 10-second break to trade junk for health, a card or scrap. */
+  private openShop(): void {
+    this.shopPending = false;
+    this.state = 'levelup';
+    this.upgradeOpen = true;
+    this.scene.launch('Shop');
+    this.scene.pause();
+  }
+
+  closeShop(): void {
+    this.scene.stop('Shop');
+    this.upgradeOpen = false;
+    this.state = 'playing';
+    this.slowTarget = 1;
+    this.timeScale = 0.2;
+    this.player.invuln = Math.max(this.player.invuln, 1);
+    this.scene.resume();
+    if (this.pendingLevels > 0) this.startLevelUp();
+  }
+
+  /** Shop purchase. Returns false if you can't afford it. */
+  buy(item: 'heal' | 'card' | 'scrap', cost: number): boolean {
+    if (this.junk.count < cost) return false;
+    this.junk.consume(cost);
+    if (item === 'heal') this.heal(30);
+    else if (item === 'scrap') this.scrapKills += 40 / JUNK.economy.coinsPerScrap;
+    else {
+      const id = this.chestCards(1)[0];
+      this.applyCard(id);
+      this.juice.label(this.player.x, this.player.y - 60, cardById(id).name.toUpperCase(), CSS.brass, 24);
+    }
+    return true;
+  }
+
+  private updateVortex(dt: number): void {
+    const v = this.vortex;
+    if (!v) return;
+    v.t -= dt;
+    for (const e of this.enemies.pool.items) {
+      if (!e.active || e.hidden || isBig(e.kind)) continue;
+      const dx = v.x - e.x;
+      const dy = v.y - e.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 760 || d < 6) continue;
+      e.x += (dx / d) * BLACK_HOLE.pull * dt;
+      e.y += (dy / d) * BLACK_HOLE.pull * dt;
+    }
+    if (v.t <= 0) {
+      this.vortex = null;
+      this.queueExplosion(v.x, v.y, BLACK_HOLE.radius, v.dmg, false);
+      this.juice.ring(v.x, v.y, PAL.cyan, 0.5, 0.5, BLACK_HOLE.radius / 64);
+      this.juice.shake(0.6);
+    }
+  }
+
+  private dropChest(x: number, y: number): void {
+    const k = this.chests.find((i) => !i.visible);
+    if (!k) return;
+    k.setPosition(x, y).setVisible(true).setData('life', 30);
+    this.tweens.add({ targets: k, scale: { from: 0, to: 0.7 }, y: y - 6, duration: 400, ease: 'Back.easeOut' });
+    Audio.rare();
+  }
+
+  private updateChests(dt: number): void {
+    const p = this.player;
+    for (const k of this.chests) {
+      if (!k.visible) continue;
+      const life = (k.getData('life') as number) - dt;
+      k.setData('life', life);
+      const dx = p.x - k.x;
+      const dy = p.y - k.y;
+      const d = Math.hypot(dx, dy) || 1;
+      if (d < this.stats.magnetRadius) {
+        k.x += (dx / d) * 260 * dt;
+        k.y += (dy / d) * 260 * dt;
+      }
+      k.rotation = Math.sin(this.clock * 6) * 0.12;
+      if (life <= 0) k.setVisible(false);
+      else if (d < p.radius + 22 && this.state === 'playing') {
+        k.setVisible(false);
+        this.openChest();
+      }
+    }
+  }
+
+  private openChest(): void {
+    this.state = 'levelup';
+    this.upgradeOpen = true;
+    this.scene.launch('Chest', { mode: 'run' });
+    this.scene.pause();
+  }
+
+  closeChest(): void {
+    this.scene.stop('Chest');
+    this.upgradeOpen = false;
+    this.state = 'playing';
+    this.slowTarget = 1;
+    this.timeScale = 0.2;
+    this.player.invuln = Math.max(this.player.invuln, 0.8);
+    this.scene.resume();
+    if (this.pendingLevels > 0) this.startLevelUp();
+  }
+
+  private applyCard(id: string): void {
     const card = cardById(id);
+    const path = card.path;
+    const hadPerk = path ? this.upgrades.hasPerk(path) : true;
     if (id === 'scrapPile') this.scrapKills += (card.value as number) / JUNK.economy.coinsPerScrap;
     else if (id === 'patchUp') this.heal(card.value as number);
     else {
@@ -524,9 +894,11 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
       this.updateCap();
       if (id === 'spareHeart') this.heal(card.value as number);
     }
-    this.pendingLevels--;
-    this.rareReward = false;
-    return this.pendingLevels > 0;
+    if (path && !hadPerk && this.upgrades.hasPerk(path)) {
+      this.banner(`${pathDef(path).name} PATH COMPLETE!`);
+      this.pathsDone++;
+      Audio.victory();
+    }
   }
 
   resumeFromUpgrade(): void {
@@ -539,10 +911,10 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     this.scene.resume();
   }
 
-  openPause(): void {
+  openPause(fromTab = false): void {
     if (this.state !== 'playing' || !this.scene.isActive()) return;
     CrazySDK.gameplayStop();
-    this.scene.launch('Pause');
+    this.scene.launch('Pause', { fromTab });
     this.scene.pause();
   }
 
@@ -592,6 +964,15 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     }
     this.bestCrowd = Math.max(this.bestCrowd, caught);
     if (stats.polarity) this.junk.pullAll();
+    // Storm path perk: every Pulse throws chain lightning.
+    if (stats.stormPerk) this.weapons.zap(p.x, p.y, 5, 24, 320);
+    if (this.magnetDef.pulseZap) this.weapons.zap(p.x, p.y, this.magnetDef.pulseZap, 18, 300);
+    this.pulses++;
+    // Black Hole Pulse: suck the whole screen in, then explode.
+    if (stats.blackHole) {
+      this.vortex = { x: p.x, y: p.y, t: BLACK_HOLE.duration, dmg: dmg * BLACK_HOLE.damageMult };
+      this.juice.label(p.x, p.y - 70, 'BLACK HOLE!', CSS.cyan, 30);
+    }
     Audio.pulse();
     this.juice.shake(overcharged ? 0.4 : 0.25);
     this.juice.ring(p.x, p.y, overcharged ? PAL.brass : PAL.cyan, 0.3, 0.45, reach / 64);
@@ -609,11 +990,13 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
   private updateCap(): void {
     this.junk.cap = Math.min(JUNK.maxAttached, JUNK.capStart + JUNK.capPerLevel * (this.level - 1) + this.stats.capBonus);
     this.junk.tvMult = this.stats.tvMult;
+    this.junk.goldMult = this.modifier === 'gold' ? 8 : 1;
+    this.junk.cap = Math.max(20, this.junk.cap + (this.magnetDef.capBonus ?? 0));
   }
 
   /** Contact damage for the current aggression phase, times a per-robot multiplier. */
   phaseDamage(mult = 1): number {
-    return this.enemies.phase.damage * mult;
+    return this.enemies.phase.damage * mult * MODES[this.modeId].dmg * (this.modifier === 'glass' ? 2 : 1);
   }
 
   /**
@@ -634,7 +1017,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
       return;
     }
     const fill = Math.min(1, this.junk.count / Math.max(1, this.junk.cap));
-    const taken = damage * (1 - H.junkArmor * fill);
+    const taken = damage * (1 - this.stats.junkArmor * fill);
     p.hp = Math.max(0, p.hp - taken);
     if (this.junk.count > 0) this.junk.knockLoose(fraction * this.stats.knockMult, fromX, fromY, JUNK.shatterFraction);
     if (this.lowHpAt < 0 && p.hp < p.stats.maxHp * H.halfHealth) this.lowHpAt = this.runTime;
@@ -666,9 +1049,10 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
       const dx = p.x - k.x;
       const dy = p.y - k.y;
       const d = Math.hypot(dx, dy) || 1;
-      if (d < this.stats.magnetRadius) {
-        k.x += (dx / d) * 320 * dt;
-        k.y += (dy / d) * 320 * dt;
+      // Health packs aren't magnetic: you have to go and get them.
+      if (d < 60) {
+        k.x += (dx / d) * 240 * dt;
+        k.y += (dy / d) * 240 * dt;
       }
       k.setAlpha(life < 3 && Math.floor(life * 8) % 2 === 0 ? 0.3 : 1);
       k.rotation = Math.sin(this.clock * 4) * 0.15;
@@ -711,10 +1095,49 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     this.phaseAt = this.clock;
     Audio.alarm();
     Audio.setIntensity(index);
+    if (index >= 1 && index <= 3) this.shopPending = true;
     this.juice.shake(0.3);
   }
 
+  get canRevive(): boolean {
+    return this.isRun && !this.reviveUsed && this.runTime >= 60 && CrazySDK.adsAvailable;
+  }
+
+  /** Revive after a rewarded ad: half health, your junk ball back, and room to breathe. */
+  revive(): void {
+    const p = this.player;
+    this.reviveUsed = true;
+    this.state = 'playing';
+    this.slowTarget = 1;
+    this.timeScale = 0.3;
+    p.hp = this.stats.maxHp * 0.5;
+    p.invuln = 3;
+    p.sprite.setAngle(0).setScale(0.5).setAlpha(1);
+    for (const type of this.savedJunk) {
+      const piece = this.junk.spawnLoose(p.x, p.y, type, 40);
+      if (piece) this.junk.magnetize(piece);
+    }
+    this.savedJunk = [];
+    for (const e of this.enemies.pool.items) {
+      if (!e.active || isBig(e.kind)) continue;
+      const d = Math.hypot(e.x - p.x, e.y - p.y);
+      if (d < 320) this.enemies.damage(e, 1e9, p.x, p.y, 0);
+    }
+    this.juice.ring(p.x, p.y, PAL.lime, 0.4, 0.6, 5);
+    this.juice.shake(0.5);
+    Audio.levelUp();
+    this.scene.stop('Revive');
+    this.scene.launch('HUD');
+    CrazySDK.gameplayStart();
+  }
+
+  declineRevive(): void {
+    this.scene.stop('Revive');
+    this.finish(false);
+  }
+
   private die(): void {
+    this.savedJunk = this.junk.attached.map((piece) => piece.type);
     this.state = 'dying';
     this.stateTimer = 1.6;
     this.slowTarget = 0.25;
@@ -740,7 +1163,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     for (const e of this.enemies.pool.items) if (e.active) this.enemies.damage(e, 1e9, boss.x, boss.y, 600);
   }
 
-  private finish(win: boolean): void {
+  finish(win: boolean): void {
     this.state = 'over';
     this.slowTarget = 1;
     CrazySDK.gameplayStop();
@@ -749,7 +1172,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     const eco = JUNK.economy;
     const scrapJunk = Math.floor(this.peakJunk / eco.junkPerCoin);
     const scrapWin = win ? eco.winBonus : 0;
-    const coinsKills = Math.round(this.scrapKills * eco.coinsPerScrap);
+    const coinsKills = Math.round(this.scrapKills * eco.coinsPerScrap * MODES[this.modeId].scrap);
     const coinsOverflow = Math.floor(this.junk.overflowScrap / eco.overflowPerCoin);
     const coins = coinsKills + coinsOverflow + scrapJunk + scrapWin;
     const score = this.kills * 10 + this.peakJunk * 5 + Math.floor(this.runTime) + (win ? 2000 : 0);
@@ -760,7 +1183,29 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     save.best.time = Math.max(save.best.time, this.runTime);
     save.best.kills = Math.max(save.best.kills, this.kills);
     save.best.junk = Math.max(save.best.junk, this.peakJunk);
-    if (win) save.best.wins++;
+    if (win) {
+      save.best.wins++;
+      save.modeWins[this.modeId] = (save.modeWins[this.modeId] ?? 0) + 1;
+    }
+    // Achievements and titles.
+    const k = this.runKills;
+    const earned: Record<string, boolean> = {
+      noPulse: this.runTime >= 300 && this.pulses === 0,
+      hoarder: this.peakJunk >= 250,
+      crusher: (k.crusher ?? 0) > 0,
+      magnetron: (k.magnetron ?? 0) > 0,
+      win,
+      winHard: win && this.modeId === 'hard',
+      winNightmare: win && this.modeId === 'nightmare',
+      frenzy: this.frenzies > 0,
+      path: this.pathsDone > 0,
+      chests: this.chestsOpened >= 3,
+      golden: (k.golden ?? 0) > 0,
+      untouched: this.fullHealthAt120,
+    };
+    const unlocked = ACHIEVEMENTS.filter((a) => earned[a.id] && !save.achievements.includes(a.id));
+    for (const a of unlocked) save.achievements.push(a.id);
+    if (unlocked.length) save.title = unlocked[unlocked.length - 1].title;
     if (this.daily) {
       const key = todayKey();
       if (save.daily.key !== key) save.daily = { key, best: 0, runs: 0 };
@@ -794,6 +1239,8 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
       dailyBest: save.daily.best,
       mapName: this.mapDef.name,
       challenges,
+      achievements: unlocked,
+      modeName: MODES[this.modeId].name,
     };
     this.scene.stop('HUD');
     this.scene.launch('Results', result);
@@ -839,10 +1286,23 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
         this.juice.confetti(this.player.x, this.player.y, 80);
         Audio.boom();
       }
-      if (this.stateTimer <= 0) this.finish(this.state === 'won');
+      if (this.stateTimer <= 0) {
+        if (this.state === 'dying' && this.canRevive) {
+          // One revive per run (after the first minute), offered as an optional rewarded ad.
+          this.state = 'reviving';
+          this.scene.stop('HUD');
+          this.scene.launch('Revive');
+        } else {
+          this.finish(this.state === 'won');
+        }
+      }
     }
 
-    if (this.state === 'playing') this.runTime += dt;
+    if (this.state === 'playing') {
+      const before = this.runTime;
+      this.runTime += dt;
+      if (before < 120 && this.runTime >= 120) this.fullHealthAt120 = this.player.hp >= this.stats.maxHp;
+    }
     if (Controls.pulseQueued) {
       Controls.pulseQueued = false;
       this.tryPulse();
@@ -865,7 +1325,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     f.magnetRadius = this.stats.magnetRadius;
     f.spin = this.stats.spin;
     f.massMult = this.stats.massMult;
-    f.damageMult = this.stats.damageMult;
+    f.damageMult = this.stats.damageMult * (this.frenzyTimer > 0 ? 1.3 : 1) * (this.modifier === 'glass' ? 2 : 1);
     f.counterRings = this.stats.counterRings;
     f.repellers = this.repellers;
     f.belts = this.belts;
@@ -890,6 +1350,11 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     }
 
     this.updatePickups(dt);
+    this.updateChests(dt);
+    this.updateVortex(dt);
+    this.updateHazards(dt);
+    if (this.shopPending && this.state === 'playing') this.openShop();
+    if (this.frenzyTimer > 0) this.frenzyTimer -= dt;
     this.weapons.update(dt, this.state === 'playing');
     this.updateHeartbeat(realDt);
     this.juice.update(dt);
@@ -1002,6 +1467,18 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
         e.touch = Math.max(0, e.touch - dt);
       }
 
+      // Reaching the junk ball: the hit lands through it (junk only reduces the damage).
+      // Each robot can do this once, then again every RING.contactTime seconds.
+      if (e.ringTouch > 0) e.ringTouch -= dt;
+      const inRing = this.junk.count > 0 && dist >= minDist && dist < this.junk.cloudRadius + e.radius - 6;
+      if (inRing && e.ringTouch <= 0 && this.isRun && !e.harmless && this.state === 'playing') {
+        e.ringTouch = RING.contactTime;
+        // Plowing through robots at speed takes less of the hit than standing still in a swarm.
+        const moving = 1 - RING.movingReduction * p.speedFraction;
+        const dmg = this.phaseDamage((e.def.dmg ?? 1) * (e.elite ? 1.3 : 1)) * RING.damageMult * moving;
+        this.playerHit(e.x, e.y, RING.knock, dmg);
+      }
+
       // Anti-Mag aura: your junk can't touch it until a Pulse shorts it out.
       if (e.kind === 'antimag' && e.auraOff <= 0) continue;
       // Crusher's junk armour after a slam: only Pulse and aimed attacks get through.
@@ -1029,7 +1506,8 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
           }
         }
         const isCrit = Math.random() < crit;
-        const amount = pc.damage * (isCrit ? 2 : 1);
+        const amount = pc.damage * (isCrit ? 2 : 1) * (e.def.junkArmor ?? 1);
+        e.weaponHit = false;
         this.showDamage(e, amount, isCrit);
         if (!hitSound) {
           hitSound = true;
@@ -1040,6 +1518,19 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
           e.burnDps = Math.max(e.burnDps, stats.burnDps);
           e.burnTimer = stats.burnTime;
         }
+        // Junk with powers: batteries zap, fuel cans explode, springs bounce robots away.
+        const power = JUNK_POWER[pc.type];
+        if (power === 'bounce') {
+          const a = Math.atan2(e.y - p.y, e.x - p.x);
+          e.kx += Math.cos(a) * JUNK.powers.bounce.knockback;
+          e.ky += Math.sin(a) * JUNK.powers.bounce.knockback;
+        } else if (power === 'shock' && pc.explodeCd <= 0) {
+          pc.explodeCd = JUNK.powers.shock.cooldown;
+          this.weapons.zap(pc.x, pc.y, JUNK.powers.shock.targets, JUNK.powers.shock.damage, JUNK.powers.shock.range);
+        } else if (power === 'explode' && pc.explodeCd <= 0) {
+          pc.explodeCd = JUNK.powers.explode.cooldown;
+          this.explosions.push({ x: pc.x, y: pc.y, r: JUNK.powers.explode.radius, d: JUNK.powers.explode.damage * (1 + 0.08 * this.level), hurts: false });
+        }
         if (pc.explodeCd <= 0) {
           if (stats.molten) {
             pc.explodeCd = stats.moltenCooldown;
@@ -1049,7 +1540,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
             this.explosions.push({ x: pc.x, y: pc.y, r: stats.canRadius, d: stats.canDamage, hurts: false });
           }
         }
-        if (this.enemies.damage(e, amount, p.x, p.y, JUNK.hitKnockback)) break;
+        if (this.enemies.damage(e, amount, p.x, p.y, JUNK.hitKnockback * (def.knockbackMult ?? 1))) break;
         // From the Swarming phase, robots rip junk off the ball when they're hit.
         if (this.isRun && Math.random() < this.enemies.phase.ripChance) {
           this.junk.detach(pc, e.x, e.y);
@@ -1080,7 +1571,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
         const d = Math.hypot(e.x - ex.x, e.y - ex.y);
         if (d < ex.r + e.radius) this.enemies.damage(e, ex.d, ex.x, ex.y, 260);
       }
-      if (ex.hurts && Math.hypot(p.x - ex.x, p.y - ex.y) < ex.r + p.radius) this.playerHit(ex.x, ex.y, undefined, this.phaseDamage(2.5));
+      if (ex.hurts && Math.hypot(p.x - ex.x, p.y - ex.y) < ex.r + p.radius) this.playerHit(ex.x, ex.y, ENEMY_DEFS.bomber.junkKnock ?? 0.35, this.phaseDamage(2.5));
     }
   }
 
@@ -1176,7 +1667,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
       } else if (e.kind === 'bomber' && e.fuse > 0) {
         g.lineStyle(3, PAL.pink, flash + 0.3);
         g.strokeCircle(e.x, e.y, d.blastRadius ?? 115);
-      } else if (e.kind === 'magnetbot' && e.modeTimer > 0) {
+      } else if ((e.kind === 'magnetbot' || e.kind === 'magnetron') && e.modeTimer > 0 && e.mode === 0) {
         g.lineStyle(5, PAL.pink, 0.8);
         g.lineBetween(e.x, e.y, p.x, p.y);
         g.lineStyle(2, 0xffffff, 0.8);

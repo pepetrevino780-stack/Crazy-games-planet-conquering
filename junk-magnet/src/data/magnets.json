@@ -41,7 +41,7 @@
   },
   "electro": {
     "name": "Electromagnet",
-    "desc": "Pulse every 2 seconds, with a shorter blast.",
+    "desc": "Pulse every 2 s and every Pulse throws lightning. Holds 20 less junk.",
     "price": 600,
     "texture": "magnet-electro",
     "radius": 18,
@@ -57,7 +57,9 @@
     "bumpDamage": 20,
     "bumpCooldown": 0.5,
     "bumpKnockback": 320,
-    "maxHp": 100
+    "maxHp": 100,
+    "capBonus": -20,
+    "pulseZap": 4
   },
   "blackhole": {
     "name": "Black Hole",
@@ -81,5 +83,48 @@
     "eatInterval": 1.5,
     "maxHp": 100,
     "eatHeal": 12
+  },
+  "mega": {
+    "name": "Mega Magnet",
+    "desc": "A huge, heavy, slow ball: +60 junk and heavier hits.",
+    "price": 1200,
+    "texture": "magnet-mega",
+    "radius": 22,
+    "speed": 195,
+    "accel": 9,
+    "magnetRadius": 200,
+    "spin": 2.0,
+    "layout": "rings",
+    "ringFirst": 50,
+    "ringSpacing": 20,
+    "pulseCooldown": 5,
+    "pulseRange": 160,
+    "maxHp": 120,
+    "bumpDamage": 30,
+    "bumpCooldown": 0.5,
+    "bumpKnockback": 380,
+    "capBonus": 60,
+    "massMult": 1.4
+  },
+  "repulsor": {
+    "name": "Repulsor",
+    "desc": "Junk orbits far out like a shield and shoves robots hard.",
+    "price": 1500,
+    "texture": "magnet-repulsor",
+    "radius": 18,
+    "speed": 235,
+    "accel": 12,
+    "magnetRadius": 200,
+    "spin": 2.4,
+    "layout": "rings",
+    "ringFirst": 66,
+    "ringSpacing": 22,
+    "pulseCooldown": 3,
+    "pulseRange": 200,
+    "maxHp": 100,
+    "bumpDamage": 20,
+    "bumpCooldown": 0.5,
+    "bumpKnockback": 420,
+    "knockbackMult": 3
   }
 }

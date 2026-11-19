@@ -1,24 +1,168 @@
 {
   "junkyard": {
-    "name": "Junkyard", "desc": "Tyre piles and crushed cars. Where it all starts.", "price": 0,
-    "floor": "#1E1B24", "detail": "#2E2838", "props": "junkyard",
-    "looseFriction": 3.5, "accelMult": 1, "conveyors": []
+    "name": "Junkyard",
+    "desc": "Tyre piles and crushed cars. Where it all starts.",
+    "price": 0,
+    "floor": "#1E1B24",
+    "detail": "#2E2838",
+    "props": "junkyard",
+    "looseFriction": 3.5,
+    "accelMult": 1,
+    "conveyors": [],
+    "hazards": [
+      {
+        "type": "crusher",
+        "x": 820,
+        "y": 520,
+        "w": 170,
+        "h": 170,
+        "every": 5,
+        "offset": 0
+      },
+      {
+        "type": "crusher",
+        "x": 1860,
+        "y": 1260,
+        "w": 170,
+        "h": 170,
+        "every": 5,
+        "offset": 2.5
+      },
+      {
+        "type": "fence",
+        "x1": 360,
+        "y1": 1480,
+        "x2": 900,
+        "y2": 1480,
+        "on": 3,
+        "off": 3,
+        "offset": 0
+      },
+      {
+        "type": "fence",
+        "x1": 1900,
+        "y1": 420,
+        "x2": 2440,
+        "y2": 420,
+        "on": 3,
+        "off": 3,
+        "offset": 1.5
+      }
+    ]
   },
   "factory": {
-    "name": "Factory", "desc": "Conveyor belts drag you, the bots and the junk.", "price": 450,
-    "floor": "#17262A", "detail": "#22393E", "props": "factory",
-    "looseFriction": 3.5, "accelMult": 1,
+    "name": "Factory",
+    "desc": "Conveyor belts drag you, the bots and the junk.",
+    "price": 450,
+    "floor": "#17262A",
+    "detail": "#22393E",
+    "props": "factory",
+    "looseFriction": 3.5,
+    "accelMult": 1,
     "conveyors": [
-      { "x": 500, "y": 560, "w": 900, "h": 90, "dx": 1, "dy": 0 },
-      { "x": 1500, "y": 1260, "w": 900, "h": 90, "dx": -1, "dy": 0 },
-      { "x": 2050, "y": 300, "w": 90, "h": 700, "dx": 0, "dy": 1 },
-      { "x": 650, "y": 1000, "w": 90, "h": 700, "dx": 0, "dy": -1 }
+      {
+        "x": 500,
+        "y": 560,
+        "w": 900,
+        "h": 90,
+        "dx": 1,
+        "dy": 0
+      },
+      {
+        "x": 1500,
+        "y": 1260,
+        "w": 900,
+        "h": 90,
+        "dx": -1,
+        "dy": 0
+      },
+      {
+        "x": 2050,
+        "y": 300,
+        "w": 90,
+        "h": 700,
+        "dx": 0,
+        "dy": 1
+      },
+      {
+        "x": 650,
+        "y": 1000,
+        "w": 90,
+        "h": 700,
+        "dx": 0,
+        "dy": -1
+      }
     ],
-    "conveyorSpeed": 110
+    "conveyorSpeed": 110,
+    "hazards": [
+      {
+        "type": "fence",
+        "x1": 1150,
+        "y1": 850,
+        "x2": 1150,
+        "y2": 1250,
+        "on": 2.5,
+        "off": 2.5,
+        "offset": 0
+      },
+      {
+        "type": "fence",
+        "x1": 1650,
+        "y1": 850,
+        "x2": 1650,
+        "y2": 1250,
+        "on": 2.5,
+        "off": 2.5,
+        "offset": 1.25
+      },
+      {
+        "type": "crusher",
+        "x": 330,
+        "y": 300,
+        "w": 160,
+        "h": 160,
+        "every": 4.5,
+        "offset": 1
+      }
+    ]
   },
   "station": {
-    "name": "Space Station", "desc": "Low gravity: you slide, and loose junk drifts.", "price": 800,
-    "floor": "#141A33", "detail": "#222B4F", "props": "station",
-    "looseFriction": 0.6, "accelMult": 0.4, "conveyors": []
+    "name": "Space Station",
+    "desc": "Low gravity: you slide, and loose junk drifts.",
+    "price": 800,
+    "floor": "#141A33",
+    "detail": "#222B4F",
+    "props": "station",
+    "looseFriction": 0.6,
+    "accelMult": 0.4,
+    "conveyors": [],
+    "hazards": [
+      {
+        "type": "fence",
+        "x1": 700,
+        "y1": 700,
+        "x2": 1100,
+        "y2": 1000,
+        "on": 3,
+        "off": 2,
+        "offset": 0
+      },
+      {
+        "type": "fence",
+        "x1": 1700,
+        "y1": 1000,
+        "x2": 2100,
+        "y2": 700,
+        "on": 3,
+        "off": 2,
+        "offset": 2.5
+      }
+    ]
+  },
+  "hazardDamage": {
+    "crusherRobot": 400,
+    "crusherPlayer": 2.5,
+    "fenceRobotDps": 40,
+    "fencePlayer": 1.2
   }
 }

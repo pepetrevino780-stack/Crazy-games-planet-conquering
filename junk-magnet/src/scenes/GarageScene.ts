@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { CSS, PAL, bodyStyle, displayStyle, hex } from '../config';
 import { Audio } from '../systems/AudioManager';
 import { Meta } from '../systems/MetaSave';
+import { CrazySDK } from '../systems/CrazySDK';
+import { Rewards } from '../systems/Rewards';
 import { Button, drawPanel } from '../ui/widgets';
 import { MAGNETS, MAPS, type GameScene } from './GameScene';
 
@@ -33,6 +35,42 @@ export class GarageScene extends Phaser.Scene {
     const ct = this.add.text(0, 0, String(Meta.data.coins), displayStyle(32, CSS.brass)).setOrigin(1, 0.5);
     coins.add([ct, this.add.image(-ct.width - 22, 0, 'coin').setScale(0.8)]);
 
+    // "Almost there" ad: when the next unlock is within 25% of your wallet.
+    const locked = [
+      ...Object.entries(MAGNETS).filter(([id]) => !Meta.data.magnets.includes(id)),
+      ...Object.entries(MAPS).filter(([id]) => !Meta.data.maps.includes(id)),
+    ]
+      .map(([, def]) => def)
+      .sort((a, b) => a.price - b.price);
+    const next = locked[0];
+    const amount = Rewards.nextScrapAd();
+    if (next && CrazySDK.adsAvailable && amount > 0 && Meta.data.coins < next.price && next.price - Meta.data.coins <= next.price * 0.25) {
+      const need = next.price - Meta.data.coins;
+      const ad: Button = new Button(this, w - 150, 88, {
+        width: 270,
+        height: 46,
+        label: `Need ${need}? ▶ +${amount} SCRAP`,
+        fill: PAL.brass,
+        textColor: CSS.outline,
+        fontSize: 18,
+        onClick: () => {
+          ad.setEnabled(false);
+          let ok = false;
+          CrazySDK.rewarded(
+            () => (ok = true),
+            () => {
+              if (ok) {
+                Rewards.claimScrapAd();
+                Audio.coin();
+              }
+              this.build();
+            },
+          );
+        },
+      });
+      ad.text.setStroke(CSS.outline, 0);
+    }
+
     new Button(this, 90, 44, {
       width: 140,
       height: 52,
@@ -46,9 +84,10 @@ export class GarageScene extends Phaser.Scene {
     });
 
     const portrait = h > w;
-    const cols = portrait ? 2 : 4;
+    const cols = portrait ? 3 : 6;
     const cw = Math.min(280, (w - 40 - (cols - 1) * 16) / cols);
     const ch = portrait ? 232 : Math.min(250, (h - 200) / 2 - 20);
+    // Six magnets: one row on landscape screens, two on portrait.
     let y = 104;
     y = this.section('MAGNETS', 'magnet', Object.keys(MAGNETS), y, cols, cw, ch);
     this.section('MAPS', 'map', Object.keys(MAPS), y + 8, cols, cw, ch);
@@ -108,7 +147,7 @@ export class GarageScene extends Phaser.Scene {
 
     this.add.text(x, y - ch / 2 + 108, def.name.toUpperCase(), displayStyle(Math.min(26, cw / 8.5))).setOrigin(0.5);
     this.add
-      .text(x, y - ch / 2 + 128, def.desc, { ...bodyStyle(16, '#D9D3E2'), align: 'center', wordWrap: { width: cw - 30 } })
+      .text(x, y - ch / 2 + 126, def.desc, { ...bodyStyle(cw < 230 ? 13 : 16, '#D9D3E2'), align: 'center', wordWrap: { width: cw - 20 } })
       .setOrigin(0.5, 0);
 
     const by = y + ch / 2 - 36;

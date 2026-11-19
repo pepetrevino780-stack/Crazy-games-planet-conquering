@@ -7,6 +7,8 @@
  * boss HP every 20 s of game time.
  * --idle: the AFK test. Nobody touches the controls; the run must end in death before 1:30,
  *         otherwise the script exits with code 1.
+ * --idle --fullball: same, but the idle player starts with a full junk ball and must die
+ *         before 2:00.
  */
 const { chromium } = require('playwright');
 
@@ -17,11 +19,13 @@ const args = Object.fromEntries(
   }),
 );
 const IDLE = !!args.idle;
+const FULLBALL = !!args.fullball;
 const WARP = Number(args.warp ?? 4);
 const MAXT = Number(args.max ?? (IDLE ? 120 : 520));
 const SHOTS = args.shots;
 const URL = process.env.URL || 'http://localhost:5173/';
-const AFK_LIMIT = 90;
+const AFK_LIMIT = FULLBALL ? 120 : 90;
+const BOT_LIMIT = 300;
 
 (async () => {
   const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -35,6 +39,12 @@ const AFK_LIMIT = 90;
     window.__jm.scene.getScene('Menu').play(false);
   });
   await page.waitForFunction(() => window.__jm.scene.getScene('Game').state === 'playing', null, { timeout: 8000 });
+  if (FULLBALL) {
+    await page.evaluate(() => {
+      const g = window.__jm.scene.getScene('Game');
+      for (let i = 0; i < g.junk.cap; i++) g.junk.spawnLoose(g.player.x + Math.cos(i) * 30, g.player.y + Math.sin(i) * 30, i % 4, 10);
+    });
+  }
 
   await page.evaluate(
     ({ warp, idle }) => {
@@ -43,6 +53,16 @@ const AFK_LIMIT = 90;
       const game = window.__jm;
       window.__botTimer = setInterval(() => {
         const g = game.scene.getScene('Game');
+        // Shop: buy health when hurt, otherwise move on. Chests: collect once the reels stop.
+        if (game.scene.isActive('Shop')) {
+          if (g.player.hp < g.stats.maxHp * 0.6) g.buy('heal', 20);
+          g.closeShop();
+          return;
+        }
+        if (game.scene.isActive('Chest')) {
+          if (game.scene.getScene('Chest').done) g.closeChest();
+          return;
+        }
         if (game.scene.isActive('Upgrade')) {
           const u = game.scene.getScene('Upgrade');
           if (!u.locked && u.cards.length) u.pick(Math.floor(Math.random() * u.cards.length));
@@ -84,6 +104,14 @@ const AFK_LIMIT = 90;
           const radial = Math.max(-1, Math.min(1, (bd - want) / 80));
           mx += ux * radial - uy * 0.8;
           my += uy * radial + ux * 0.8;
+        }
+        // Go get health packs when hurt, like a player would.
+        if (pl.hp < pl.stats.maxHp * 0.6) {
+          for (const k of g.pickups ?? []) {
+            if (!k.visible) continue;
+            const d = Math.hypot(k.x - pl.x, k.y - pl.y) || 1;
+            if (d < 700) (mx += ((k.x - pl.x) / d) * 2.5), (my += ((k.y - pl.y) / d) * 2.5);
+          }
         }
         mx += (1400 - pl.x) * 0.0006;
         my += (1000 - pl.y) * 0.0006;
@@ -141,6 +169,7 @@ const AFK_LIMIT = 90;
     console.log(ok ? `AFK test passed: idle player died at ${last.t}s` : `AFK test FAILED: idle player ${died ? `died at ${last.t}s` : `still alive at ${last.t}s`} (limit ${AFK_LIMIT}s)`);
     if (!ok) process.exitCode = 1;
   } else {
-    console.log(`Run ended at ${last.t}s in phase ${last.phase} (${last.state})`);
+    const ok = last.state === 'dying' || last.state === 'over' ? last.t < BOT_LIMIT : false;
+    console.log(`Run ended at ${last.t}s in phase ${last.phase} (${last.state}). Target: the bot dies before ${BOT_LIMIT}s: ${ok ? 'met' : 'NOT met'}`);
   }
 })();

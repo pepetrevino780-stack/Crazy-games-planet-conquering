@@ -9,6 +9,9 @@ import { MenuScene } from './scenes/MenuScene';
 import { PauseScene } from './scenes/PauseScene';
 import { PreloadScene } from './scenes/PreloadScene';
 import { ResultsScene } from './scenes/ResultsScene';
+import { ReviveScene } from './scenes/ReviveScene';
+import { ChestScene } from './scenes/ChestScene';
+import { ShopScene } from './scenes/ShopScene';
 import { UpgradeScene } from './scenes/UpgradeScene';
 import { Audio } from './systems/AudioManager';
 import { Controls } from './systems/Controls';
@@ -43,7 +46,7 @@ const game = new Phaser.Game({
     width: size.width,
     height: size.height,
   },
-  scene: [PreloadScene, GameScene, HudScene, MenuScene, GarageScene, UpgradeScene, PauseScene, ResultsScene],
+  scene: [PreloadScene, GameScene, HudScene, MenuScene, GarageScene, UpgradeScene, PauseScene, ReviveScene, ChestScene, ShopScene, ResultsScene],
 });
 
 let resizeTimer = 0;

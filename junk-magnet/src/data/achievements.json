@@ -1,0 +1,64 @@
+{
+  "list": [
+    {
+      "id": "noPulse",
+      "title": "Pulse-Free",
+      "desc": "Survive 5:00 without using Pulse"
+    },
+    {
+      "id": "hoarder",
+      "title": "Hoarder",
+      "desc": "Hold 250 junk at once"
+    },
+    {
+      "id": "crusher",
+      "title": "Crusher Crusher",
+      "desc": "Defeat the Crusher"
+    },
+    {
+      "id": "magnetron",
+      "title": "Short Circuit",
+      "desc": "Defeat the Magnetron"
+    },
+    {
+      "id": "win",
+      "title": "Compactor Breaker",
+      "desc": "Crush The Compactor"
+    },
+    {
+      "id": "winHard",
+      "title": "Hardened",
+      "desc": "Win on Hard"
+    },
+    {
+      "id": "winNightmare",
+      "title": "Nightmare Fuel",
+      "desc": "Win on Nightmare"
+    },
+    {
+      "id": "frenzy",
+      "title": "Frenzied",
+      "desc": "Trigger SCRAP FRENZY!"
+    },
+    {
+      "id": "path",
+      "title": "Specialist",
+      "desc": "Complete a build path"
+    },
+    {
+      "id": "chests",
+      "title": "Treasure Hunter",
+      "desc": "Open 3 chests in one run"
+    },
+    {
+      "id": "golden",
+      "title": "Gold Digger",
+      "desc": "Catch a Golden Robot"
+    },
+    {
+      "id": "untouched",
+      "title": "Untouchable",
+      "desc": "Reach 2:00 at full health"
+    }
+  ]
+}

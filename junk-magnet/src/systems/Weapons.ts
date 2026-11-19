@@ -270,19 +270,24 @@ export class Weapons {
         e.burnTimer = Math.max(e.burnTimer, FB.burnTime);
       }
       g.showDamage(e, damage, false, true);
+      e.weaponHit = true;
       g.enemies.damage(e, damage, x, y, 220);
     }
   }
 
   private chainLightning(x: number, y: number): void {
-    const s = this.g.stats;
+    this.zap(x, y, this.g.stats.chainTargets, this.g.stats.chainDamage);
+  }
+
+  /** Lightning that arcs between up to `targets` robots (Chain Lightning, Storm path, batteries). */
+  zap(x: number, y: number, targets: number, baseDamage: number, range = 230): void {
     const hit = new Set<Enemy>();
     const pts = [x, y];
     let cx = x;
     let cy = y;
-    for (let i = 0; i < s.chainTargets; i++) {
+    for (let i = 0; i < targets; i++) {
       let best: Enemy | null = null;
-      let bd = 230 * 230;
+      let bd = range * range;
       for (const e of this.g.enemies.pool.items) {
         if (!e.active || e.hidden || hit.has(e)) continue;
         const d = (e.x - cx) ** 2 + (e.y - cy) ** 2;
@@ -296,8 +301,9 @@ export class Weapons {
       pts.push(best.x, best.y);
       cx = best.x;
       cy = best.y;
-      const dmg = s.chainDamage * (1 + 0.08 * this.g.level);
+      const dmg = baseDamage * (1 + 0.08 * this.g.level);
       this.g.showDamage(best, dmg, true);
+      best.weaponHit = true;
       this.g.enemies.damage(best, dmg, x, y, 120);
       best.stun = Math.max(best.stun, 0.3);
     }
@@ -343,6 +349,7 @@ export class Weapons {
         if ((e.x - shot.x) ** 2 + (e.y - shot.y) ** 2 > r * r) continue;
         if (shot.kind === 'scrap') {
           g.showDamage(e, shot.damage, false);
+          e.weaponHit = true;
           g.enemies.damage(e, shot.damage, shot.x - shot.vx * 0.01, shot.y - shot.vy * 0.01, 240);
           g.juice.sparks(shot.x, shot.y, 3);
           Audio.hit();

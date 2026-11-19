@@ -19,6 +19,13 @@ export interface SaveData {
   runs: number;
   daily: { key: string; best: number; runs: number };
   challenges: { progress: Record<string, number>; done: string[] };
+  /** Per-day reward bookkeeping (UTC date keys). */
+  /** Difficulty: Hard unlocks after the first win, Nightmare after a Hard win. */
+  mode: string;
+  modeWins: Record<string, number>;
+  achievements: string[];
+  title: string;
+  rewards: { day: string; freeChest: boolean; bonusChest: boolean; scrapAds: number; firstRunChest: boolean };
 }
 
 const KEY = 'junk-magnet-save-v1';
@@ -36,6 +43,11 @@ function defaults(): SaveData {
     runs: 0,
     daily: { key: '', best: 0, runs: 0 },
     challenges: { progress: {}, done: [] },
+    mode: 'normal',
+    modeWins: {},
+    achievements: [],
+    title: '',
+    rewards: { day: '', freeChest: false, bonusChest: false, scrapAds: 0, firstRunChest: false },
   };
 }
 
@@ -55,6 +67,9 @@ export const Meta = {
           settings: { ...fresh.settings, ...saved.settings },
           best: { ...fresh.best, ...saved.best },
           daily: { ...fresh.daily, ...saved.daily },
+          rewards: { ...fresh.rewards, ...saved.rewards },
+          modeWins: { ...saved.modeWins },
+          achievements: [...(saved.achievements ?? [])],
           challenges: { progress: { ...saved.challenges?.progress }, done: [...(saved.challenges?.done ?? [])] },
         };
         return;
