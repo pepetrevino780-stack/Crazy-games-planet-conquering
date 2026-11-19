@@ -35,7 +35,9 @@ export class HudScene extends Phaser.Scene {
   private shownSeconds = -1;
   private shownHearts = '';
   private shownLevel = -1;
-  private bannerShown = false;
+  private bannerShownAt = -1;
+  private capBar!: Phaser.GameObjects.Graphics;
+  private capText!: Phaser.GameObjects.Text;
   private joyId = -1;
   private joyBaseX = 0;
   private joyBaseY = 0;
@@ -52,13 +54,15 @@ export class HudScene extends Phaser.Scene {
     this.junkBounce = 0;
     this.shownCoins = this.shownSeconds = this.shownLevel = -1;
     this.shownHearts = '';
-    this.bannerShown = false;
+    this.bannerShownAt = -1;
     this.joyId = -1;
     this.hearts = [];
 
     this.vignette = this.add.graphics();
     this.xpBar = this.add.graphics();
-    this.levelText = this.add.text(0, 0, '', displayStyle(20, CSS.cyan)).setOrigin(0, 0.5);
+    this.levelText = this.add.text(0, 0, '', displayStyle(18, CSS.text)).setOrigin(0, 0.5);
+    this.capBar = this.add.graphics();
+    this.capText = this.add.text(0, 0, '', displayStyle(15, CSS.dim)).setOrigin(0, 0.5);
     this.coinIcon = this.add.image(0, 0, 'coin').setScale(0.5);
     this.coinText = this.add.text(0, 0, '0', displayStyle(22, CSS.brass)).setOrigin(0, 0.5);
     this.junkIcon = this.add.image(0, 0, 'junk-gear').setScale(1.1);
@@ -70,8 +74,8 @@ export class HudScene extends Phaser.Scene {
       this.g.openPause();
     });
     this.bossBar = this.add.graphics();
-    this.bossName = this.add.text(0, 0, 'THE COMPACTOR', displayStyle(20, CSS.pink)).setOrigin(0.5).setVisible(false);
-    this.banner = this.add.text(0, 0, 'THE COMPACTOR IS COMING', displayStyle(44, CSS.pink)).setOrigin(0.5).setVisible(false);
+    this.bossName = this.add.text(0, 0, '', displayStyle(20, CSS.pink)).setOrigin(0.5).setVisible(false);
+    this.banner = this.add.text(0, 0, '', displayStyle(44, CSS.pink)).setOrigin(0.5).setVisible(false);
 
     this.createPulseButton();
     this.createMoveHint();
@@ -160,14 +164,14 @@ export class HudScene extends Phaser.Scene {
     const h = this.scale.height;
     this.cameras.main.setSize(w, h);
     const touch = Controls.isTouch;
-    this.levelText.setPosition(16, 28);
-    this.coinIcon.setPosition(30, 104);
-    this.coinText.setPosition(48, 104);
-    this.junkText.setPosition(w / 2 + 14, 58);
-    this.junkIcon.setPosition(w / 2 - 44, 60);
-    this.timerText.setPosition(w - 18, 40);
-    this.pauseBtn.setPosition(w - 18 - this.timerText.width - 40, 40);
-    this.bossName.setPosition(w / 2, 108);
+    this.levelText.setPosition(10, 11);
+    this.coinIcon.setPosition(30, 84);
+    this.coinText.setPosition(48, 84);
+    this.junkText.setPosition(w / 2 + 14, 62);
+    this.junkIcon.setPosition(w / 2 - 44, 64);
+    this.timerText.setPosition(w - 18, 46);
+    this.pauseBtn.setPosition(w - 18 - this.timerText.width - 40, 46);
+    this.bossName.setPosition(w / 2, 132);
     this.banner.setPosition(w / 2, h * 0.32);
     this.pulseRadius = touch ? 54 : 40;
     const margin = touch ? 30 : 22;
@@ -244,15 +248,35 @@ export class HudScene extends Phaser.Scene {
     const playing = g.state === 'playing';
     if (!playing && this.joyId !== -1) this.onUp({ id: this.joyId } as Phaser.Input.Pointer);
 
-    // XP bar along the very top.
+    // Thick XP bar along the top, with the level inside it.
     const frac = Phaser.Math.Clamp(g.xp / g.xpNeed, 0, 1);
+    const barH = 22;
     this.xpBar.clear();
-    this.xpBar.fillStyle(PAL.outline, 0.9);
-    this.xpBar.fillRect(0, 0, w, 12);
+    this.xpBar.fillStyle(PAL.outline, 0.92);
+    this.xpBar.fillRect(0, 0, w, barH + 3);
+    this.xpBar.fillStyle(0x2a2533);
+    this.xpBar.fillRect(0, 0, w, barH);
     this.xpBar.fillStyle(PAL.cyan);
-    this.xpBar.fillRect(0, 0, w * frac, 9);
-    this.xpBar.fillStyle(0xffffff, 0.35);
-    this.xpBar.fillRect(0, 0, w * frac, 3);
+    this.xpBar.fillRect(0, 0, w * frac, barH);
+    this.xpBar.fillStyle(0xffffff, 0.3);
+    this.xpBar.fillRect(0, 0, w * frac, 6);
+
+    // Capacity bar under the junk count: fills as the ball nears its current cap.
+    const cap = g.junk.cap;
+    const fill = Phaser.Math.Clamp(g.junk.count / cap, 0, 1);
+    const cw = 170;
+    const cx = w / 2 - cw / 2;
+    const cy = 96;
+    this.capBar.clear();
+    this.capBar.fillStyle(PAL.outline, 0.9);
+    this.capBar.fillRoundedRect(cx - 3, cy - 3, cw + 6, 14, 6);
+    this.capBar.fillStyle(0x3a3346);
+    this.capBar.fillRoundedRect(cx, cy, cw, 8, 4);
+    this.capBar.fillStyle(fill >= 1 ? PAL.brass : PAL.cyan);
+    this.capBar.fillRoundedRect(cx, cy, Math.max(8, cw * fill), 8, 4);
+    const capLabel = fill >= 1 ? `FULL ${cap} · fusing` : `${g.junk.count}/${cap}`;
+    if (this.capText.text !== capLabel) this.capText.setText(capLabel);
+    this.capText.setPosition(cx + cw + 10, cy + 4).setColor(fill >= 1 ? CSS.brass : CSS.dim);
     if (g.level !== this.shownLevel) {
       this.shownLevel = g.level;
       this.levelText.setText(`LV ${g.level}`);
@@ -267,7 +291,7 @@ export class HudScene extends Phaser.Scene {
       this.hearts = [];
       for (let i = 0; i < g.stats.maxHearts; i++) {
         const full = i < g.player.hearts;
-        const img = this.add.image(84 + i * 36, 28, full ? 'heart' : 'heart-empty').setScale(0.55);
+        const img = this.add.image(26 + i * 36, 46, full ? 'heart' : 'heart-empty').setScale(0.55);
         this.hearts.push(img);
         if (lost && i === g.player.hearts) this.tweens.add({ targets: img, scale: { from: 1.1, to: 0.55 }, duration: 400, ease: 'Back.easeOut' });
       }
@@ -289,8 +313,8 @@ export class HudScene extends Phaser.Scene {
     this.junkText.setText(String(Math.round(this.shownJunk)));
     this.junkBounce = Math.max(0, this.junkBounce - dt * 4);
     const b = Phaser.Math.Easing.Back.Out(1 - this.junkBounce);
-    this.junkText.setScale(1 + (1 - b) * 0.35 + (junk >= 150 ? 0.05 * Math.sin(_now / 120) : 0));
-    this.junkText.setColor(junk >= 150 ? CSS.brass : CSS.text);
+    this.junkText.setScale(1 + (1 - b) * 0.35 + (junk >= cap ? 0.05 * Math.sin(_now / 120) : 0));
+    this.junkText.setColor(junk >= cap ? CSS.brass : CSS.text);
     this.junkIcon.rotation += dt * (1 + junk / 30);
 
     const seconds = Math.floor(g.runTime);
@@ -302,18 +326,21 @@ export class HudScene extends Phaser.Scene {
 
     // Boss warning + health bar.
     const boss = g.state === 'levelup' ? null : g.bossActive;
-    if (g.bossWarningAt >= 0 && !this.bannerShown) {
-      this.bannerShown = true;
+    if (g.bannerAt >= 0 && g.bannerAt !== this.bannerShownAt) {
+      this.bannerShownAt = g.bannerAt;
+      this.tweens.killTweensOf(this.banner);
+      this.banner.setText(g.bannerText).setColor(g.bannerText.startsWith('RARE') ? CSS.brass : CSS.pink);
       this.banner.setVisible(true).setScale(0).setAlpha(1);
       this.tweens.add({ targets: this.banner, scale: 1, duration: 450, ease: 'Back.easeOut' });
       this.tweens.add({ targets: this.banner, alpha: 0, delay: 3000, duration: 500, ease: 'Sine.easeIn' });
     }
     this.bossBar.clear();
     this.bossName.setVisible(!!boss);
+    if (boss && this.bossName.text !== boss.def.name.toUpperCase()) this.bossName.setText(boss.def.name.toUpperCase());
     if (boss) {
       const bw = Math.min(520, w - 300);
       const x = w / 2 - bw / 2;
-      const y = 124;
+      const y = 148;
       this.bossBar.fillStyle(PAL.outline);
       this.bossBar.fillRoundedRect(x - 4, y - 4, bw + 8, 22, 8);
       this.bossBar.fillStyle(0x3a3346);
@@ -336,8 +363,15 @@ export class HudScene extends Phaser.Scene {
       this.pulseBtn.setAlpha(0.65);
     } else {
       this.pulseBtn.setAlpha(1);
-      this.pulseRing.lineStyle(4, PAL.cyan, 0.9);
+      // Gold when the ball is full: the next Pulse is Overcharged.
+      const full = g.junk.count >= g.junk.cap;
+      this.pulseRing.lineStyle(full ? 6 : 4, full ? PAL.brass : PAL.cyan, 0.95);
       this.pulseRing.strokeCircle(0, 0, r - 4);
+      if (full) {
+        const k = (Math.sin(_now / 110) + 1) / 2;
+        this.pulseRing.lineStyle(4, PAL.brass, 0.3 + k * 0.5);
+        this.pulseRing.strokeCircle(0, 0, r + 6 + k * 6);
+      }
     }
     const teach = playing && !g.pulseUsed && g.runTime > 19;
     if (teach) {
@@ -351,8 +385,8 @@ export class HudScene extends Phaser.Scene {
     this.pulseBtn.setVisible(g.state !== 'intro');
 
     // Movement glyph until the first move.
-    if (g.player.hasMoved) {
-      this.moveHint.alpha = Math.max(0, this.moveHint.alpha - dt * 2.5);
+    if (g.player.hasMoved || g.runTime > 10 || !playing) {
+      this.moveHint.alpha = Math.max(0, this.moveHint.alpha - dt * 3);
     } else {
       this.moveHint.alpha = 0.6 + 0.4 * Math.sin(_now / 220);
     }

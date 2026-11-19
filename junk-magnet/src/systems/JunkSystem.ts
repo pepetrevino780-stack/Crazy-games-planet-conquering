@@ -76,6 +76,11 @@ export class JunkSystem {
   looseCount = 0;
   /** Overflow junk converted to scrap coins this run. */
   overflowScrap = 0;
+  /** How many pieces can stick right now. Rises with level; extra junk upgrades the lightest piece. */
+  cap = junkData.capStart;
+  /** Pieces upgraded to a heavier type this run. */
+  upgradedPieces = 0;
+  onUpgrade: (x: number, y: number) => void = () => {};
   /** Radius of the outermost occupied ring, for broad-phase checks and camera zoom. */
   cloudRadius: number;
   /** Seconds left of the current Pulse, or 0. */
@@ -129,10 +134,15 @@ export class JunkSystem {
     return this.attached.length;
   }
 
+  /** Lucky Find multiplies how often gold TVs drop. */
+  tvMult = 1;
+
   rollType(rng: Rng): number {
-    let roll = rng.next() * dropWeight;
+    const tv = types.findIndex((t) => t.id === 'tv');
+    const total = dropWeight + types[tv].weight * (this.tvMult - 1);
+    let roll = rng.next() * total;
     for (let i = 0; i < types.length; i++) {
-      roll -= types[i].weight;
+      roll -= types[i].weight * (i === tv ? this.tvMult : 1);
       if (roll < 0) return i;
     }
     return 0;
@@ -455,11 +465,14 @@ export class JunkSystem {
 
   private attach(p: JunkPiece): void {
     this.looseCount--;
-    if (this.attached.length >= junkData.maxAttached) {
-      this.overflowScrap++; // over the cap: converts to scrap coins
+    if (this.attached.length >= Math.min(this.cap, junkData.maxAttached)) {
+      // Ball is full: the new piece fuses into the lightest one, making it heavier.
       p.sprite.setVisible(false);
       this.pool.release(p);
-      this.onAttach(-1);
+      if (!this.upgradeLightest()) {
+        this.overflowScrap++; // everything is already as heavy as it gets: scrap coins
+        this.onAttach(-1);
+      }
       return;
     }
     p.state = ATTACHED;
@@ -469,6 +482,80 @@ export class JunkSystem {
     if (this.hotTinted) p.sprite.setTint(0xffb070);
     this.attached.push(p);
     this.onAttach(this.attached.length);
+  }
+
+  private upgradeLightest(): boolean {
+    const chain = junkData.upgradeChain;
+    let best: JunkPiece | null = null;
+    for (const a of this.attached) {
+      if (chain[a.type] === a.type) continue;
+      if (!best || a.mass < best.mass) best = a;
+    }
+    if (!best) return false;
+    const next = types[chain[best.type]];
+    best.type = chain[best.type];
+    best.mass = next.mass;
+    best.radius = next.radius;
+    best.bounce = 1.6;
+    best.sprite.setTexture(`junk-${next.id}`);
+    this.upgradedPieces++;
+    this.onUpgrade(best.x, best.y);
+    return true;
+  }
+
+  /** Total mass of the ball: keeps growing after the piece cap is reached. */
+  get mass(): number {
+    let m = 0;
+    for (const a of this.attached) m += a.mass;
+    return m;
+  }
+
+  /** Magnet Bot: rip the outermost pieces off and fling them toward (x, y). */
+  steal(n: number, x: number, y: number): number {
+    let taken = 0;
+    for (; taken < n && this.attached.length > 0; taken++) {
+      const p = this.attached.pop()!;
+      const a = Math.atan2(y - p.y, x - p.x);
+      p.state = LOOSE;
+      p.vx = Math.cos(a) * 420;
+      p.vy = Math.sin(a) * 420;
+      p.age = 0;
+      p.noPickup = 1.6;
+      p.spin = 20;
+      p.sprite.setDepth(DEPTH.loose).clearTint();
+      this.looseCount++;
+    }
+    return taken;
+  }
+
+  /** Scrap Thief / Magnet Bot: swallow loose pieces within r. Returns how many. */
+  absorbNear(x: number, y: number, r: number, max: number): number {
+    let n = 0;
+    for (const p of this.pool.items) {
+      if (n >= max) break;
+      if (!p.active || (p.state !== LOOSE && p.state !== PULLED)) continue;
+      if ((p.x - x) ** 2 + (p.y - y) ** 2 > r * r) continue;
+      p.sprite.setVisible(false);
+      this.pool.release(p);
+      this.looseCount--;
+      n++;
+    }
+    return n;
+  }
+
+  /** Nearest loose piece for a Scrap Thief to go after. */
+  nearestLoose(x: number, y: number, maxD: number): JunkPiece | null {
+    let best: JunkPiece | null = null;
+    let bd = maxD * maxD;
+    for (const p of this.pool.items) {
+      if (!p.active || p.state !== LOOSE) continue;
+      const d = (p.x - x) ** 2 + (p.y - y) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = p;
+      }
+    }
+    return best;
   }
 
   /** Pieces being pulled, for drawing the cyan streaks. */

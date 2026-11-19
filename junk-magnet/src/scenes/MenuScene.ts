@@ -5,6 +5,7 @@ import { Controls } from '../systems/Controls';
 import { Meta } from '../systems/MetaSave';
 import { todayKey } from '../rng';
 import { Button } from '../ui/widgets';
+import { activeChallenges, formatProgress } from '../systems/Challenges';
 import type { GameScene } from './GameScene';
 
 /** Title screen: a big PLAY button over the live arena. One click starts. */
@@ -87,6 +88,21 @@ export class MenuScene extends Phaser.Scene {
     }).text.setStroke(CSS.outline, 0);
     const daily = Meta.data.daily.key === todayKey() ? `Today's best: ${Meta.data.daily.best}` : 'Same map for everyone today';
     this.add.text(w / 2 + bw / 2 + 12, rowY + 46, daily, bodyStyle(18, CSS.dim)).setOrigin(0.5);
+
+    // Active challenges: short goals that pay scrap.
+    const list = activeChallenges();
+    if (list.length) {
+      const portrait = h > w;
+      const lineH = 24;
+      const x = portrait ? w / 2 : w - 24;
+      let y = portrait ? rowY + 96 : h - 76 - list.length * lineH;
+      const align = portrait ? 0.5 : 1;
+      this.add.text(x, y, 'CHALLENGES', displayStyle(20, CSS.cyan)).setOrigin(align, 0.5);
+      for (const c of list) {
+        y += lineH;
+        this.add.text(x, y, `${c.def.text}  ${formatProgress(c)}  · +${c.def.reward}`, bodyStyle(17, CSS.text)).setOrigin(align, 0.5);
+      }
+    }
 
     const coins = this.add.container(w - 20, 34);
     const ct = this.add.text(0, 0, String(Meta.data.coins), displayStyle(30, CSS.brass)).setOrigin(1, 0.5);

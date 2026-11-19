@@ -34,6 +34,16 @@ export interface PlayerStats {
   polarity: boolean;
   counterRings: boolean;
   scrapShield: boolean;
+  pulseDamageMult: number;
+  stunTime: number;
+  coinMult: number;
+  critBonus: number;
+  knockMult: number;
+  tvMult: number;
+  capBonus: number;
+  fireRing: boolean;
+  fireRingDps: number;
+  fireRingTime: number;
 }
 
 const cards = upgradeData.cards as CardDef[];
@@ -65,11 +75,16 @@ export class UpgradeSystem {
   }
 
   /** Three different cards. An unlocked evolution always takes the first slot. */
-  roll(count = 3): CardDef[] {
+  roll(count = 3, rareOnly = false): CardDef[] {
     const evolutions = cards.filter(
       (c) => c.requires && !this.maxed(c.id) && c.requires.every((r) => this.maxed(r)),
     );
-    const pool = cards.filter((c) => !c.requires && !this.maxed(c.id));
+    let pool = cards.filter((c) => !c.requires && !this.maxed(c.id));
+    // The Crusher's reward: rare cards only (falls back to the full pool if they're all taken).
+    if (rareOnly && pool.some((c) => c.rarity !== 'common')) {
+      const rares = pool.filter((c) => c.rarity !== 'common');
+      if (rares.length >= count - evolutions.slice(0, 1).length) pool = rares;
+    }
     const picked: CardDef[] = evolutions.slice(0, 1);
     const weights = upgradeData.rarityWeight as Record<string, number>;
     while (picked.length < count && pool.length > 0) {
@@ -86,6 +101,14 @@ export class UpgradeSystem {
     return picked;
   }
 
+  /** Names of evolutions this card is part of and that aren't owned yet (for combo hints on cards). */
+  comboHint(id: string): string | null {
+    const evo = cards.find((c) => c.requires?.includes(id) && !this.maxed(c.id));
+    if (!evo) return null;
+    const partner = evo.requires!.find((r) => r !== id)!;
+    return `+ ${cardById(partner).name} = ${evo.name}`;
+  }
+
   take(id: string): void {
     this.levels[id] = this.level(id) + 1;
   }
@@ -99,16 +122,16 @@ export class UpgradeSystem {
     const cans = c('explosiveCans');
     const hot = c('hotScrap');
     return {
-      speed: def.speed * Math.pow(1 - c('heavyMetal').slow, lv('heavyMetal')),
+      speed: def.speed * Math.pow(1 - c('heavyMetal').slow, lv('heavyMetal')) * (1 + c('quickFeet').value * lv('quickFeet')),
       accel: def.accel,
-      magnetRadius: def.magnetRadius * (1 + c('strongerField').value * lv('strongerField')),
+      magnetRadius: def.magnetRadius * (1 + c('strongerField').value * lv('strongerField')) * (lv('megaMagnet') ? 2 : 1),
       spin:
         def.spin *
         (1 + c('spinCycle').value * lv('spinCycle')) *
         (lv('secondRing') ? 1 + c('secondRing').value : 1) *
         (buzz ? 1 + c('buzzsaw').spin : 1),
       pulseCooldown: def.pulseCooldown * Math.pow(1 - c('quickCharge').value, lv('quickCharge')),
-      pulseRange: def.pulseRange,
+      pulseRange: def.pulseRange * (1 + c('bigPulse').value * lv('bigPulse')),
       maxHearts: def.hearts + lv('spareHeart'),
       massMult: Math.pow(1 + c('heavyMetal').value, lv('heavyMetal')),
       damageMult: buzz ? 1 + c('buzzsaw').damage : 1,
@@ -124,6 +147,16 @@ export class UpgradeSystem {
       polarity: lv('polarityFlip') > 0,
       counterRings: lv('secondRing') > 0,
       scrapShield: lv('scrapShield') > 0,
+      pulseDamageMult: 1 + c('shockwave').value * lv('shockwave'),
+      stunTime: c('staticCharge').values[lv('staticCharge')],
+      coinMult: 1 + c('scrapCollector').value * lv('scrapCollector'),
+      critBonus: c('sharpEdges').value * lv('sharpEdges'),
+      knockMult: 1 - c('reinforced').value * lv('reinforced'),
+      tvMult: lv('luckyFind') ? c('luckyFind').value : 1,
+      capBonus: c('junkHoarder').value * lv('junkHoarder') + (lv('megaMagnet') ? c('megaMagnet').value : 0),
+      fireRing: lv('fireRing') > 0,
+      fireRingDps: c('fireRing').burn,
+      fireRingTime: c('fireRing').duration,
     };
   }
 }

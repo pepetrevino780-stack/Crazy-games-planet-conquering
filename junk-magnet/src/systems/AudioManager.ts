@@ -158,6 +158,13 @@ class AudioManagerImpl {
     this.noiseBurst(0.05, 0.12, 'highpass', 2500);
   }
 
+  /** A piece fusing into a heavier one once the ball is full. */
+  fuse(): void {
+    if (!this.ctx || !this.gate('fuse', 0.06)) return;
+    this.tone(330, 0.14, 'triangle', 0.12, { slideTo: 220 });
+    this.tone(990, 0.08, 'sine', 0.05);
+  }
+
   clank(): void {
     if (!this.ctx || !this.gate('clank', 0.08)) return;
     this.tone(620, 0.12, 'square', 0.05, { slideTo: 580 });

@@ -4,7 +4,8 @@ import { Audio } from '../systems/AudioManager';
 import { CrazySDK } from '../systems/CrazySDK';
 import { Meta } from '../systems/MetaSave';
 import { Button, drawPanel } from '../ui/widgets';
-import type { GameScene, RunResult } from './GameScene';
+import { MAGNETS, MAPS, type GameScene, type RunResult } from './GameScene';
+import { formatProgress } from '../systems/Challenges';
 
 /** Death or victory → results → Play again in one click. */
 export class ResultsScene extends Phaser.Scene {
@@ -62,24 +63,41 @@ export class ResultsScene extends Phaser.Scene {
       ['Biggest junk ball', r.peakJunk, (v) => String(Math.round(v))],
       ['Score', r.score, (v) => String(Math.round(v))],
     ];
-    const rowH = Math.min(44, (ph - 380) / 4 + 20);
+    const rowH = 34;
     rows.forEach(([label, value, fmt], i) => {
-      const y = py + 140 + i * rowH;
-      this.add.text(px + 44, y, label, bodyStyle(22, CSS.text)).setOrigin(0, 0.5);
-      const t = this.add.text(px + pw - 44, y, fmt(0), displayStyle(30, i === 3 ? CSS.cyan : CSS.text)).setOrigin(1, 0.5);
+      const y = py + 132 + i * rowH;
+      this.add.text(px + 44, y, label, bodyStyle(20, CSS.text)).setOrigin(0, 0.5);
+      const t = this.add.text(px + pw - 44, y, fmt(0), displayStyle(26, i === 3 ? CSS.cyan : CSS.text)).setOrigin(1, 0.5);
       this.rollUp(t, value, fmt, 250 + i * 160);
     });
 
-    const coinsY = py + 140 + rows.length * rowH + 22;
+    const coinsY = py + 132 + rows.length * rowH + 16;
     const coinRow = this.add.container(w / 2, coinsY);
     const coin = this.add.image(-70, 0, 'coin').setScale(0.9);
-    const coinText = this.add.text(-44, 0, '+0', displayStyle(40, CSS.brass)).setOrigin(0, 0.5);
+    const coinText = this.add.text(-44, 0, '+0', displayStyle(36, CSS.brass)).setOrigin(0, 0.5);
     coinRow.add([coin, coinText]);
     this.rollUp(coinText, r.coins, (v) => `+${Math.round(v)}`, 950, () => Audio.coin());
     const parts = [`bots ${r.scrapKills}`, `ball ${r.scrapJunk}`];
     if (r.scrapOverflow) parts.push(`overflow ${r.scrapOverflow}`);
     if (r.scrapWin) parts.push(`victory ${r.scrapWin}`);
-    this.add.text(w / 2, coinsY + 34, `${parts.join(' · ')}   ·   total ${Meta.data.coins}`, bodyStyle(18, CSS.dim)).setOrigin(0.5);
+    const challengeCoins = r.challenges.filter((c) => c.completed).reduce((sum, c) => sum + c.def.reward, 0);
+    if (challengeCoins) parts.push(`challenges ${challengeCoins}`);
+    this.add.text(w / 2, coinsY + 30, `${parts.join(' · ')}   ·   total ${Meta.data.coins}`, bodyStyle(17, CSS.dim)).setOrigin(0.5);
+
+    // A reason to press Play again: the next thing to unlock, and challenge progress.
+    this.nextUnlock(w / 2, coinsY + 64, pw - 88);
+    let cy = coinsY + 100;
+    for (const c of r.challenges) {
+      const color = c.completed ? CSS.lime : CSS.text;
+      const left = this.add.text(px + 44, cy, `${c.completed ? '✔' : '•'} ${c.def.text}`, bodyStyle(17, color)).setOrigin(0, 0.5);
+      const right = this.add
+        .text(px + pw - 44, cy, c.completed ? `+${c.def.reward}` : formatProgress(c), displayStyle(18, c.completed ? CSS.brass : CSS.dim))
+        .setOrigin(1, 0.5);
+      if (c.completed) {
+        this.tweens.add({ targets: [left, right], alpha: { from: 0, to: 1 }, duration: 400, delay: 1300 });
+      }
+      cy += 24;
+    }
 
     if (r.newBest || r.daily) {
       const label = r.newBest ? 'NEW BEST!' : `TODAY'S BEST ${r.dailyBest}`;
@@ -128,6 +146,35 @@ export class ResultsScene extends Phaser.Scene {
     } else {
       this.smallButtons(w, row2, small, false);
     }
+  }
+
+  private nextUnlock(x: number, y: number, width: number): void {
+    const coins = Meta.data.coins;
+    const locked = [
+      ...Object.entries(MAGNETS).filter(([id]) => !Meta.data.magnets.includes(id)),
+      ...Object.entries(MAPS).filter(([id]) => !Meta.data.maps.includes(id)),
+    ]
+      .map(([, def]) => def)
+      .sort((a, b) => a.price - b.price);
+    const next = locked[0];
+    if (!next) {
+      this.add.text(x, y, 'Everything unlocked: chase the Daily Seed!', bodyStyle(18, CSS.cyan)).setOrigin(0.5);
+      return;
+    }
+    if (coins >= next.price) {
+      const t = this.add.text(x, y, `${next.name} is ready to unlock in the Garage!`, displayStyle(22, CSS.brass)).setOrigin(0.5);
+      this.tweens.add({ targets: t, scale: { from: 1, to: 1.06 }, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      return;
+    }
+    this.add.text(x, y - 9, `${next.price - coins} more scrap for the ${next.name}`, bodyStyle(18, CSS.text)).setOrigin(0.5);
+    const g = this.add.graphics();
+    const bw = Math.min(width, 320);
+    g.fillStyle(PAL.outline);
+    g.fillRoundedRect(x - bw / 2 - 2, y + 6, bw + 4, 12, 6);
+    g.fillStyle(0x3a3346);
+    g.fillRoundedRect(x - bw / 2, y + 8, bw, 8, 4);
+    g.fillStyle(PAL.brass);
+    g.fillRoundedRect(x - bw / 2, y + 8, Math.max(8, (bw * coins) / next.price), 8, 4);
   }
 
   private smallButtons(w: number, y: number, bw: number, shifted: boolean): void {

@@ -24,6 +24,7 @@ interface DamageNumber {
   text: Phaser.GameObjects.Text;
   vy: number;
   life: number;
+  max: number;
 }
 
 /** Hooks the game uses to feel crunchy: shake, hit-stop, slow motion, zoom punches, particles. */
@@ -67,6 +68,7 @@ export class Juice {
         .setVisible(false),
       vy: 0,
       life: 0,
+      max: 0.7,
     }));
   }
 
@@ -128,7 +130,7 @@ export class Juice {
       }
       n.text.y += n.vy * dt;
       n.vy *= Math.exp(-5 * dt);
-      const age = 0.7 - n.life;
+      const age = n.max - n.life;
       n.text.setScale(age < 0.08 ? 0.6 + age * 7 : 1.16 - Math.min(age, 0.3) * 0.5);
       n.text.setAlpha(n.life < 0.25 ? n.life / 0.25 : 1);
     }
@@ -244,11 +246,20 @@ export class Juice {
     }
   }
 
+  /** Short floating callout, e.g. "CROWD ×8!". */
+  label(x: number, y: number, text: string, color: string, size: number): void {
+    const n = this.numbers.obtain();
+    if (!n) return;
+    n.life = n.max = 1.1;
+    n.vy = -60;
+    n.text.setText(text).setFontSize(size).setColor(color).setPosition(x, y).setScale(0.6).setAlpha(1).setVisible(true);
+  }
+
   damageNumber(x: number, y: number, amount: number, crit: boolean): void {
     if (this.low && !crit) return;
     const n = this.numbers.obtain();
     if (!n) return;
-    n.life = 0.7;
+    n.life = n.max = 0.7;
     n.vy = -90;
     n.text
       .setText(String(Math.max(1, Math.round(amount))))

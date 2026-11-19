@@ -138,6 +138,50 @@ function smile(c: C, x: number, y: number, r: number): void {
   c.stroke();
 }
 
+
+/**
+ * Robots get a bright rim around their dark outline so they pop off the dark floor.
+ * The texture is padded so the rim never clips; it stays centred, so origins don't change.
+ */
+function makeBot(
+  scene: Phaser.Scene,
+  key: string,
+  w: number,
+  h: number,
+  shadowSpec: number[],
+  draw: (c: C) => void,
+  rimColor = key === 'boss' ? '#FFD6E6' : '#E4FFC8',
+  rim = 2,
+): void {
+  const pad = rim + 1;
+  make(scene, key, w + pad * 2, h + pad * 2, (c) => {
+    c.translate(pad, pad);
+    const [sx, sy, rx, ry] = shadowSpec;
+    shadow(c, sx, sy + rim, rx + rim, ry);
+    const body = document.createElement('canvas');
+    body.width = Math.ceil(w * S);
+    body.height = Math.ceil(h * S);
+    const b = body.getContext('2d')!;
+    b.scale(S, S);
+    b.lineJoin = 'round';
+    b.lineCap = 'round';
+    draw(b);
+    const mask = document.createElement('canvas');
+    mask.width = body.width;
+    mask.height = body.height;
+    const m = mask.getContext('2d')!;
+    m.drawImage(body, 0, 0);
+    m.globalCompositeOperation = 'source-in';
+    m.fillStyle = rimColor;
+    m.fillRect(0, 0, mask.width, mask.height);
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * TAU;
+      c.drawImage(mask, Math.cos(a) * rim, Math.sin(a) * rim, w, h);
+    }
+    c.drawImage(body, 0, 0, w, h);
+  });
+}
+
 // ---------------------------------------------------------------- magnets
 
 function drawHorseshoe(c: C, cx: number, cy: number, R: number, r: number, top: number): void {
@@ -241,8 +285,7 @@ function makeMagnets(scene: Phaser.Scene): void {
 // ---------------------------------------------------------------- robots
 
 function makeRobots(scene: Phaser.Scene): void {
-  make(scene, 'bot-tin', 44, 44, (c) => {
-    shadow(c, 22, 37, 14, 5);
+  makeBot(scene, 'bot-tin', 44, 44, [22, 37, 14, 5], (c) => {
     c.beginPath();
     c.moveTo(22, 9);
     c.lineTo(22, 3.5);
@@ -257,8 +300,7 @@ function makeRobots(scene: Phaser.Scene): void {
     c.fillStyle = OUT;
     c.fill();
   });
-  make(scene, 'bot-sprinter', 36, 36, (c) => {
-    shadow(c, 18, 30, 11, 4);
+  makeBot(scene, 'bot-sprinter', 36, 36, [18, 30, 11, 4], (c) => {
     for (const side of [-1, 1]) {
       c.beginPath();
       c.moveTo(18 + side * 6, 10);
@@ -274,8 +316,7 @@ function makeRobots(scene: Phaser.Scene): void {
     c.fillStyle = OUT;
     c.fill();
   });
-  make(scene, 'bot-shield', 50, 50, (c) => {
-    shadow(c, 25, 42, 16, 5);
+  makeBot(scene, 'bot-shield', 50, 50, [25, 42, 16, 5], (c) => {
     robotBody(c, 25, 25, 17);
     eye(c, 25, 22, 7);
     for (const [x, y] of [
@@ -308,8 +349,7 @@ function makeRobots(scene: Phaser.Scene): void {
     c.lineWidth = 2;
     c.stroke();
   });
-  make(scene, 'bot-antimag', 48, 48, (c) => {
-    shadow(c, 24, 40, 15, 5);
+  makeBot(scene, 'bot-antimag', 48, 48, [24, 40, 15, 5], (c) => {
     robotBody(c, 24, 26, 16);
     eye(c, 24, 25, 6.5);
     c.beginPath();
@@ -350,8 +390,7 @@ function makeRobots(scene: Phaser.Scene): void {
     },
     1,
   );
-  make(scene, 'bot-spitter', 46, 46, (c) => {
-    shadow(c, 23, 38, 15, 5);
+  makeBot(scene, 'bot-spitter', 46, 46, [23, 38, 15, 5], (c) => {
     robotBody(c, 23, 23, 15);
     eye(c, 23, 19, 6);
     circle(c, 23, 30, 3.2);
@@ -363,8 +402,7 @@ function makeRobots(scene: Phaser.Scene): void {
     rr(c, 20, 1.5, 8, 11, 2);
     fillOut(c, PINK, 2.5);
   });
-  make(scene, 'boss', 132, 132, (c) => {
-    shadow(c, 66, 116, 54, 11);
+  makeBot(scene, 'boss', 132, 132, [66, 116, 54, 11], (c) => {
     for (const x of [6, 104]) {
       rr(c, x, 30, 22, 72, 6);
       fillOut(c, STEEL, 3.5);
@@ -807,6 +845,154 @@ const ICONS: Record<string, (c: C) => void> = {
     circle(c, 32, 32, 7);
     fillOut(c, CYAN, 3);
   },
+  bigPulse(c) {
+    for (const r of [26, 18, 10]) {
+      circle(c, 32, 32, r);
+      c.lineWidth = 6;
+      c.strokeStyle = OUT;
+      c.stroke();
+      c.lineWidth = 3;
+      c.strokeStyle = CYAN;
+      c.stroke();
+    }
+    circle(c, 32, 32, 4);
+    fillOut(c, RED, 2);
+  },
+  shockwave(c) {
+    c.beginPath();
+    for (let i = 0; i < 20; i++) {
+      const a = (i / 20) * TAU;
+      const r = i % 2 === 0 ? 27 : 17;
+      c.lineTo(32 + Math.cos(a) * r, 32 + Math.sin(a) * r);
+    }
+    c.closePath();
+    fillOut(c, CYAN, 3);
+    circle(c, 32, 32, 9);
+    fillOut(c, WHITE, 3);
+  },
+  quickFeet(c) {
+    for (const [y, l] of [
+      [22, 18],
+      [32, 26],
+      [42, 18],
+    ]) {
+      c.beginPath();
+      c.moveTo(12, y);
+      c.lineTo(12 + l, y);
+      c.lineWidth = 7;
+      c.strokeStyle = OUT;
+      c.stroke();
+      c.lineWidth = 3.5;
+      c.strokeStyle = CYAN;
+      c.stroke();
+    }
+    drawHorseshoe(c, 42, 30, 12, 4, 22);
+  },
+  junkHoarder(c) {
+    for (const [x, y, t] of [
+      [22, 40, STEEL],
+      [42, 40, RUST],
+      [32, 24, BRASS],
+    ] as const) {
+      rr(c, x - 10, y - 10, 20, 20, 4);
+      fillOut(c, t, 3);
+    }
+    c.fillStyle = WHITE;
+    c.fillRect(48, 10, 4, 14);
+    c.fillRect(43, 15, 14, 4);
+  },
+  sharpEdges(c) {
+    c.beginPath();
+    c.moveTo(32, 6);
+    c.lineTo(40, 26);
+    c.lineTo(58, 32);
+    c.lineTo(40, 38);
+    c.lineTo(32, 58);
+    c.lineTo(24, 38);
+    c.lineTo(6, 32);
+    c.lineTo(24, 26);
+    c.closePath();
+    fillOut(c, BRASS, 3);
+  },
+  scrapCollector(c) {
+    ICONS.scrapPile(c);
+    c.fillStyle = WHITE;
+    c.font = '900 16px sans-serif';
+    c.textAlign = 'center';
+    c.fillText('+', 52, 18);
+  },
+  staticCharge(c) {
+    robotBody(c, 32, 36, 16);
+    boltShape(c, 22, 18, 10);
+    fillOut(c, CYAN, 2.5);
+    boltShape(c, 44, 16, 9);
+    fillOut(c, CYAN, 2.5);
+  },
+  reinforced(c) {
+    rr(c, 12, 14, 40, 36, 6);
+    fillOut(c, STEEL, 3.5);
+    for (const [x, y] of [
+      [18, 20],
+      [46, 20],
+      [18, 44],
+      [46, 44],
+    ]) {
+      circle(c, x, y, 2.6);
+      c.fillStyle = OUT;
+      c.fill();
+    }
+    c.beginPath();
+    c.moveTo(32, 18);
+    c.lineTo(32, 46);
+    c.moveTo(18, 32);
+    c.lineTo(46, 32);
+    c.lineWidth = 3;
+    c.strokeStyle = '#6E7681';
+    c.stroke();
+  },
+  luckyFind(c) {
+    rr(c, 12, 18, 40, 30, 6);
+    fillOut(c, BRASS, 3);
+    rr(c, 17, 23, 24, 20, 4);
+    fillOut(c, '#1D4B52', 2.5);
+    c.beginPath();
+    c.moveTo(22, 18);
+    c.lineTo(16, 8);
+    c.moveTo(38, 18);
+    c.lineTo(44, 8);
+    c.lineWidth = 3;
+    c.strokeStyle = OUT;
+    c.stroke();
+    circle(c, 47, 28, 2.5);
+    c.fillStyle = OUT;
+    c.fill();
+  },
+  fireRing(c) {
+    circle(c, 32, 32, 21);
+    c.lineWidth = 11;
+    c.strokeStyle = OUT;
+    c.stroke();
+    c.lineWidth = 7;
+    c.strokeStyle = RUST;
+    c.stroke();
+    c.lineWidth = 3;
+    c.strokeStyle = BRASS;
+    c.stroke();
+    ICONS.hotScrap(c);
+  },
+  megaMagnet(c) {
+    for (const r of [28, 22]) {
+      c.beginPath();
+      c.arc(32, 38, r, Math.PI * 1.1, Math.PI * 1.9);
+      c.lineWidth = 6;
+      c.strokeStyle = OUT;
+      c.stroke();
+      c.lineWidth = 3;
+      c.strokeStyle = BRASS;
+      c.stroke();
+    }
+    drawHorseshoe(c, 32, 40, 16, 6, 26);
+  },
   scrapPile(c) {
     for (const [x, y] of [
       [22, 40],
@@ -829,11 +1015,13 @@ const ICONS: Record<string, (c: C) => void> = {
   },
 };
 
+const EPIC_ICONS = ['moltenCore', 'buzzsaw', 'fireRing', 'megaMagnet'];
+
 function makeIcons(scene: Phaser.Scene): void {
   const bg: Record<string, string> = { common: '#3A3346', rare: '#1B3E46', epic: '#4A3A17' };
   for (const [id, draw] of Object.entries(ICONS)) {
     make(scene, `icon-${id}`, 64, 64, (c) => {
-      iconRing(c, bg[id === 'moltenCore' || id === 'buzzsaw' ? 'epic' : 'common']);
+      iconRing(c, bg[EPIC_ICONS.includes(id) ? 'epic' : 'common']);
       draw(c);
     });
   }
@@ -883,6 +1071,7 @@ export function makeFloor(scene: Phaser.Scene, key: string, look: MapLook): void
           c.stroke();
         }
       } else if (look.props === 'factory') {
+        c.globalAlpha = 0.55;
         c.lineWidth = 3;
         for (let x = 0; x < W; x += 160) {
           c.beginPath();
@@ -912,17 +1101,17 @@ export function makeFloor(scene: Phaser.Scene, key: string, look: MapLook): void
         }
       } else {
         // Junkyard: oil stains, patches and cracks on old asphalt.
-        for (let i = 0; i < 70; i++) {
+        for (let i = 0; i < 22; i++) {
           c.beginPath();
           c.ellipse(rng.range(0, W), rng.range(0, H), rng.range(30, 110), rng.range(20, 70), rng.range(0, 3), 0, TAU);
-          c.fillStyle = i % 3 === 0 ? 'rgba(0,0,0,0.14)' : look.detail;
-          c.globalAlpha = i % 3 === 0 ? 1 : 0.32;
+          c.fillStyle = i % 3 === 0 ? 'rgba(0,0,0,0.1)' : look.detail;
+          c.globalAlpha = i % 3 === 0 ? 1 : 0.18;
           c.fill();
         }
-        c.globalAlpha = 0.7;
+        c.globalAlpha = 0.45;
         c.lineWidth = 2;
         c.strokeStyle = look.detail;
-        for (let i = 0; i < 40; i++) {
+        for (let i = 0; i < 18; i++) {
           let x = rng.range(0, W);
           let y = rng.range(0, H);
           c.beginPath();
@@ -937,6 +1126,7 @@ export function makeFloor(scene: Phaser.Scene, key: string, look: MapLook): void
         c.globalAlpha = 1;
       }
 
+      c.globalAlpha = 1;
       drawEdgeProps(c, look, rng);
     },
     1,
@@ -1074,9 +1264,238 @@ export function makeBelt(scene: Phaser.Scene): void {
   );
 }
 
+function makeNewRobots(scene: Phaser.Scene): void {
+  const sack = (c: C, x: number, y: number, r: number, full: boolean) => {
+    circle(c, x, y, r);
+    fillOut(c, '#8A6A3A', 2.5);
+    c.beginPath();
+    c.moveTo(x - r * 0.4, y - r * 0.9);
+    c.lineTo(x + r * 0.4, y - r * 0.9);
+    c.lineWidth = 2.5;
+    c.strokeStyle = OUT;
+    c.stroke();
+    if (full) {
+      circle(c, x - r * 0.3, y - r * 0.2, r * 0.32);
+      fillOut(c, STEEL, 1.6);
+      circle(c, x + r * 0.35, y + r * 0.1, r * 0.3);
+      fillOut(c, RUST, 1.6);
+    }
+  };
+  for (const full of [false, true]) {
+    makeBot(scene, full ? 'bot-thief-full' : 'bot-thief', 44, 44, [20, 37, 13, 4.5], (c) => {
+      sack(c, 32, 14, full ? 10 : 7, full);
+      robotBody(c, 20, 23, 13);
+      rr(c, 9, 17, 22, 8, 4);
+      c.fillStyle = OUT;
+      c.fill();
+      circle(c, 20, 21, 3.4);
+      c.fillStyle = WHITE;
+      c.fill();
+      circle(c, 20.6, 21.4, 1.6);
+      c.fillStyle = OUT;
+      c.fill();
+    });
+  }
+  makeBot(scene, 'bot-splitter', 48, 48, [24, 41, 16, 5], (c) => {
+    robotBody(c, 24, 24, 18);
+    c.beginPath();
+    c.moveTo(24, 24);
+    c.lineTo(24, 7);
+    c.moveTo(24, 24);
+    c.lineTo(9, 33);
+    c.moveTo(24, 24);
+    c.lineTo(39, 33);
+    c.lineWidth = 2.5;
+    c.strokeStyle = '#4E8A2E';
+    c.stroke();
+    eye(c, 24, 22, 6.5);
+  });
+  makeBot(scene, 'bot-splitling', 28, 28, [14, 23, 9, 3], (c) => {
+    robotBody(c, 14, 14, 9.5);
+    eye(c, 14, 13, 4);
+  });
+  make(scene, 'mound', 48, 40, (c) => {
+    shadow(c, 24, 26, 20, 7);
+    c.beginPath();
+    c.ellipse(24, 22, 19, 12, 0, 0, TAU);
+    fillOut(c, '#6B5A48', 3);
+    for (const [x, y, r] of [
+      [16, 18, 4],
+      [30, 16, 5],
+      [24, 26, 3.5],
+    ]) {
+      circle(c, x, y, r);
+      c.fillStyle = '#8A7560';
+      c.fill();
+    }
+    c.beginPath();
+    c.moveTo(10, 24);
+    c.lineTo(4, 30);
+    c.moveTo(38, 24);
+    c.lineTo(45, 29);
+    c.lineWidth = 2;
+    c.strokeStyle = OUT;
+    c.stroke();
+  });
+  makeBot(scene, 'bot-burrower', 46, 48, [23, 41, 15, 5], (c) => {
+    c.beginPath();
+    c.moveTo(15, 14);
+    c.lineTo(23, 1.5);
+    c.lineTo(31, 14);
+    c.closePath();
+    fillOut(c, STEEL, 2.5);
+    c.beginPath();
+    c.moveTo(18, 10);
+    c.lineTo(28, 7);
+    c.moveTo(20, 5.5);
+    c.lineTo(26, 3.8);
+    c.lineWidth = 1.6;
+    c.strokeStyle = '#5C6570';
+    c.stroke();
+    robotBody(c, 23, 26, 15);
+    eye(c, 23, 25, 6);
+  });
+  makeBot(scene, 'bot-magnetbot', 50, 50, [25, 43, 16, 5], (c) => {
+    c.beginPath();
+    c.moveTo(14, 3);
+    c.lineTo(14, 11);
+    c.arc(25, 11, 11, Math.PI, 0, true);
+    c.lineTo(36, 3);
+    c.lineWidth = 8;
+    c.strokeStyle = OUT;
+    c.stroke();
+    c.lineWidth = 4.5;
+    c.strokeStyle = PINK;
+    c.stroke();
+    robotBody(c, 25, 28, 16);
+    eye(c, 25, 27, 6.5);
+  });
+  makeBot(scene, 'bot-bomber', 46, 48, [23, 41, 15, 5], (c) => {
+    c.beginPath();
+    c.moveTo(23, 12);
+    c.quadraticCurveTo(26, 4, 33, 4);
+    c.lineWidth = 3;
+    c.strokeStyle = OUT;
+    c.stroke();
+    circle(c, 34, 4, 2.6);
+    fillOut(c, BRASS, 1.6);
+    robotBody(c, 23, 26, 15);
+    eye(c, 23, 24, 6);
+    c.beginPath();
+    c.moveTo(16, 17);
+    c.lineTo(21, 19);
+    c.moveTo(30, 17);
+    c.lineTo(25, 19);
+    c.lineWidth = 2.5;
+    c.strokeStyle = OUT;
+    c.stroke();
+    rr(c, 19, 32, 8, 5, 2);
+    fillOut(c, PINK, 1.6);
+  });
+  makeBot(scene, 'bot-repair', 44, 42, [22, 37, 12, 4], (c) => {
+    c.beginPath();
+    c.ellipse(22, 6, 15, 3.5, 0, 0, TAU);
+    fillOut(c, STEEL, 2.4);
+    c.beginPath();
+    c.moveTo(22, 9);
+    c.lineTo(22, 12);
+    c.lineWidth = 3;
+    c.strokeStyle = OUT;
+    c.stroke();
+    robotBody(c, 22, 23, 12);
+    eye(c, 22, 21, 4.8);
+    c.fillStyle = WHITE;
+    c.fillRect(20.2, 27, 3.6, 8);
+    c.fillRect(18, 29.2, 8, 3.6);
+  });
+  makeBot(scene, 'crusher', 104, 104, [52, 92, 42, 9], (c) => {
+    rr(c, 14, 14, 76, 72, 14);
+    c.fillStyle = LIME;
+    c.fill();
+    c.save();
+    rr(c, 14, 14, 76, 72, 14);
+    c.clip();
+    c.fillStyle = LIME_DARK;
+    c.fillRect(14, 64, 76, 30);
+    c.restore();
+    rr(c, 14, 14, 76, 72, 14);
+    c.lineWidth = 4;
+    c.strokeStyle = OUT;
+    c.stroke();
+    for (const x of [4, 84]) {
+      rr(c, x, 26, 16, 50, 5);
+      fillOut(c, STEEL, 3.5);
+    }
+    rr(c, 26, 6, 52, 14, 5);
+    fillOut(c, STEEL, 3.5);
+    eye(c, 52, 44, 14);
+    c.beginPath();
+    c.moveTo(34, 26);
+    c.lineTo(48, 32);
+    c.moveTo(70, 26);
+    c.lineTo(56, 32);
+    c.lineWidth = 5;
+    c.strokeStyle = OUT;
+    c.stroke();
+    rr(c, 36, 64, 32, 10, 3);
+    fillOut(c, OUT, 2);
+  });
+  makeBot(scene, 'tyre', 44, 44, [22, 38, 17, 4], (c) => {
+    circle(c, 22, 22, 18);
+    fillOut(c, '#2B2730', 3);
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * TAU;
+      c.beginPath();
+      c.moveTo(22 + Math.cos(a) * 13, 22 + Math.sin(a) * 13);
+      c.lineTo(22 + Math.cos(a) * 17, 22 + Math.sin(a) * 17);
+      c.lineWidth = 2.5;
+      c.strokeStyle = '#4A4458';
+      c.stroke();
+    }
+    circle(c, 22, 22, 9);
+    fillOut(c, LIME, 2.5);
+    eye(c, 22, 22, 5);
+  });
+  makeBot(scene, 'bot-press', 48, 50, [24, 43, 16, 5], (c) => {
+    for (const x of [16, 32]) {
+      c.fillStyle = STEEL;
+      c.fillRect(x - 1.5, 8, 3, 10);
+    }
+    rr(c, 8, 2, 32, 9, 3);
+    fillOut(c, STEEL, 2.6);
+    robotBody(c, 24, 28, 16);
+    eye(c, 24, 27, 6.5);
+  });
+  makeBot(scene, 'mine', 44, 44, [22, 37, 13, 4], (c) => {
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * TAU;
+      c.beginPath();
+      c.moveTo(22 + Math.cos(a - 0.25) * 11, 22 + Math.sin(a - 0.25) * 11);
+      c.lineTo(22 + Math.cos(a) * 19, 22 + Math.sin(a) * 19);
+      c.lineTo(22 + Math.cos(a + 0.25) * 11, 22 + Math.sin(a + 0.25) * 11);
+      c.closePath();
+      fillOut(c, STEEL, 2.2);
+    }
+    circle(c, 22, 22, 12);
+    fillOut(c, LIME, 3);
+    circle(c, 22, 22, 4.5);
+    fillOut(c, PINK, 2);
+  });
+  make(scene, 'elite-glow', 80, 80, (c) => {
+    const g = c.createRadialGradient(40, 40, 14, 40, 40, 40);
+    g.addColorStop(0, 'rgba(242,193,78,0.7)');
+    g.addColorStop(0.6, 'rgba(242,193,78,0.35)');
+    g.addColorStop(1, 'rgba(242,193,78,0)');
+    circle(c, 40, 40, 40);
+    c.fillStyle = g;
+    c.fill();
+  });
+}
+
 export function makeAllTextures(scene: Phaser.Scene): void {
   makeMagnets(scene);
   makeRobots(scene);
+  makeNewRobots(scene);
   makeJunk(scene);
   makeFx(scene);
   makeIcons(scene);
