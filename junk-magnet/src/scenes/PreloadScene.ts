@@ -22,7 +22,14 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   private async boot(): Promise<void> {
-    CrazySDK.onAdMute((m) => Audio.setAdMuted(m));
+    // During an ad: mute, and block all input with a cover over the game.
+    const blocker = document.createElement('div');
+    Object.assign(blocker.style, { position: 'fixed', inset: '0', zIndex: '10', display: 'none', background: 'rgba(18,15,22,0.6)' });
+    document.body.appendChild(blocker);
+    CrazySDK.onAdMute((m) => {
+      Audio.setAdMuted(m);
+      blocker.style.display = m ? 'block' : 'none';
+    });
     CrazySDK.onSettingsMute((m) => Audio.setSettingsMuted(m));
     await CrazySDK.init();
     CrazySDK.loadingStart();

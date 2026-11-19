@@ -37,7 +37,7 @@ export const CSS = {
 export const FONT_DISPLAY = '"Lilita One", "Arial Black", sans-serif';
 export const FONT_BODY = '"Nunito", system-ui, sans-serif';
 
-export const CAPS = { enemies: 120, particles: 300, bullets: 60, numbers: 40 };
+export const CAPS = { enemies: 120, particles: 300, bullets: 60, numbers: 22 };
 
 export const DEPTH = {
   floor: 0,

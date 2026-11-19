@@ -27,6 +27,8 @@ const SDK_URL = 'https://sdk.crazygames.com/crazygames-sdk-v3.js';
 const MIDGAME_GAP_MS = 180_000;
 
 let sdk: SdkLike | null = null;
+/** Dev only: ?fakeads simulates ads so the rewarded flows can be tested locally. */
+const fakeAds = import.meta.env.DEV && new URLSearchParams(location.search).has('fakeads');
 let inGameplay = false;
 let lastMidgame = 0;
 let adMuteListener: (muted: boolean) => void = () => {};
@@ -87,6 +89,11 @@ export const CrazySDK = {
     return sdk !== null;
   },
 
+  /** Rewarded buttons only show when an ad can actually play (never with an ad blocker). */
+  get adsAvailable(): boolean {
+    return sdk !== null || fakeAds;
+  },
+
   onAdMute(listener: (muted: boolean) => void): void {
     adMuteListener = listener;
   },
@@ -136,6 +143,17 @@ export const CrazySDK = {
 
   /** Rewarded ad: onReward runs only if the ad completed. done always runs once. */
   rewarded(onReward: () => void, done: () => void): void {
+    // A rewarded ad also counts toward the midgame cap, so a revive is never followed by a midgame ad.
+    lastMidgame = Date.now();
+    if (!sdk && fakeAds) {
+      adMuteListener(true);
+      window.setTimeout(() => {
+        adMuteListener(false);
+        onReward();
+        done();
+      }, 600);
+      return;
+    }
     if (!sdk) return done();
     let finished = false;
     const end = (rewarded: boolean) => {

@@ -11,6 +11,7 @@ import { formatProgress } from '../systems/Challenges';
 export class ResultsScene extends Phaser.Scene {
   private result!: RunResult;
   private ready = false;
+  private rolls: Phaser.Tweens.Tween[] = [];
 
   constructor() {
     super('Results');
@@ -39,7 +40,8 @@ export class ResultsScene extends Phaser.Scene {
     const w = this.scale.width;
     const h = this.scale.height;
     this.cameras.main.setSize(w, h);
-    this.add.rectangle(0, 0, w, h, PAL.outline, 0.55).setOrigin(0).setInteractive();
+    this.rolls = [];
+    this.add.rectangle(0, 0, w, h, PAL.outline, 0.55).setOrigin(0).setInteractive().on('pointerdown', () => this.skipRollUps());
 
     const pw = Math.min(560, w - 32);
     const ph = Math.min(640, h - 30);
@@ -54,7 +56,7 @@ export class ResultsScene extends Phaser.Scene {
       .setScale(0);
     this.tweens.add({ targets: title, scale: 1, duration: 420, ease: 'Back.easeOut' });
     this.add
-      .text(w / 2, py + 96, r.daily ? `Daily Seed · ${r.mapName}` : r.mapName, bodyStyle(20, CSS.dim))
+      .text(w / 2, py + 96, r.daily ? `Daily Seed · ${r.mapName}` : `${r.mapName} · ${r.modeName}`, bodyStyle(20, CSS.dim))
       .setOrigin(0.5);
 
     const rows: [string, number, (v: number) => string][] = [
@@ -68,7 +70,7 @@ export class ResultsScene extends Phaser.Scene {
       const y = py + 132 + i * rowH;
       this.add.text(px + 44, y, label, bodyStyle(20, CSS.text)).setOrigin(0, 0.5);
       const t = this.add.text(px + pw - 44, y, fmt(0), displayStyle(26, i === 3 ? CSS.cyan : CSS.text)).setOrigin(1, 0.5);
-      this.rollUp(t, value, fmt, 250 + i * 160);
+      this.rollUp(t, value, fmt, 80 + i * 90);
     });
 
     const coinsY = py + 132 + rows.length * rowH + 16;
@@ -76,13 +78,15 @@ export class ResultsScene extends Phaser.Scene {
     const coin = this.add.image(-70, 0, 'coin').setScale(0.9);
     const coinText = this.add.text(-44, 0, '+0', displayStyle(36, CSS.brass)).setOrigin(0, 0.5);
     coinRow.add([coin, coinText]);
-    this.rollUp(coinText, r.coins, (v) => `+${Math.round(v)}`, 950, () => Audio.coin());
+    // The headline is everything earned this run; the breakdown adds up to it exactly.
+    const challengeCoins = r.challenges.filter((c) => c.completed).reduce((sum, c) => sum + c.def.reward, 0);
+    const earned = r.coins + challengeCoins;
+    this.rollUp(coinText, earned, (v) => `+${Math.round(v)}`, 450, () => Audio.coin());
     const parts = [`bots ${r.scrapKills}`, `ball ${r.scrapJunk}`];
     if (r.scrapOverflow) parts.push(`overflow ${r.scrapOverflow}`);
     if (r.scrapWin) parts.push(`victory ${r.scrapWin}`);
-    const challengeCoins = r.challenges.filter((c) => c.completed).reduce((sum, c) => sum + c.def.reward, 0);
     if (challengeCoins) parts.push(`challenges ${challengeCoins}`);
-    this.add.text(w / 2, coinsY + 30, `${parts.join(' · ')}   ·   total ${Meta.data.coins}`, bodyStyle(17, CSS.dim)).setOrigin(0.5);
+    this.add.text(w / 2, coinsY + 30, `${parts.join(' + ')}   ·   wallet ${Meta.data.coins}`, bodyStyle(17, CSS.dim)).setOrigin(0.5);
 
     // A reason to press Play again: the next thing to unlock, and challenge progress.
     this.nextUnlock(w / 2, coinsY + 64, pw - 88);
@@ -97,6 +101,15 @@ export class ResultsScene extends Phaser.Scene {
         this.tweens.add({ targets: [left, right], alpha: { from: 0, to: 1 }, duration: 400, delay: 1300 });
       }
       cy += 24;
+    }
+
+    // New achievements: shown as a badge with the title you earned.
+    if (r.achievements.length) {
+      const a = r.achievements[r.achievements.length - 1];
+      const more = r.achievements.length > 1 ? ` +${r.achievements.length - 1}` : '';
+      const badge = this.add.text(px + 20, py + 18, `★ ${a.title.toUpperCase()}${more}`, displayStyle(20, CSS.brass)).setOrigin(0, 0.5).setAngle(-6);
+      this.add.text(px + 24, py + 40, a.desc, bodyStyle(14, CSS.dim)).setOrigin(0, 0.5).setAngle(-6);
+      this.tweens.add({ targets: badge, scale: { from: 1.3, to: 1 }, duration: 500, ease: 'Back.easeOut' });
     }
 
     if (r.newBest || r.daily) {
@@ -204,13 +217,19 @@ export class ResultsScene extends Phaser.Scene {
     });
   }
 
+  /** Tap anywhere to jump straight to the final numbers. */
+  private skipRollUps(): void {
+    for (const t of this.rolls) if (t.isPlaying() || t.isPending()) t.complete();
+    this.rolls = [];
+  }
+
   private rollUp(text: Phaser.GameObjects.Text, value: number, fmt: (v: number) => string, delay: number, onDone?: () => void): void {
     const counter = { v: 0 };
-    this.tweens.add({
+    this.rolls.push(this.tweens.add({
       targets: counter,
       v: value,
       delay,
-      duration: 600,
+      duration: 450,
       ease: 'Cubic.easeOut',
       onUpdate: () => text.setText(fmt(counter.v)),
       onComplete: () => {
@@ -218,7 +237,7 @@ export class ResultsScene extends Phaser.Scene {
         onDone?.();
         this.tweens.add({ targets: text, scale: { from: 1.25, to: 1 }, duration: 200, ease: 'Back.easeOut' });
       },
-    });
+    }));
   }
 
   private playAgain(): void {

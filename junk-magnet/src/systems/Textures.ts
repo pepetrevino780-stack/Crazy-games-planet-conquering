@@ -256,6 +256,29 @@ function makeMagnets(scene: Phaser.Scene): void {
     eye(c, 38, 28, 4.5);
     smile(c, 32, 33, 4);
   });
+  make(scene, 'magnet-mega', 64, 64, (c) => {
+    shadow(c, 32, 56, 24, 6);
+    drawHorseshoe(c, 32, 28, 27, 9, 6);
+    c.fillStyle = BRASS;
+    c.fillRect(8, 16, 6, 6);
+    c.fillRect(50, 16, 6, 6);
+    eye(c, 24, 42, 4.6);
+    eye(c, 40, 42, 4.6);
+    smile(c, 32, 47, 4);
+  });
+  make(scene, 'magnet-repulsor', 64, 64, (c) => {
+    shadow(c, 32, 54, 20, 6);
+    circle(c, 32, 30, 26);
+    c.lineWidth = 6;
+    c.strokeStyle = OUT;
+    c.stroke();
+    c.lineWidth = 3;
+    c.strokeStyle = CYAN;
+    c.stroke();
+    drawHorseshoe(c, 32, 30, 16, 6, 18);
+    eye(c, 27, 40, 3.4);
+    eye(c, 37, 40, 3.4);
+  });
   make(scene, 'magnet-blackhole', 64, 64, (c) => {
     shadow(c, 32, 54, 20, 6);
     circle(c, 32, 30, 23);
@@ -560,6 +583,63 @@ function makeJunk(scene: Phaser.Scene): void {
     c.fill();
     circle(c, 23.5, 17.5, 1.6);
     c.fill();
+  });
+  make(scene, 'junk-battery', 18, 22, (c) => {
+    shadow(c, 9, 19, 6, 2.5);
+    rr(c, 3.5, 4, 11, 15, 2.5);
+    fillOut(c, '#2E6B73', 2.4);
+    c.fillStyle = STEEL;
+    c.fillRect(6.5, 1.5, 5, 3);
+    boltShape(c, 9, 11.5, 5);
+    c.fillStyle = CYAN;
+    c.fill();
+  });
+  make(scene, 'junk-fuel', 20, 22, (c) => {
+    shadow(c, 10, 19, 7, 2.5);
+    rr(c, 3, 5, 14, 14, 2.5);
+    fillOut(c, RED, 2.4);
+    rr(c, 11, 1.5, 5, 5, 1.5);
+    fillOut(c, STEEL, 1.8);
+    c.beginPath();
+    c.moveTo(5, 8);
+    c.lineTo(15, 16);
+    c.moveTo(15, 8);
+    c.lineTo(5, 16);
+    c.lineWidth = 1.6;
+    c.strokeStyle = 'rgba(255,255,255,0.55)';
+    c.stroke();
+  });
+  make(scene, 'junk-spring', 18, 20, (c) => {
+    shadow(c, 9, 17, 6, 2.2);
+    c.beginPath();
+    for (let i = 0; i <= 12; i++) {
+      const y = 3 + i * 1.1;
+      const x = 9 + (i % 2 === 0 ? -5 : 5);
+      if (i === 0) c.moveTo(x, y);
+      else c.lineTo(x, y);
+    }
+    c.lineWidth = 4.6;
+    c.strokeStyle = OUT;
+    c.stroke();
+    c.lineWidth = 2.4;
+    c.strokeStyle = LIME;
+    c.stroke();
+  });
+  make(scene, 'junk-gold', 18, 18, (c) => {
+    shadow(c, 9, 15, 6, 2.2);
+    c.beginPath();
+    c.moveTo(3, 12);
+    c.lineTo(6, 5);
+    c.lineTo(12, 5);
+    c.lineTo(15, 12);
+    c.closePath();
+    fillOut(c, BRASS, 2.4);
+    c.beginPath();
+    c.moveTo(7, 7);
+    c.lineTo(10, 7);
+    c.lineWidth = 1.6;
+    c.strokeStyle = '#FFF3B0';
+    c.stroke();
   });
   make(scene, 'junk-cube', 24, 24, (c) => {
     shadow(c, 12, 20, 9, 3);
@@ -1103,6 +1183,24 @@ const ICONS: Record<string, (c: C) => void> = {
     }
     ICONS.fireball(c);
   },
+  blackHolePulse(c) {
+    circle(c, 32, 32, 25);
+    const g = c.createRadialGradient(32, 32, 3, 32, 32, 25);
+    g.addColorStop(0, '#05030A');
+    g.addColorStop(1, '#4B2A73');
+    c.fillStyle = g;
+    c.fill();
+    c.lineWidth = 3;
+    c.strokeStyle = OUT;
+    c.stroke();
+    for (let i = 0; i < 3; i++) {
+      c.beginPath();
+      c.arc(32, 32, 9 + i * 6, i * 2, i * 2 + 2.6);
+      c.lineWidth = 3;
+      c.strokeStyle = CYAN;
+      c.stroke();
+    }
+  },
   scrapPile(c) {
     for (const [x, y] of [
       [22, 40],
@@ -1125,7 +1223,7 @@ const ICONS: Record<string, (c: C) => void> = {
   },
 };
 
-const EPIC_ICONS = ['moltenCore', 'buzzsaw', 'fireRing', 'megaMagnet', 'inferno'];
+const EPIC_ICONS = ['moltenCore', 'buzzsaw', 'fireRing', 'megaMagnet', 'inferno', 'blackHolePulse'];
 
 function makeIcons(scene: Phaser.Scene): void {
   const bg: Record<string, string> = { common: '#3A3346', rare: '#1B3E46', epic: '#4A3A17' };
@@ -1255,6 +1353,27 @@ function drawEdgeProps(c: C, look: MapLook, rng: Rng): void {
   c.fillRect(W - m, 0, m, H);
   c.lineWidth = 4;
   c.strokeStyle = OUT;
+  // A clear arena wall: hazard-striped barrier along the playfield edge.
+  const band = 14;
+  c.save();
+  c.beginPath();
+  c.rect(m - band, m - band, W - (m - band) * 2, H - (m - band) * 2);
+  c.rect(m, m, W - m * 2, H - m * 2);
+  c.clip('evenodd');
+  c.fillStyle = '#F2C14E';
+  c.fillRect(0, 0, W, H);
+  c.strokeStyle = OUT;
+  c.lineWidth = 10;
+  for (let d = -H; d < W + H; d += 28) {
+    c.beginPath();
+    c.moveTo(d, 0);
+    c.lineTo(d + H, H);
+    c.stroke();
+  }
+  c.restore();
+  c.lineWidth = 4;
+  c.strokeStyle = OUT;
+  c.strokeRect(m - band, m - band, W - (m - band) * 2, H - (m - band) * 2);
   c.strokeRect(m, m, W - m * 2, H - m * 2);
 
   const spots: [number, number][] = [];
@@ -1650,6 +1769,110 @@ function makeNewRobots(scene: Phaser.Scene): void {
     c.fillRect(19, 12, 6, 18);
     c.fillRect(13, 18, 18, 6);
   });
+  makeBot(scene, 'bot-driller', 46, 52, [23, 45, 15, 5], (c) => {
+    // Faces up; the game rotates it toward you.
+    c.beginPath();
+    c.moveTo(13, 20);
+    c.lineTo(23, 1);
+    c.lineTo(33, 20);
+    c.closePath();
+    fillOut(c, STEEL, 2.6);
+    for (const y of [8, 13, 18]) {
+      c.beginPath();
+      c.moveTo(23 - (20 - y) * 0.45, y);
+      c.lineTo(23 + (20 - y) * 0.45, y - 3);
+      c.lineWidth = 1.8;
+      c.strokeStyle = '#5C6570';
+      c.stroke();
+    }
+    robotBody(c, 23, 31, 15);
+    eye(c, 23, 31, 6);
+    c.beginPath();
+    c.moveTo(14, 25);
+    c.lineTo(20, 27);
+    c.moveTo(32, 25);
+    c.lineTo(26, 27);
+    c.lineWidth = 2.5;
+    c.strokeStyle = OUT;
+    c.stroke();
+  });
+  makeBot(scene, 'magnetron', 120, 120, [60, 106, 46, 10], (c) => {
+    circle(c, 60, 62, 42);
+    c.fillStyle = LIME;
+    c.fill();
+    c.save();
+    circle(c, 60, 62, 42);
+    c.clip();
+    c.fillStyle = LIME_DARK;
+    c.fillRect(10, 78, 100, 40);
+    c.restore();
+    circle(c, 60, 62, 42);
+    c.lineWidth = 4;
+    c.strokeStyle = OUT;
+    c.stroke();
+    // A giant pink horseshoe crown.
+    c.beginPath();
+    c.moveTo(28, 6);
+    c.lineTo(28, 26);
+    c.arc(60, 26, 32, Math.PI, 0, true);
+    c.lineTo(92, 6);
+    c.lineWidth = 14;
+    c.strokeStyle = OUT;
+    c.stroke();
+    c.lineWidth = 9;
+    c.strokeStyle = PINK;
+    c.stroke();
+    for (const x of [28, 92]) {
+      rr(c, x - 7, 2, 14, 8, 2);
+      fillOut(c, '#DCE2E8', 2.5);
+    }
+    eye(c, 60, 60, 16);
+    rr(c, 42, 82, 36, 10, 3);
+    fillOut(c, OUT, 2);
+  });
+  make(scene, 'chest', 60, 52, (c) => {
+    shadow(c, 30, 46, 24, 5);
+    rr(c, 6, 18, 48, 28, 5);
+    fillOut(c, '#8A5A2B', 3);
+    c.beginPath();
+    c.moveTo(6, 22);
+    c.quadraticCurveTo(30, 0, 54, 22);
+    c.closePath();
+    fillOut(c, '#A86E35', 3);
+    c.fillStyle = BRASS;
+    for (const x of [12, 44]) c.fillRect(x, 10, 5, 36);
+    rr(c, 24, 20, 12, 14, 3);
+    fillOut(c, BRASS, 2.5);
+    circle(c, 30, 27, 2);
+    c.fillStyle = OUT;
+    c.fill();
+  });
+  makeBot(
+    scene,
+    'bot-golden',
+    40,
+    40,
+    [20, 34, 13, 4],
+    (c) => {
+      circle(c, 20, 20, 13);
+      const g = c.createRadialGradient(16, 15, 2, 20, 20, 14);
+      g.addColorStop(0, '#FFF3B0');
+      g.addColorStop(1, BRASS);
+      c.fillStyle = g;
+      c.fill();
+      c.lineWidth = 3;
+      c.strokeStyle = OUT;
+      c.stroke();
+      eye(c, 20, 18, 5.5);
+      c.beginPath();
+      c.moveTo(14, 27);
+      c.quadraticCurveTo(20, 31, 26, 27);
+      c.lineWidth = 2;
+      c.strokeStyle = OUT;
+      c.stroke();
+    },
+    '#FFF3B0',
+  );
   make(scene, 'elite-glow', 80, 80, (c) => {
     const g = c.createRadialGradient(40, 40, 14, 40, 40, 40);
     g.addColorStop(0, 'rgba(242,193,78,0.7)');

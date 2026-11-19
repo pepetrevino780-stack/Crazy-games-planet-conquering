@@ -48,6 +48,7 @@ export class HudScene extends Phaser.Scene {
   private pulseRadius = 40;
   private specialBtn!: Phaser.GameObjects.Container;
   private abilityGfx!: Phaser.GameObjects.Graphics;
+  private threatGfx!: Phaser.GameObjects.Graphics;
   private abilityIcons: Phaser.GameObjects.Image[] = [];
   private abilityLabels: Phaser.GameObjects.Text[] = [];
 
@@ -67,7 +68,7 @@ export class HudScene extends Phaser.Scene {
     this.hpShake = 0;
     this.hpBar = this.add.graphics();
     this.hpText = this.add.text(0, 0, '', displayStyle(15)).setOrigin(0.5);
-    this.phaseText = this.add.text(0, 0, '', displayStyle(16, CSS.pink)).setOrigin(1, 0.5);
+    this.phaseText = this.add.text(0, 0, '', displayStyle(24, CSS.pink)).setOrigin(1, 0.5);
 
     this.vignette = this.add.graphics();
     this.xpBar = this.add.graphics();
@@ -90,6 +91,7 @@ export class HudScene extends Phaser.Scene {
 
     this.createPulseButton();
     this.abilityGfx = this.add.graphics();
+    this.threatGfx = this.add.graphics();
     this.abilityIcons = [0, 1, 2].map(() => this.add.image(0, 0, 'icon-fireball').setScale(0.42).setVisible(false));
     this.abilityLabels = [0, 1, 2].map(() => this.add.text(0, 0, '', displayStyle(13, CSS.text)).setOrigin(0.5).setVisible(false));
     const sb = this.add.container(0, 0);
@@ -262,6 +264,51 @@ export class HudScene extends Phaser.Scene {
     void now;
   }
 
+  private drawThreats(g: GameScene): void {
+    const gfx = this.threatGfx;
+    gfx.clear();
+    if (g.state !== 'playing') return;
+    const cam = g.cameras.main;
+    const view = cam.worldView;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const cx = w / 2;
+    const cy = h / 2;
+    let shown = 0;
+    for (const e of g.enemies.pool.items) {
+      if (shown >= 8) break;
+      if (!e.active || e.hidden) continue;
+      const big = e.kind === 'boss' || e.kind === 'crusher' || e.kind === 'magnetron';
+      if (!big && e.kind !== 'bomber' && e.kind !== 'driller') continue;
+      if (view.contains(e.x, e.y)) continue;
+      const sx = (e.x - view.x) * cam.zoom;
+      const sy = (e.y - view.y) * cam.zoom;
+      const dx = sx - cx;
+      const dy = sy - cy;
+      if (Math.hypot(dx, dy) > Math.max(w, h) * 1.3) continue;
+      // Clamp to the screen edge.
+      const k = Math.min((w / 2 - 34) / Math.abs(dx || 1e-6), (h / 2 - 34) / Math.abs(dy || 1e-6));
+      const ex = cx + dx * k;
+      const ey = cy + dy * k;
+      const a = Math.atan2(dy, dx);
+      const size = big ? 20 : 13;
+      const pulse = 0.6 + 0.4 * Math.sin(this.time.now / 120);
+      gfx.fillStyle(PAL.red, 0.25 * pulse);
+      gfx.fillCircle(ex, ey, size * 1.8);
+      gfx.fillStyle(big ? PAL.pink : PAL.red, 0.9);
+      gfx.lineStyle(3, PAL.outline);
+      const p1x = ex + Math.cos(a) * size;
+      const p1y = ey + Math.sin(a) * size;
+      const p2x = ex + Math.cos(a + 2.5) * size;
+      const p2y = ey + Math.sin(a + 2.5) * size;
+      const p3x = ex + Math.cos(a - 2.5) * size;
+      const p3y = ey + Math.sin(a - 2.5) * size;
+      gfx.fillTriangle(p1x, p1y, p2x, p2y, p3x, p3y);
+      gfx.strokeTriangle(p1x, p1y, p2x, p2y, p3x, p3y);
+      shown++;
+    }
+  }
+
   private overPulse(p: Phaser.Input.Pointer): boolean {
     return Phaser.Math.Distance.Between(p.x, p.y, this.pulseBtn.x, this.pulseBtn.y) < this.pulseRadius + 14;
   }
@@ -408,8 +455,11 @@ export class HudScene extends Phaser.Scene {
     this.hpText.setPosition(hx + hw / 2, hy + hh / 2);
 
     // Current aggression phase, under the timer.
-    if (this.phaseText.text !== g.phaseLabel) this.phaseText.setText(g.phaseLabel);
-    this.phaseText.setPosition(w - 18, 76).setVisible(g.isRun);
+    if (this.phaseText.text !== g.phaseLabel) {
+      this.phaseText.setText(g.phaseLabel);
+      this.tweens.add({ targets: this.phaseText, scale: { from: 1.8, to: 1 }, duration: 600, ease: 'Back.easeOut' });
+    }
+    this.phaseText.setPosition(w - 18, 80).setVisible(g.isRun);
 
     // Run scrap coins.
     const coins = g.runCoins;
@@ -524,6 +574,9 @@ export class HudScene extends Phaser.Scene {
       this.joy.lineStyle(4, PAL.outline);
       this.joy.strokeCircle(this.joyBaseX + Controls.touchX * JOY_RADIUS * 0.7, this.joyBaseY + Controls.touchY * JOY_RADIUS * 0.7, 28);
     }
+
+    // Off-screen danger: red arrows at the screen edge pointing at bosses, Bombers and Drillers.
+    this.drawThreats(g);
 
     // Red edge flash when you get hit; a pulse while health is low.
     this.vignette.clear();

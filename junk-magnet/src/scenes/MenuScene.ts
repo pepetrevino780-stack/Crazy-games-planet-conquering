@@ -3,8 +3,11 @@ import { CSS, PAL, bodyStyle, displayStyle } from '../config';
 import { Audio } from '../systems/AudioManager';
 import { Controls } from '../systems/Controls';
 import { Meta } from '../systems/MetaSave';
-import { todayKey } from '../rng';
+import { hashString, todayKey } from '../rng';
+import { DAILY_MODS, MODES, modeUnlocked } from './GameScene';
 import { Button } from '../ui/widgets';
+import { CrazySDK } from '../systems/CrazySDK';
+import { Rewards } from '../systems/Rewards';
 import { activeChallenges, formatProgress } from '../systems/Challenges';
 import type { GameScene } from './GameScene';
 
@@ -53,6 +56,25 @@ export class MenuScene extends Phaser.Scene {
       this.tweens.add({ targets: t, y: t.y - 6, duration: 1400, delay: 600 + d, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     }
 
+    // Hard and Nightmare unlock after wins; pick the mode here.
+    if (modeUnlocked('hard')) {
+      const order = ['normal', 'hard', 'nightmare'].filter((m) => modeUnlocked(m));
+      if (!order.includes(Meta.data.mode)) Meta.data.mode = 'normal';
+      const modeBtn: Button = new Button(this, w / 2, h * 0.58 - 74, {
+        width: 240,
+        height: 40,
+        label: `MODE: ${MODES[Meta.data.mode].name} ▸`,
+        fill: Meta.data.mode === 'normal' ? 0x5a5266 : Meta.data.mode === 'hard' ? PAL.rust : PAL.pink,
+        fontSize: 18,
+        onClick: () => {
+          Meta.data.mode = order[(order.indexOf(Meta.data.mode) + 1) % order.length];
+          Meta.save();
+          this.build();
+        },
+      });
+      void modeBtn;
+    }
+
     const play = new Button(this, w / 2, h * 0.58, {
       width: Math.min(340, w - 80),
       height: 96,
@@ -86,7 +108,8 @@ export class MenuScene extends Phaser.Scene {
       fontSize: 26,
       onClick: () => this.play(true),
     }).text.setStroke(CSS.outline, 0);
-    const daily = Meta.data.daily.key === todayKey() ? `Today's best: ${Meta.data.daily.best}` : 'Same map for everyone today';
+    const mod = DAILY_MODS[hashString(`junk-magnet-${todayKey()}`) % DAILY_MODS.length];
+    const daily = Meta.data.daily.key === todayKey() ? `${mod.name} · best ${Meta.data.daily.best}` : `Today: ${mod.name}`;
     this.add.text(w / 2 + bw / 2 + 12, rowY + 46, daily, bodyStyle(18, CSS.dim)).setOrigin(0.5);
 
     // Active challenges: short goals that pay scrap.
@@ -105,8 +128,41 @@ export class MenuScene extends Phaser.Scene {
     }
 
     const coins = this.add.container(w - 20, 34);
+    if (Meta.data.title) this.add.text(w - 20, 72, `Title: ${Meta.data.title}`, displayStyle(18, CSS.lime)).setOrigin(1, 0.5);
     const ct = this.add.text(0, 0, String(Meta.data.coins), displayStyle(30, CSS.brass)).setOrigin(1, 0.5);
     coins.add([ct, this.add.image(-ct.width - 22, 0, 'coin').setScale(0.75)]);
+    // Daily chest: free once a day, plus an optional bonus chest for an ad.
+    const chestLabel = Rewards.freeChestReady() ? 'FREE CHEST' : Rewards.bonusChestReady() && CrazySDK.adsAvailable ? '▶ BONUS CHEST' : '';
+    if (chestLabel) {
+      const free = Rewards.freeChestReady();
+      const chestBtn: Button = new Button(this, 112, 84, {
+        width: 196,
+        height: 50,
+        label: chestLabel,
+        icon: 'chest',
+        fill: PAL.brass,
+        textColor: CSS.outline,
+        fontSize: 20,
+        onClick: () => {
+          const open = () => {
+            this.scene.stop();
+            this.scene.launch('Chest', { mode: free ? 'daily' : 'bonus' });
+          };
+          if (free) open();
+          else {
+            chestBtn.setEnabled(false);
+            let ok = false;
+            CrazySDK.rewarded(
+              () => (ok = true),
+              () => (ok ? open() : chestBtn.setEnabled(true)),
+            );
+          }
+        },
+      });
+      chestBtn.text.setStroke(CSS.outline, 0);
+      this.tweens.add({ targets: chestBtn, angle: { from: -3, to: 3 }, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    }
+
     if (Meta.data.best.score > 0) {
       this.add.text(20, 34, `Best ${Meta.data.best.score}`, displayStyle(24, CSS.cyan)).setOrigin(0, 0.5);
     }

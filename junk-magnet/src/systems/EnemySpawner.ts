@@ -22,6 +22,9 @@ export type EnemyKind =
   | 'bomber'
   | 'repair'
   | 'crusher'
+  | 'driller'
+  | 'magnetron'
+  | 'golden'
   | 'tyre'
   | 'press'
   | 'mine'
@@ -90,6 +93,18 @@ export interface EnemyDef {
   armorAfterSlam?: number;
   stompDamage?: number;
   bulletDmg?: number;
+  junkArmor?: number;
+  noKnock?: boolean;
+  pullFraction?: number;
+  ringEvery?: number;
+  ringBullets?: number;
+  minionEvery?: number;
+  escapeAfter?: number;
+}
+
+/** Bosses and mini-bosses: not pushed around, not affected by phase speed. */
+export function isBig(kind: EnemyKind): boolean {
+  return kind === 'boss' || kind === 'crusher' || kind === 'magnetron';
 }
 
 export interface Phase {
@@ -128,6 +143,7 @@ const SQUADS = enemyData.squads as unknown as Squad[];
 const WAVES = enemyData.waves;
 const INTRO = enemyData.intro;
 export const CONTACT_TIME = enemyData.contactTime;
+export const RING = enemyData.ring;
 
 export const BOSS_WALK = 0;
 export const BOSS_TELEGRAPH = 1;
@@ -188,6 +204,10 @@ export interface Enemy {
   healing: boolean;
   /** Crusher: immune to junk contact for a few seconds after each slam. */
   junkImmune: number;
+  /** Seconds spent pressing on the junk ball (hits land through it). */
+  ringTouch: number;
+  /** Last damage came from an aimed attack: its junk flies to you instead of dropping far away. */
+  weaponHit: boolean;
   /** Which side this robot flanks from (−1 or 1). */
   flankSide: number;
   seed: number;
@@ -225,6 +245,8 @@ export interface EnemyHost {
   onMinibossWarning(): void;
   onMinibossSpawned(e: Enemy): void;
   onCrusherStomp(e: Enemy): void;
+  onMidbossWarning(): void;
+  onMidbossSpawned(e: Enemy): void;
   onBurrowerEmerge(e: Enemy): void;
   onPressSlam(e: Enemy): void;
   onMagnetPull(e: Enemy, pieces: number): void;
@@ -232,6 +254,9 @@ export interface EnemyHost {
   queueExplosion(x: number, y: number, r: number, damage: number, hurtsPlayer: boolean): void;
   onSpitterFire(): void;
   onPhaseChange(index: number): void;
+  onGoldenEscaped(e: Enemy): void;
+  /** Difficulty mode and Daily Seed modifier. */
+  mods: { hp: number; speed: number; onlySprinters: boolean };
 }
 
 export class EnemySpawner {
@@ -241,11 +266,15 @@ export class EnemySpawner {
   wave = 0;
   boss: Enemy | null = null;
   crusher: Enemy | null = null;
+  magnetron: Enemy | null = null;
+  midbossSpawned = false;
+  private midbossWarned = false;
   bossSpawned = false;
   minibossSpawned = false;
   private time = 0;
   phaseIndex = 0;
   private fillTimer = 0;
+  private goldenTimer = enemyData.golden.firstAt;
   private bossWarned = false;
   private minibossWarned = false;
   private credit = 0;
@@ -300,6 +329,8 @@ export class EnemySpawner {
       bounces: 0,
       healing: false,
       junkImmune: 0,
+      ringTouch: 0,
+      weaponHit: false,
       flankSide: 1,
       seed: 0,
       age: 0,
@@ -325,13 +356,14 @@ export class EnemySpawner {
   }
 
   get hpMult(): number {
-    return 1 + WAVES.hpPerWave * this.wave;
+    return (1 + WAVES.hpPerWave * this.wave) * this.host.mods.hp;
   }
 
   /** The boss or mini-boss currently on the field (for the HUD bar). */
   get bigOne(): Enemy | null {
     if (this.boss?.active) return this.boss;
     if (this.crusher?.active) return this.crusher;
+    if (this.magnetron?.active) return this.magnetron;
     return null;
   }
 
@@ -340,7 +372,7 @@ export class EnemySpawner {
     if (!e) return null;
     const def = ENEMY_DEFS[kind];
     const r = def.radius;
-    const big = kind === 'boss' || kind === 'crusher';
+    const big = isBig(kind);
     e.kind = kind;
     e.def = def;
     e.x = Phaser.Math.Clamp(x, ARENA.margin + r, ARENA.width - ARENA.margin - r);
@@ -376,11 +408,13 @@ export class EnemySpawner {
     e.bounces = 0;
     e.healing = false;
     e.junkImmune = 0;
+    e.ringTouch = 0;
+    e.weaponHit = false;
     e.flankSide = Math.random() < 0.5 ? -1 : 1;
     e.seed = Math.random() * 100;
     e.age = 0;
-    e.mode = kind === 'boss' || kind === 'crusher' ? BOSS_ENTER : MODE_MOVE;
-    e.modeTimer = kind === 'boss' || kind === 'crusher' ? 2 : kind === 'burrower' ? (def.tunnelTime ?? 3.5) : 0;
+    e.mode = isBig(kind) ? BOSS_ENTER : MODE_MOVE;
+    e.modeTimer = isBig(kind) ? 2 : kind === 'burrower' ? (def.tunnelTime ?? 3.5) : 0;
     e.cycle = 0;
     e.sprite
       .setTexture(e.hidden ? 'mound' : def.texture)
@@ -420,7 +454,7 @@ export class EnemySpawner {
       const dx = e.x - fromX;
       const dy = e.y - fromY;
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const heavy = e.kind === 'boss' || e.kind === 'crusher' || e.kind === 'tyre';
+      const heavy = isBig(e.kind) || e.kind === 'tyre' || !!e.def.noKnock;
       const k = heavy ? knockback * 0.04 : knockback;
       e.kx = (dx / dist) * k;
       e.ky = (dy / dist) * k;
@@ -446,6 +480,7 @@ export class EnemySpawner {
     this.pool.release(e);
     if (e === this.boss) this.boss = null;
     if (e === this.crusher) this.crusher = null;
+    if (e === this.magnetron) this.magnetron = null;
     const d = e.def;
     if (e.kind === 'bomber' || e.kind === 'mine') {
       this.host.queueExplosion(e.x, e.y, d.blastRadius ?? 100, (d.blastDamage ?? 30) * this.hpMult, true);
@@ -512,6 +547,7 @@ export class EnemySpawner {
   }
 
   private pickNext(t: number): { kind?: EnemyKind; squad?: Squad; cost: number } {
+    if (this.host.mods.onlySprinters) return { kind: 'sprinter', cost: ENEMY_DEFS.sprinter.cost };
     const rng = this.host.spawnRng;
     const map = this.host.mapId;
     const kinds = KINDS.filter((k) => {
@@ -585,6 +621,31 @@ export class EnemySpawner {
       if (c) {
         this.crusher = c;
         this.host.onMinibossSpawned(c);
+      }
+    }
+
+    // Golden Robot: rare, fast, runs away; catch it for a chest.
+    this.goldenTimer -= dt;
+    if (this.goldenTimer <= 0) {
+      this.goldenTimer = enemyData.golden.every;
+      if (rng.next() < enemyData.golden.chance) {
+        const p = this.spawnPoint(px, py, rng.range(0, Math.PI * 2), dist * 0.75);
+        this.spawn('golden', p.x, p.y);
+      }
+    }
+
+    // Second mini-boss: the Magnetron at 4:30.
+    if (!this.midbossWarned && t >= WAVES.midbossAt - WAVES.midbossWarning) {
+      this.midbossWarned = true;
+      this.host.onMidbossWarning();
+    }
+    if (!this.midbossSpawned && t >= WAVES.midbossAt) {
+      this.midbossSpawned = true;
+      const p = this.spawnPoint(px, py, 0, dist + 40);
+      const m = this.spawn('magnetron', p.x, p.y);
+      if (m) {
+        this.magnetron = m;
+        this.host.onMidbossSpawned(m);
       }
     }
 
@@ -681,8 +742,8 @@ export class EnemySpawner {
       }
       if (e.junkImmune > 0) e.junkImmune -= dt;
       // Phase speed (and burning robots panic and run faster).
-      if (!menu && e.kind !== 'boss' && e.kind !== 'crusher') {
-        const sm = this.phase.speed * (e.burnTimer > 0 ? 1.25 : 1);
+      if (!menu && !isBig(e.kind)) {
+        const sm = this.phase.speed * this.host.mods.speed * (e.burnTimer > 0 ? 1.25 : 1);
         mx *= sm;
         my *= sm;
       }
@@ -766,7 +827,7 @@ export class EnemySpawner {
 
   /** Keep bots from stacking into one blob; big ones shove everyone aside. */
   private separate(e: Enemy, i: number, items: Enemy[]): void {
-    const heavyE = e.kind === 'boss' || e.kind === 'crusher';
+    const heavyE = isBig(e.kind);
     for (let j = i + 1; j < items.length; j++) {
       const o = items[j];
       if (!o.active || o.hidden) continue;
@@ -779,7 +840,7 @@ export class EnemySpawner {
       const push = min - d;
       const ux = sx / d;
       const uy = sy / d;
-      const heavyO = o.kind === 'boss' || o.kind === 'crusher';
+      const heavyO = isBig(o.kind);
       if (heavyE && !heavyO) {
         o.x += ux * push;
         o.y += uy * push;
@@ -799,7 +860,7 @@ export class EnemySpawner {
     // Pop in, then waddle (squash and stretch).
     const appear = Math.min(1, e.age / 0.25);
     const pop = appear < 1 ? Phaser.Math.Easing.Back.Out(appear) : 1;
-    const heavy = e.kind === 'boss' || e.kind === 'crusher';
+    const heavy = isBig(e.kind);
     const bob = heavy ? 0.03 : e.kind === 'tyre' || e.kind === 'mine' ? 0 : 0.07;
     const wob = Math.sin(e.age * 11 + e.seed) * bob;
     let sx = 1 + wob;
@@ -809,7 +870,8 @@ export class EnemySpawner {
       e.fuse > 0 ||
       (heavy && (e.mode === BOSS_TELEGRAPH || e.mode === BOSS_SLAM_TELEGRAPH)) ||
       ((e.kind === 'press' || e.kind === 'burrower' || e.kind === 'crusher') && e.mode === MODE_TELEGRAPH) ||
-      (e.kind === 'crusher' && e.mode === CRUSHER_AIM);
+      (e.kind === 'crusher' && e.mode === CRUSHER_AIM) ||
+      (e.kind === 'magnetron' && e.mode === MODE_TELEGRAPH);
     if (telegraphing) {
       const k = Math.sin(e.age * 40) * 0.08;
       sx += k;
@@ -968,6 +1030,23 @@ export class EnemySpawner {
       }
       case 'crusher':
         return this.crusherAI(e, dt, dist, nx, ny);
+      case 'magnetron':
+        return this.magnetronAI(e, dt, dist, nx, ny);
+      case 'golden': {
+        if (e.age > (e.def.escapeAfter ?? 13)) {
+          this.host.onGoldenEscaped(e);
+          this.kill(e, true);
+          return null;
+        }
+        // Zig-zags away from you, but never too far.
+        const w = Math.sin(e.age * 4 + e.seed) * 0.9;
+        const away = dist < 420 ? -1 : 0.4;
+        return { mx: (nx * away - ny * w) * e.speed, my: (ny * away + nx * w) * e.speed };
+      }
+      case 'driller':
+        // Drills straight through the ball: junk barely slows it.
+        e.sprite.setRotation(Math.atan2(ny, nx) + Math.PI / 2);
+        return { mx: nx * e.speed, my: ny * e.speed };
       case 'tyre': {
         e.sprite.rotation += (e.speed / e.radius) * dt;
         const r = e.radius + 2;
@@ -1150,6 +1229,66 @@ export class EnemySpawner {
       return { mx: 0, my: 0 };
     }
     return { mx: nx * e.speed, my: ny * e.speed };
+  }
+
+  /** Magnetron: keeps its distance, rips junk off your ball, fires rings of bolts, calls minions. */
+  private magnetronAI(e: Enemy, dt: number, dist: number, nx: number, ny: number): { mx: number; my: number } {
+    const d = e.def;
+    e.modeTimer -= dt;
+    if (e.mode === BOSS_ENTER) {
+      if (e.modeTimer <= 0) (e.mode = MODE_MOVE), (e.fireTimer = 2), (e.cycle = 0);
+      return { mx: nx * e.speed * 2, my: ny * e.speed * 2 };
+    }
+    e.fireTimer -= dt;
+    e.windup = Math.max(0, e.windup - dt);
+    if (e.mode === MODE_TELEGRAPH) {
+      if (e.modeTimer <= 0) {
+        e.mode = MODE_MOVE;
+        if (e.cycle % 2 === 0) {
+          const n = Math.ceil(this.host.junk.count * (d.pullFraction ?? 0.12));
+          const got = this.host.junk.steal(n, e.x, e.y);
+          e.modeTimer = 0.6; // beam visible
+          this.host.onMagnetPull(e, got);
+        } else {
+          this.ring(e, d.ringBullets ?? 12);
+        }
+        e.cycle++;
+      }
+      return { mx: 0, my: 0 };
+    }
+    e.carried += this.host.junk.absorbNear(e.x, e.y, e.radius + 16, 99);
+    if (e.fireTimer <= 0) {
+      e.fireTimer = e.cycle % 2 === 0 ? (d.pullEvery ?? 4.5) : (d.ringEvery ?? 3.2);
+      e.mode = MODE_TELEGRAPH;
+      e.modeTimer = d.telegraph ?? 0.8;
+      this.host.onBossTelegraph(e);
+      // Calls in a few minions every other attack.
+      if (e.cycle % 3 === 2) {
+        for (let i = 0; i < 4; i++) this.spawn('tin', e.x + Math.cos(i * 1.57) * 70, e.y + Math.sin(i * 1.57) * 70);
+      }
+      return { mx: 0, my: 0 };
+    }
+    const range = d.range ?? 300;
+    if (dist > range + 40) return { mx: nx * e.speed, my: ny * e.speed };
+    if (dist < range - 60) return { mx: -nx * e.speed, my: -ny * e.speed };
+    return { mx: -ny * e.speed * 0.8, my: nx * e.speed * 0.8 };
+  }
+
+  private ring(e: Enemy, count: number): void {
+    const speed = 170;
+    const off = Math.random() * Math.PI;
+    for (let i = 0; i < count; i++) {
+      const b = this.bullets.obtain();
+      if (!b) return;
+      const a = off + (i / count) * Math.PI * 2;
+      b.x = e.x + Math.cos(a) * (e.radius + 6);
+      b.y = e.y + Math.sin(a) * (e.radius + 6);
+      b.vx = Math.cos(a) * speed;
+      b.vy = Math.sin(a) * speed;
+      b.life = 4;
+      b.img.setPosition(b.x, b.y).setVisible(true);
+    }
+    this.host.onSpitterFire();
   }
 
   private updateBoss(e: Enemy, dt: number, nx: number, ny: number, enraged: boolean): { mx: number; my: number } {

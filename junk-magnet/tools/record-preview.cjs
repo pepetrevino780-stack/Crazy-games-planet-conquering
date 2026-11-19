@@ -139,6 +139,13 @@ const DT = 1000 / FPS;
     const s = window.__g();
     s.player.hasMoved = true;
     s.pulseUsed = true;
+    // Keep the clip on the action: no junk shop break, no mini-bosses.
+    s.openShop = () => {
+      s.shopPending = false;
+    };
+    s.enemies.minibossWarned = s.enemies.minibossSpawned = true;
+    s.enemies.midbossWarned = s.enemies.midbossSpawned = true;
+    s.enemies.goldenTimer = 1e9;
     for (const [id, n] of [['strongerField', 1], ['spinCycle', 2], ['hotScrap', 2], ['secondRing', 1]]) for (let i = 0; i < n; i++) s.upgrades.take(id);
     s.stats = s.upgrades.stats(s.magnetDef);
     s.player.stats = s.stats;

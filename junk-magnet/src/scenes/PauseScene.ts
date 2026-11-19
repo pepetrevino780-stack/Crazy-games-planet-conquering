@@ -12,6 +12,12 @@ export class PauseScene extends Phaser.Scene {
     super('Pause');
   }
 
+  private fromTab = false;
+
+  init(data: { fromTab?: boolean }): void {
+    this.fromTab = !!data?.fromTab;
+  }
+
   create(): void {
     const g = this.scene.get('Game') as GameScene;
     const s = Meta.data.settings;
@@ -28,6 +34,13 @@ export class PauseScene extends Phaser.Scene {
       const panel = this.add.graphics();
       drawPanel(panel, px, py, pw, ph, PAL.cyan);
       this.add.text(w / 2, py + 52, 'PAUSED', displayStyle(52)).setOrigin(0.5);
+      if (this.fromTab) {
+        // Tell players why the game stopped when they come back to the tab.
+        const hint = this.add
+          .text(w / 2, Math.max(16, py - 30), 'Paused while you were away. Click RESUME or press P.', displayStyle(20, CSS.cyan))
+          .setOrigin(0.5);
+        this.tweens.add({ targets: hint, alpha: { from: 1, to: 0.5 }, duration: 700, yoyo: true, repeat: -1 });
+      }
 
       new Button(this, w / 2, py + 132, { width: pw - 80, height: 66, label: 'RESUME', fill: PAL.red, onClick: () => g.resumeFromPause() });
 

@@ -26,6 +26,10 @@ export interface MagnetDef {
   eatCost?: number;
   eatInterval?: number;
   eatHeal?: number;
+  capBonus?: number;
+  massMult?: number;
+  knockbackMult?: number;
+  pulseZap?: number;
 }
 
 export class Player {
