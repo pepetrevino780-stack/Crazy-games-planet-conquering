@@ -12,12 +12,18 @@ import {
   BOSS_SLAM_TELEGRAPH,
   BOSS_TELEGRAPH,
   CONTACT_TIME,
+  CRUSHER_AIM,
+  CRUSHER_CHARGE,
+  ENEMY_DEFS,
+  PHASES,
+  PHASE_WARNING,
   MODE_TELEGRAPH,
   EnemySpawner,
   type Enemy,
   type EnemyHost,
 } from '../systems/EnemySpawner';
 import { Juice } from '../systems/Juice';
+import { Weapons } from '../systems/Weapons';
 import { CAN_TYPE, JUNK, JunkSystem, type Belt, type JunkFrame, type Repeller } from '../systems/JunkSystem';
 import { Meta } from '../systems/MetaSave';
 import { applyRun, type ChallengeProgress } from '../systems/Challenges';
@@ -85,6 +91,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
   enemies!: EnemySpawner;
   upgrades!: UpgradeSystem;
   juice!: Juice;
+  weapons!: Weapons;
   stats!: PlayerStats;
   spawnRng!: Rng;
   lootRng!: Rng;
@@ -109,7 +116,11 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
   /** The next card pick is a rare reward from the Crusher. */
   rareReward = false;
   readonly runKills: Record<string, number> = {};
-  heartLostAt = -1;
+  lowHpAt = -1;
+  healthTimer = 0;
+  phaseLabel = 'CALM';
+  phaseAt = -1;
+  private pickups: Phaser.GameObjects.Image[] = [];
   hurtFlash = 0;
 
   private nextDoubling = 16;
@@ -170,7 +181,11 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     this.bannerAt = -1;
     this.rareReward = false;
     for (const k of Object.keys(this.runKills)) delete this.runKills[k];
-    this.heartLostAt = -1;
+    this.lowHpAt = -1;
+    this.healthTimer = 0;
+    this.phaseLabel = 'CALM';
+    this.phaseAt = -1;
+    this.pickups = [];
     this.hurtFlash = 0;
     this.nextDoubling = 16;
     this.shieldWave = -1;
@@ -219,6 +234,8 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     this.juice = new Juice(this);
     this.player = new Player(this, this.magnetDef, this.stats, ARENA.width / 2, ARENA.height / 2);
     this.field = this.add.graphics().setDepth(DEPTH.field);
+    this.weapons = new Weapons(this, this);
+    for (let i = 0; i < 4; i++) this.pickups.push(this.add.image(0, 0, 'health-pack').setScale(0.55).setDepth(DEPTH.loose + 1).setVisible(false));
 
     this.junk.onAttach = (count) => {
       if (count < 0) {
@@ -250,6 +267,8 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     if (kb) {
       kb.addCapture('SPACE,UP,DOWN,LEFT,RIGHT');
       kb.on('keydown-SPACE', () => this.tryPulse());
+      kb.on('keydown-E', () => (Controls.specialQueued = true));
+      kb.on('keydown-SHIFT', () => (Controls.specialQueued = true));
       kb.on('keydown-P', () => this.openPause());
     }
     const onBlur = () => this.openPause();
@@ -338,6 +357,10 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
       return;
     }
     this.kills++;
+    if (this.healthTimer >= JUNK.health.dropEvery) {
+      this.healthTimer = 0;
+      this.dropHealth(e.x, e.y);
+    }
     this.runKills[e.kind] = (this.runKills[e.kind] ?? 0) + 1;
     if (e.elite) this.runKills.elite = (this.runKills.elite ?? 0) + 1;
     this.scrapKills += e.scrap * this.stats.coinMult;
@@ -401,7 +424,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
       p.vx += (p.x - e.x) * k;
       p.vy += (p.y - e.y) * k;
     }
-    if (d < r * 0.5) this.playerHit(e.x, e.y, 0.1);
+    if (d < r * 0.5) this.playerHit(e.x, e.y, 0.1, this.phaseDamage(e.def.stompDamage ?? 2));
   }
 
   onBurrowerEmerge(e: Enemy): void {
@@ -410,7 +433,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     this.juice.shake(0.3);
     this.juice.ring(e.x, e.y, 0x8a6b4a, 0.3, 0.35, r / 64);
     for (let i = 0; i < 8; i++) this.juice.emit(e.x, e.y, 'p-puff', 0x6b5a48, { speed: 260, life: 0.5, scale: 1.2, endScale: 2, alpha: 0.6, drag: 5 });
-    if (Math.hypot(this.player.x - e.x, this.player.y - e.y) < r + this.player.radius) this.playerHit(e.x, e.y);
+    if (Math.hypot(this.player.x - e.x, this.player.y - e.y) < r + this.player.radius) this.playerHit(e.x, e.y, undefined, this.phaseDamage(e.def.dmg ?? 2));
   }
 
   onPressSlam(e: Enemy): void {
@@ -419,7 +442,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     Audio.crush();
     this.juice.shake(crushed > 0 ? 0.4 : 0.2);
     this.juice.ring(e.x, e.y, PAL.pink, 0.3, 0.35, r / 64);
-    if (Math.hypot(this.player.x - e.x, this.player.y - e.y) < r + this.player.radius) this.playerHit(e.x, e.y);
+    if (Math.hypot(this.player.x - e.x, this.player.y - e.y) < r + this.player.radius) this.playerHit(e.x, e.y, undefined, this.phaseDamage(e.def.dmg ?? 2));
   }
 
   onMagnetPull(_e: Enemy, pieces: number): void {
@@ -443,7 +466,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     const r = e.def.compactRadius ?? 220;
     const crushed = this.junk.crushNear(e.x, e.y, r);
     if (Math.hypot(this.player.x - e.x, this.player.y - e.y) < r + this.player.radius && crushed === 0) {
-      this.playerHit(e.x, e.y, e.def.junkKnock ?? 0.3);
+      this.playerHit(e.x, e.y, e.def.junkKnock ?? 0.3, this.phaseDamage(e.def.dmg ?? 2));
     }
     Audio.crush();
     this.juice.shake(0.6);
@@ -493,13 +516,13 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
   chooseCard(id: string): boolean {
     const card = cardById(id);
     if (id === 'scrapPile') this.scrapKills += (card.value as number) / JUNK.economy.coinsPerScrap;
-    else if (id === 'patchUp') this.player.hearts = Math.min(this.stats.maxHearts, this.player.hearts + 1);
+    else if (id === 'patchUp') this.heal(card.value as number);
     else {
       this.upgrades.take(id);
       this.stats = this.upgrades.stats(this.magnetDef);
       this.player.stats = this.stats;
       this.updateCap();
-      if (id === 'spareHeart') this.player.hearts = this.stats.maxHearts;
+      if (id === 'spareHeart') this.heal(card.value as number);
     }
     this.pendingLevels--;
     this.rareReward = false;
@@ -588,34 +611,107 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     this.junk.tvMult = this.stats.tvMult;
   }
 
-  private playerHit(fromX: number, fromY: number, fraction: number = JUNK.knockFraction): void {
+  /** Contact damage for the current aggression phase, times a per-robot multiplier. */
+  phaseDamage(mult = 1): number {
+    return this.enemies.phase.damage * mult;
+  }
+
+  /**
+   * Every hit costs health. Junk no longer blocks hits: a full ball cuts the damage by up to
+   * 40%, and some junk gets knocked loose.
+   */
+  private playerHit(fromX: number, fromY: number, fraction: number = JUNK.knockFraction, damage = this.phaseDamage()): void {
     const p = this.player;
     if (this.state !== 'playing' || p.invuln > 0) return;
-    p.invuln = JUNK.invulnTime;
+    const H = JUNK.health;
+    p.invuln = H.invuln;
     this.hitsTaken++;
+    const angle = Math.atan2(p.y - fromY, p.x - fromX);
     if (this.stats.scrapShield && this.shieldWave !== this.enemies.wave) {
       this.shieldWave = this.enemies.wave;
       this.juice.ring(p.x, p.y, PAL.cyan, 0.5, 0.35, 1.6);
       Audio.clank();
       return;
     }
-    const angle = Math.atan2(p.y - fromY, p.x - fromX);
-    if (this.junk.count > 0) {
-      this.junk.knockLoose(fraction * this.stats.knockMult, fromX, fromY, JUNK.shatterFraction);
-      Audio.hurt();
-      this.juice.shake(0.35);
-      this.juice.sparks(p.x, p.y, 10, 0xffd27a, angle);
-      this.hitStop = Math.max(this.hitStop, 0.05);
-      return;
+    const fill = Math.min(1, this.junk.count / Math.max(1, this.junk.cap));
+    const taken = damage * (1 - H.junkArmor * fill);
+    p.hp = Math.max(0, p.hp - taken);
+    if (this.junk.count > 0) this.junk.knockLoose(fraction * this.stats.knockMult, fromX, fromY, JUNK.shatterFraction);
+    if (this.lowHpAt < 0 && p.hp < p.stats.maxHp * H.halfHealth) this.lowHpAt = this.runTime;
+    this.hurtFlash = Math.min(1, 0.35 + taken / 20);
+    this.juice.label(p.x, p.y - 34, `-${Math.round(taken)}`, CSS.red, 24);
+    Audio.hurt();
+    this.juice.shake(Math.min(0.6, 0.2 + taken / 40));
+    this.juice.sparks(p.x, p.y, 10, taken >= 15 ? PAL.red : 0xffd27a, angle);
+    this.hitStop = Math.max(this.hitStop, taken >= 15 ? 0.08 : 0.04);
+    if (p.hp <= 0) this.die();
+  }
+
+  heal(amount: number): void {
+    const p = this.player;
+    const before = p.hp;
+    p.hp = Math.min(this.stats.maxHp, p.hp + amount);
+    if (p.hp > before) this.juice.label(p.x, p.y - 34, `+${Math.round(p.hp - before)}`, CSS.lime, 26);
+  }
+
+  /** Rare health drops: about one every 45 s, dropped by the next robot you break. */
+  private updatePickups(dt: number): void {
+    const p = this.player;
+    const H = JUNK.health;
+    if (this.state === 'playing') this.healthTimer += dt;
+    for (const k of this.pickups) {
+      if (!k.visible) continue;
+      const life = (k.getData('life') as number) - dt;
+      k.setData('life', life);
+      const dx = p.x - k.x;
+      const dy = p.y - k.y;
+      const d = Math.hypot(dx, dy) || 1;
+      if (d < this.stats.magnetRadius) {
+        k.x += (dx / d) * 320 * dt;
+        k.y += (dy / d) * 320 * dt;
+      }
+      k.setAlpha(life < 3 && Math.floor(life * 8) % 2 === 0 ? 0.3 : 1);
+      k.rotation = Math.sin(this.clock * 4) * 0.15;
+      if (d < p.radius + 18) {
+        k.setVisible(false);
+        this.heal(H.dropHeal);
+        Audio.levelUp();
+        this.juice.ring(p.x, p.y, PAL.lime, 0.3, 0.4, 1.4);
+      } else if (life <= 0) {
+        k.setVisible(false);
+      }
     }
-    p.hearts--;
-    if (this.heartLostAt < 0) this.heartLostAt = this.runTime;
-    this.hurtFlash = 1;
-    Audio.heartLost();
-    this.juice.shake(0.55);
-    this.hitStop = Math.max(this.hitStop, 0.08);
-    this.juice.sparks(p.x, p.y, 12, PAL.red, angle);
-    if (p.hearts <= 0) this.die();
+  }
+
+  private dropHealth(x: number, y: number): void {
+    const k = this.pickups.find((i) => !i.visible);
+    if (!k) return;
+    k.setPosition(x, y).setVisible(true).setAlpha(1).setData('life', JUNK.health.dropLife);
+    this.tweens.add({ targets: k, scale: { from: 0, to: 0.55 }, duration: 300, ease: 'Back.easeOut' });
+  }
+
+  private heartbeatTimer = 0;
+
+  /** Heartbeat under 15% health. */
+  private updateHeartbeat(dt: number): void {
+    if (this.state !== 'playing') return;
+    const frac = this.player.hp / this.stats.maxHp;
+    if (frac >= JUNK.health.heartbeat) return;
+    this.heartbeatTimer -= dt;
+    if (this.heartbeatTimer <= 0) {
+      this.heartbeatTimer = 0.75;
+      Audio.heartbeat();
+    }
+  }
+
+  onPhaseChange(index: number): void {
+    if (!this.isRun || index === 0) return;
+    this.banner(PHASE_WARNING);
+    this.phaseLabel = PHASES[index].name;
+    this.phaseAt = this.clock;
+    Audio.alarm();
+    Audio.setIntensity(index);
+    this.juice.shake(0.3);
   }
 
   private die(): void {
@@ -674,7 +770,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     const challenges = applyRun({
       kills: this.runKills,
       totalKills: this.kills,
-      heartLostAt: this.heartLostAt,
+      heartLostAt: this.lowHpAt,
       time: this.runTime,
       peakJunk: this.peakJunk,
       bestCrowd: this.bestCrowd,
@@ -793,6 +889,9 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
       this.juice.puff(p.x - p.vx * 0.05, p.y + 12);
     }
 
+    this.updatePickups(dt);
+    this.weapons.update(dt, this.state === 'playing');
+    this.updateHeartbeat(realDt);
     this.juice.update(dt);
     for (const ts of this.beltSprites) ts.tilePositionX -= this.beltSpeed * dt;
     this.updateCamera(realDt);
@@ -844,9 +943,9 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     p.eatTimer += dt;
     if (p.eatTimer < (def.eatInterval ?? 1.5)) return;
     p.eatTimer = 0;
-    if (p.hearts >= this.stats.maxHearts || this.junk.count < def.eatCost) return;
+    if (p.hp >= this.stats.maxHp || this.junk.count < def.eatCost) return;
     this.junk.consume(def.eatCost);
-    p.hearts++;
+    this.heal(def.eatHeal ?? 12);
     Audio.levelUp();
     this.juice.ring(p.x, p.y, 0x9b6cff, 2, 0.4, 0.3);
   }
@@ -892,9 +991,11 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
           if (this.enemies.damage(e, def.bumpDamage, p.x, p.y, def.bumpKnockback)) continue;
         } else if (!e.harmless && this.state === 'playing') {
           e.touch += dt;
-          if (e.touch >= CONTACT_TIME || (e.kind === 'boss' && e.mode === BOSS_CHARGE) || e.kind === 'tyre') {
+          const charging = (e.kind === 'boss' && e.mode === BOSS_CHARGE) || (e.kind === 'crusher' && e.mode === CRUSHER_CHARGE);
+          if (e.touch >= CONTACT_TIME || charging || e.kind === 'tyre') {
             e.touch = 0;
-            this.playerHit(e.x, e.y, e.def.junkKnock ?? JUNK.knockFraction);
+            const dmg = charging ? (e.def.chargeDamage ?? 25) : this.phaseDamage((e.def.dmg ?? 1) * (e.elite ? 1.3 : 1));
+            this.playerHit(e.x, e.y, e.def.junkKnock ?? JUNK.knockFraction, dmg);
           }
         }
       } else if (e.touch > 0) {
@@ -903,6 +1004,11 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
 
       // Anti-Mag aura: your junk can't touch it until a Pulse shorts it out.
       if (e.kind === 'antimag' && e.auraOff <= 0) continue;
+      // Crusher's junk armour after a slam: only Pulse and aimed attacks get through.
+      if (e.junkImmune > 0) {
+        if (Math.random() < dt * 6) this.juice.sparks(e.x, e.y - e.radius * 0.5, 2, 0xffffff);
+        continue;
+      }
 
       for (let j = 0; j < attached.length; j++) {
         if (e.hurtCd > 0) break;
@@ -944,6 +1050,11 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
           }
         }
         if (this.enemies.damage(e, amount, p.x, p.y, JUNK.hitKnockback)) break;
+        // From the Swarming phase, robots rip junk off the ball when they're hit.
+        if (this.isRun && Math.random() < this.enemies.phase.ripChance) {
+          this.junk.detach(pc, e.x, e.y);
+          break;
+        }
       }
 
       // A charging Compactor crushes the junk it rams into cubes.
@@ -969,7 +1080,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
         const d = Math.hypot(e.x - ex.x, e.y - ex.y);
         if (d < ex.r + e.radius) this.enemies.damage(e, ex.d, ex.x, ex.y, 260);
       }
-      if (ex.hurts && Math.hypot(p.x - ex.x, p.y - ex.y) < ex.r + p.radius) this.playerHit(ex.x, ex.y);
+      if (ex.hurts && Math.hypot(p.x - ex.x, p.y - ex.y) < ex.r + p.radius) this.playerHit(ex.x, ex.y, undefined, this.phaseDamage(2.5));
     }
   }
 
@@ -978,7 +1089,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
   }
 
   /** Batch damage numbers per robot: one number every 0.25 s; crits, kills and big hits right away. */
-  private showDamage(e: Enemy, amount: number, crit: boolean, immediate = false): void {
+  showDamage(e: Enemy, amount: number, crit: boolean, immediate = false): void {
     e.dmgAcc += amount;
     if (crit || immediate || e.numCd <= 0 || e.hp - amount <= 0) {
       this.juice.damageNumber(e.x, e.y - e.radius, e.dmgAcc, crit);
@@ -994,7 +1105,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
       if (!b.active) continue;
       if ((b.x - p.x) ** 2 + (b.y - p.y) ** 2 < (p.radius + 6) ** 2) {
         this.enemies.removeBullet(b);
-        this.playerHit(b.x, b.y);
+        this.playerHit(b.x, b.y, undefined, this.phaseDamage(ENEMY_DEFS.spitter.bulletDmg ?? 0.9));
       }
     }
   }
@@ -1082,6 +1193,12 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
           lines++;
         }
       }
+    }
+
+    const cr = this.enemies.crusher;
+    if (cr?.active && cr.mode === CRUSHER_AIM) {
+      g.lineStyle(cr.radius * 1.5, PAL.red, flash * 0.6);
+      g.lineBetween(cr.x, cr.y, cr.x + cr.cdx * 700, cr.y + cr.cdy * 700);
     }
 
     const boss = this.enemies.boss;

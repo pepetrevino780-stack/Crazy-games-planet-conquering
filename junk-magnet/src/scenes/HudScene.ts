@@ -11,7 +11,12 @@ export class HudScene extends Phaser.Scene {
   private g!: GameScene;
   private xpBar!: Phaser.GameObjects.Graphics;
   private vignette!: Phaser.GameObjects.Graphics;
-  private hearts: Phaser.GameObjects.Image[] = [];
+  private hpBar!: Phaser.GameObjects.Graphics;
+  private hpText!: Phaser.GameObjects.Text;
+  private phaseText!: Phaser.GameObjects.Text;
+  private shownHp = 1;
+  private lastHp = 1;
+  private hpShake = 0;
   private levelText!: Phaser.GameObjects.Text;
   private coinIcon!: Phaser.GameObjects.Image;
   private coinText!: Phaser.GameObjects.Text;
@@ -33,7 +38,6 @@ export class HudScene extends Phaser.Scene {
   private lastJunk = 0;
   private shownCoins = -1;
   private shownSeconds = -1;
-  private shownHearts = '';
   private shownLevel = -1;
   private bannerShownAt = -1;
   private capBar!: Phaser.GameObjects.Graphics;
@@ -42,6 +46,10 @@ export class HudScene extends Phaser.Scene {
   private joyBaseX = 0;
   private joyBaseY = 0;
   private pulseRadius = 40;
+  private specialBtn!: Phaser.GameObjects.Container;
+  private abilityGfx!: Phaser.GameObjects.Graphics;
+  private abilityIcons: Phaser.GameObjects.Image[] = [];
+  private abilityLabels: Phaser.GameObjects.Text[] = [];
 
   constructor() {
     super('HUD');
@@ -53,10 +61,13 @@ export class HudScene extends Phaser.Scene {
     this.lastJunk = 0;
     this.junkBounce = 0;
     this.shownCoins = this.shownSeconds = this.shownLevel = -1;
-    this.shownHearts = '';
     this.bannerShownAt = -1;
     this.joyId = -1;
-    this.hearts = [];
+    this.shownHp = this.lastHp = 1;
+    this.hpShake = 0;
+    this.hpBar = this.add.graphics();
+    this.hpText = this.add.text(0, 0, '', displayStyle(15)).setOrigin(0.5);
+    this.phaseText = this.add.text(0, 0, '', displayStyle(16, CSS.pink)).setOrigin(1, 0.5);
 
     this.vignette = this.add.graphics();
     this.xpBar = this.add.graphics();
@@ -78,6 +89,20 @@ export class HudScene extends Phaser.Scene {
     this.banner = this.add.text(0, 0, '', displayStyle(44, CSS.pink)).setOrigin(0.5).setVisible(false);
 
     this.createPulseButton();
+    this.abilityGfx = this.add.graphics();
+    this.abilityIcons = [0, 1, 2].map(() => this.add.image(0, 0, 'icon-fireball').setScale(0.42).setVisible(false));
+    this.abilityLabels = [0, 1, 2].map(() => this.add.text(0, 0, '', displayStyle(13, CSS.text)).setOrigin(0.5).setVisible(false));
+    const sb = this.add.container(0, 0);
+    const sbg = this.add.graphics();
+    sbg.fillStyle(PAL.outline, 0.85);
+    sbg.fillCircle(0, 4, 44);
+    sbg.fillStyle(PAL.panel, 0.92);
+    sbg.fillCircle(0, 0, 40);
+    sbg.lineStyle(4, PAL.outline);
+    sbg.strokeCircle(0, 0, 40);
+    sb.add([sbg, this.add.image(0, 0, 'icon-junkShotgun').setScale(0.6)]);
+    sb.setVisible(false);
+    this.specialBtn = sb;
     this.createMoveHint();
     this.joy = this.add.graphics();
 
@@ -179,10 +204,62 @@ export class HudScene extends Phaser.Scene {
     this.pulseKey.setPosition(0, this.pulseRadius + 16).setVisible(!touch);
     (this.pulseBtn.list[1] as Phaser.GameObjects.Image).setScale(touch ? 0.8 : 0.62);
     this.drawPulseBg();
+    this.specialBtn.setPosition(this.pulseBtn.x - this.pulseRadius - 62, this.pulseBtn.y + 8);
     this.pauseBtn.setScale(touch ? 0.75 : 0.6);
     this.moveHint.setPosition(w / 2, h - (touch ? 150 : 120));
     this.drawMoveHint();
-    this.shownHearts = '';
+  }
+
+  /** Cooldown icons next to the Pulse button: Fireball, the special, Meteor Drop. */
+  private updateAbilities(now: number): void {
+    const g = this.g;
+    const w = g.weapons;
+    const touch = Controls.isTouch;
+    const specials = w.specials;
+    const slots: { icon: string; label: string; cd: number; max: number; ready: boolean }[] = [];
+    slots.push({ icon: 'icon-fireball', label: touch ? 'AUTO' : 'L-CLICK', cd: w.fireCd, max: 0.6 * g.stats.fbRateMult, ready: w.fireCd <= 0 });
+    if (specials.length && !touch) {
+      const icon = specials[0] === 'shotgun' ? 'icon-junkShotgun' : 'icon-magnetMine';
+      slots.push({ icon, label: 'R-CLICK', cd: w.specialCd, max: specials[0] === 'shotgun' ? g.stats.shotgunCooldown : g.stats.mineCooldown, ready: w.specialCd <= 0 });
+    }
+    if (g.stats.meteor && !touch) slots.push({ icon: 'icon-meteorDrop', label: 'HOLD', cd: w.meteorCd, max: 8, ready: w.meteorCd <= 0 });
+    const gfx = this.abilityGfx;
+    gfx.clear();
+    const baseX = this.pulseBtn.x - this.pulseRadius - (touch && specials.length ? 120 : 36);
+    const y = this.pulseBtn.y + (touch ? 30 : 18);
+    for (let i = 0; i < 3; i++) {
+      const slot = slots[i];
+      const icon = this.abilityIcons[i];
+      const label = this.abilityLabels[i];
+      if (!slot || !this.pulseBtn.visible) {
+        icon.setVisible(false);
+        label.setVisible(false);
+        continue;
+      }
+      const x = baseX - i * 58;
+      gfx.fillStyle(PAL.outline, 0.85);
+      gfx.fillCircle(x, y, 25);
+      gfx.fillStyle(PAL.panel, 0.92);
+      gfx.fillCircle(x, y, 22);
+      if (!slot.ready) {
+        gfx.lineStyle(5, PAL.brass, 0.9);
+        gfx.beginPath();
+        gfx.arc(x, y, 20, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - slot.cd / Math.max(0.01, slot.max)));
+        gfx.strokePath();
+      } else {
+        gfx.lineStyle(3, PAL.brass, 0.8);
+        gfx.strokeCircle(x, y, 22);
+      }
+      icon.setTexture(slot.icon).setPosition(x, y).setAlpha(slot.ready ? 1 : 0.5).setVisible(true);
+      label.setText(slot.label).setPosition(x, y + 34).setVisible(true);
+    }
+    // Touch: a second button for the special, next to Pulse.
+    this.specialBtn.setVisible(touch && specials.length > 0 && this.pulseBtn.visible);
+    if (this.specialBtn.visible) {
+      (this.specialBtn.list[1] as Phaser.GameObjects.Image).setTexture(specials[0] === 'shotgun' ? 'icon-junkShotgun' : 'icon-magnetMine');
+      this.specialBtn.setAlpha(w.specialCd > 0 ? 0.55 : 1);
+    }
+    void now;
   }
 
   private overPulse(p: Phaser.Input.Pointer): boolean {
@@ -202,6 +279,20 @@ export class HudScene extends Phaser.Scene {
       return;
     }
     if (Phaser.Math.Distance.Between(p.x, p.y, this.pauseBtn.x, this.pauseBtn.y) < 40) return;
+    if (Controls.isTouch && this.specialBtn.visible && Phaser.Math.Distance.Between(p.x, p.y, this.specialBtn.x, this.specialBtn.y) < 54) {
+      Controls.specialQueued = true;
+      this.tweens.add({ targets: this.specialBtn, scale: { from: 0.85, to: 1 }, duration: 160, ease: 'Back.easeOut' });
+      return;
+    }
+    if (!p.wasTouch) {
+      // Mouse: left button fires (hold for Meteor Drop), right button uses the special.
+      Controls.aimX = p.x;
+      Controls.aimY = p.y;
+      Controls.hasAim = true;
+      if (p.rightButtonDown()) Controls.specialQueued = true;
+      else Controls.fireHeld = true;
+      return;
+    }
     if (this.joyId !== -1) return;
     this.joyId = p.id;
     this.joyBaseX = p.x;
@@ -209,6 +300,11 @@ export class HudScene extends Phaser.Scene {
   }
 
   private onMove(p: Phaser.Input.Pointer): void {
+    if (!p.wasTouch) {
+      Controls.aimX = p.x;
+      Controls.aimY = p.y;
+      Controls.hasAim = true;
+    }
     if (p.id !== this.joyId || !p.isDown) return;
     let dx = p.x - this.joyBaseX;
     let dy = p.y - this.joyBaseY;
@@ -233,6 +329,7 @@ export class HudScene extends Phaser.Scene {
   }
 
   private onUp(p: Phaser.Input.Pointer): void {
+    if (!p.wasTouch && !p.leftButtonDown()) Controls.fireHeld = false;
     if (p.id !== this.joyId) return;
     this.joyId = -1;
     Controls.touchX = Controls.touchY = 0;
@@ -282,20 +379,37 @@ export class HudScene extends Phaser.Scene {
       this.levelText.setText(`LV ${g.level}`);
     }
 
-    // Hearts, top-left.
-    const heartKey = `${g.player.hearts}/${g.stats.maxHearts}`;
-    if (heartKey !== this.shownHearts) {
-      const lost = this.shownHearts !== '' && g.player.hearts < Number(this.shownHearts.split('/')[0]);
-      this.shownHearts = heartKey;
-      for (const img of this.hearts) img.destroy();
-      this.hearts = [];
-      for (let i = 0; i < g.stats.maxHearts; i++) {
-        const full = i < g.player.hearts;
-        const img = this.add.image(26 + i * 36, 46, full ? 'heart' : 'heart-empty').setScale(0.55);
-        this.hearts.push(img);
-        if (lost && i === g.player.hearts) this.tweens.add({ targets: img, scale: { from: 1.1, to: 0.55 }, duration: 400, ease: 'Back.easeOut' });
-      }
-    }
+    // Health bar, top-left: flashes red under 30%.
+    const hpFrac = Phaser.Math.Clamp(g.player.hp / g.stats.maxHp, 0, 1);
+    this.shownHp += (hpFrac - this.shownHp) * (1 - Math.exp(-10 * dt));
+    if (hpFrac < this.lastHp - 0.001) this.hpShake = 1;
+    this.lastHp = hpFrac;
+    this.hpShake = Math.max(0, this.hpShake - dt * 4);
+    const hx = 16 + (this.hpShake > 0 ? Math.sin(_now / 20) * 4 * this.hpShake : 0);
+    const hy = 36;
+    const hw = Math.min(240, w * 0.28);
+    const hh = 20;
+    const low = hpFrac < 0.3;
+    const blink = low && Math.sin(_now / 90) > 0;
+    const color = low ? (blink ? 0xffffff : PAL.red) : hpFrac < 0.5 ? PAL.brass : PAL.lime;
+    this.hpBar.clear();
+    this.hpBar.fillStyle(PAL.outline);
+    this.hpBar.fillRoundedRect(hx - 3, hy - 3, hw + 6, hh + 6, 8);
+    this.hpBar.fillStyle(0x3a3346);
+    this.hpBar.fillRoundedRect(hx, hy, hw, hh, 6);
+    this.hpBar.fillStyle(0xffffff, 0.35);
+    this.hpBar.fillRoundedRect(hx, hy, Math.max(6, hw * this.shownHp), hh, 6);
+    this.hpBar.fillStyle(color);
+    this.hpBar.fillRoundedRect(hx, hy, Math.max(6, hw * hpFrac), hh, 6);
+    this.hpBar.fillStyle(0xffffff, 0.3);
+    this.hpBar.fillRoundedRect(hx + 3, hy + 3, Math.max(0, hw * hpFrac - 6), 5, 3);
+    const hpLabel = `${Math.ceil(g.player.hp)}/${Math.round(g.stats.maxHp)}`;
+    if (this.hpText.text !== hpLabel) this.hpText.setText(hpLabel);
+    this.hpText.setPosition(hx + hw / 2, hy + hh / 2);
+
+    // Current aggression phase, under the timer.
+    if (this.phaseText.text !== g.phaseLabel) this.phaseText.setText(g.phaseLabel);
+    this.phaseText.setPosition(w - 18, 76).setVisible(g.isRun);
 
     // Run scrap coins.
     const coins = g.runCoins;
@@ -383,6 +497,8 @@ export class HudScene extends Phaser.Scene {
       this.pulseBtn.setScale(1);
     }
     this.pulseBtn.setVisible(g.state !== 'intro');
+    if (!playing) Controls.fireHeld = false;
+    this.updateAbilities(_now);
 
     // Movement glyph until the first move.
     if (g.player.hasMoved || g.runTime > 10 || !playing) {
@@ -409,9 +525,9 @@ export class HudScene extends Phaser.Scene {
       this.joy.strokeCircle(this.joyBaseX + Controls.touchX * JOY_RADIUS * 0.7, this.joyBaseY + Controls.touchY * JOY_RADIUS * 0.7, 28);
     }
 
-    // Red edge flash when a heart is lost; pink pulse on low health.
+    // Red edge flash when you get hit; a pulse while health is low.
     this.vignette.clear();
-    const lowHp = g.player.hearts === 1 && g.junk.count === 0 && playing ? 0.18 + Math.sin(_now / 200) * 0.08 : 0;
+    const lowHp = g.player.hp / g.stats.maxHp < 0.3 && playing ? 0.2 + Math.sin(_now / 160) * 0.1 : 0;
     const a = Math.max(g.hurtFlash * 0.45, lowHp);
     if (a > 0.01) {
       const t = 26;

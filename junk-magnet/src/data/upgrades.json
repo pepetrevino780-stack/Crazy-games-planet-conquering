@@ -1,33 +1,355 @@
 {
-  "xp": { "base": 8, "linear": 4, "quad": 0.5 },
-  "rarityWeight": { "common": 10, "rare": 5 },
+  "xp": {
+    "base": 8,
+    "linear": 4,
+    "quad": 0.5
+  },
+  "rarityWeight": {
+    "common": 10,
+    "rare": 5
+  },
   "cards": [
-    { "id": "strongerField", "name": "Stronger Field", "desc": "+25% magnet radius. Grab junk from further away.", "rarity": "common", "max": 5, "value": 0.25 },
-    { "id": "spinCycle", "name": "Spin Cycle", "desc": "Junk orbits 30% faster. Faster junk hits harder.", "rarity": "common", "max": 5, "value": 0.3 },
-    { "id": "heavyMetal", "name": "Heavy Metal", "desc": "Junk is 50% heavier and hits harder. You are 15% slower.", "rarity": "common", "max": 3, "value": 0.5, "slow": 0.15 },
-    { "id": "quickCharge", "name": "Quick Charge", "desc": "Pulse recharges 20% faster.", "rarity": "common", "max": 3, "value": 0.2 },
-    { "id": "hotScrap", "name": "Hot Scrap", "desc": "Junk sets robots on fire. Burning bots take damage over time.", "rarity": "common", "max": 3, "values": [0, 8, 14, 20], "duration": 2 },
-    { "id": "explosiveCans", "name": "Explosive Cans", "desc": "Cans explode on impact, hurting every robot nearby.", "rarity": "common", "max": 3, "radius": [0, 55, 70, 85], "damage": [0, 18, 28, 40], "cooldown": 1.5 },
-    { "id": "bigPulse", "name": "Big Pulse", "desc": "Pulse reaches 30% further.", "rarity": "common", "max": 3, "value": 0.3 },
-    { "id": "shockwave", "name": "Shockwave", "desc": "Pulse deals 50% more damage.", "rarity": "common", "max": 3, "value": 0.5 },
-    { "id": "quickFeet", "name": "Quick Feet", "desc": "Move 10% faster.", "rarity": "common", "max": 3, "value": 0.1 },
-    { "id": "junkHoarder", "name": "Junk Hoarder", "desc": "Your ball holds 25 more pieces of junk.", "rarity": "common", "max": 3, "value": 25 },
-    { "id": "sharpEdges", "name": "Sharp Edges", "desc": "+8% chance for junk to land a double-damage critical hit.", "rarity": "common", "max": 3, "value": 0.08 },
-    { "id": "scrapCollector", "name": "Scrap Collector", "desc": "Robots pay 40% more scrap coins.", "rarity": "common", "max": 2, "value": 0.4 },
-    { "id": "spareHeart", "name": "Spare Heart", "desc": "+1 heart, and heal all hearts.", "rarity": "rare", "max": 2, "value": 1 },
-    { "id": "polarityFlip", "name": "Polarity Flip", "desc": "Pulse also pulls in all loose junk on the map.", "rarity": "rare", "max": 1 },
-    { "id": "secondRing", "name": "Second Ring", "desc": "Junk forms counter-rotating rings that spin 15% faster.", "rarity": "rare", "max": 1, "value": 0.15 },
-    { "id": "scrapShield", "name": "Scrap Shield", "desc": "The first hit each wave loses no junk.", "rarity": "rare", "max": 1 },
-    { "id": "staticCharge", "name": "Static Charge", "desc": "Pulse stuns every robot it hits.", "rarity": "rare", "max": 2, "values": [0, 1, 1.6] },
-    { "id": "reinforced", "name": "Reinforced", "desc": "Hits knock 25% less junk loose.", "rarity": "rare", "max": 2, "value": 0.25 },
-    { "id": "luckyFind", "name": "Lucky Find", "desc": "Heavy gold TVs drop three times as often.", "rarity": "rare", "max": 1, "value": 3 },
-    { "id": "moltenCore", "name": "Molten Core", "desc": "Evolution (Hot Scrap + Explosive Cans): every piece burns hot and explodes on impact.", "rarity": "epic", "max": 1, "requires": ["hotScrap", "explosiveCans"], "burn": 30, "radius": 45, "damage": 22, "cooldown": 2 },
-    { "id": "buzzsaw", "name": "Buzzsaw", "desc": "Evolution (Spin Cycle + Second Ring): junk spins 50% faster and hits 50% harder.", "rarity": "epic", "max": 1, "requires": ["spinCycle", "secondRing"], "spin": 0.5, "damage": 0.5 },
-    { "id": "fireRing", "name": "Fire Ring", "desc": "Evolution (Hot Scrap + Shockwave): Pulse sets every robot it hits on fire.", "rarity": "epic", "max": 1, "requires": ["hotScrap", "shockwave"], "burn": 40, "duration": 3 },
-    { "id": "megaMagnet", "name": "Mega Magnet", "desc": "Evolution (Stronger Field + Junk Hoarder): +60 junk capacity and double pull range.", "rarity": "epic", "max": 1, "requires": ["strongerField", "junkHoarder"], "value": 60 }
+    {
+      "id": "strongerField",
+      "name": "Stronger Field",
+      "desc": "+25% magnet radius. Grab junk from further away.",
+      "rarity": "common",
+      "max": 5,
+      "value": 0.25
+    },
+    {
+      "id": "spinCycle",
+      "name": "Spin Cycle",
+      "desc": "Junk orbits 30% faster. Faster junk hits harder.",
+      "rarity": "common",
+      "max": 5,
+      "value": 0.3
+    },
+    {
+      "id": "heavyMetal",
+      "name": "Heavy Metal",
+      "desc": "Junk is 50% heavier and hits harder. You are 15% slower.",
+      "rarity": "common",
+      "max": 3,
+      "value": 0.5,
+      "slow": 0.15
+    },
+    {
+      "id": "quickCharge",
+      "name": "Quick Charge",
+      "desc": "Pulse recharges 20% faster.",
+      "rarity": "common",
+      "max": 3,
+      "value": 0.2
+    },
+    {
+      "id": "hotScrap",
+      "name": "Hot Scrap",
+      "desc": "Junk sets robots on fire. Burning bots take damage over time.",
+      "rarity": "common",
+      "max": 3,
+      "values": [
+        0,
+        8,
+        14,
+        20
+      ],
+      "duration": 2
+    },
+    {
+      "id": "explosiveCans",
+      "name": "Explosive Cans",
+      "desc": "Cans explode on impact, hurting every robot nearby.",
+      "rarity": "common",
+      "max": 3,
+      "radius": [
+        0,
+        55,
+        70,
+        85
+      ],
+      "damage": [
+        0,
+        18,
+        28,
+        40
+      ],
+      "cooldown": 1.5
+    },
+    {
+      "id": "bigPulse",
+      "name": "Big Pulse",
+      "desc": "Pulse reaches 30% further.",
+      "rarity": "common",
+      "max": 3,
+      "value": 0.3
+    },
+    {
+      "id": "shockwave",
+      "name": "Shockwave",
+      "desc": "Pulse deals 50% more damage.",
+      "rarity": "common",
+      "max": 3,
+      "value": 0.5
+    },
+    {
+      "id": "quickFeet",
+      "name": "Quick Feet",
+      "desc": "Move 10% faster.",
+      "rarity": "common",
+      "max": 3,
+      "value": 0.1
+    },
+    {
+      "id": "junkHoarder",
+      "name": "Junk Hoarder",
+      "desc": "Your ball holds 25 more pieces of junk.",
+      "rarity": "common",
+      "max": 3,
+      "value": 25
+    },
+    {
+      "id": "sharpEdges",
+      "name": "Sharp Edges",
+      "desc": "+8% chance for junk to land a double-damage critical hit.",
+      "rarity": "common",
+      "max": 3,
+      "value": 0.08
+    },
+    {
+      "id": "scrapCollector",
+      "name": "Scrap Collector",
+      "desc": "Robots pay 40% more scrap coins.",
+      "rarity": "common",
+      "max": 2,
+      "value": 0.4
+    },
+    {
+      "id": "spareHeart",
+      "name": "Spare Plating",
+      "desc": "+25 max health, and heal 25.",
+      "rarity": "rare",
+      "max": 2,
+      "value": 25
+    },
+    {
+      "id": "polarityFlip",
+      "name": "Polarity Flip",
+      "desc": "Pulse also pulls in all loose junk on the map.",
+      "rarity": "rare",
+      "max": 1
+    },
+    {
+      "id": "secondRing",
+      "name": "Second Ring",
+      "desc": "Junk forms counter-rotating rings that spin 15% faster.",
+      "rarity": "rare",
+      "max": 1,
+      "value": 0.15
+    },
+    {
+      "id": "scrapShield",
+      "name": "Scrap Shield",
+      "desc": "The first hit each wave loses no junk.",
+      "rarity": "rare",
+      "max": 1
+    },
+    {
+      "id": "staticCharge",
+      "name": "Static Charge",
+      "desc": "Pulse stuns every robot it hits.",
+      "rarity": "rare",
+      "max": 2,
+      "values": [
+        0,
+        1,
+        1.6
+      ]
+    },
+    {
+      "id": "reinforced",
+      "name": "Reinforced",
+      "desc": "Hits knock 25% less junk loose.",
+      "rarity": "rare",
+      "max": 2,
+      "value": 0.25
+    },
+    {
+      "id": "luckyFind",
+      "name": "Lucky Find",
+      "desc": "Heavy gold TVs drop three times as often.",
+      "rarity": "rare",
+      "max": 1,
+      "value": 3
+    },
+    {
+      "id": "hotterFireballs",
+      "name": "Hotter Fireballs",
+      "desc": "Fireballs deal 30% more damage and fire 15% faster.",
+      "rarity": "common",
+      "max": 3,
+      "value": 0.3,
+      "rate": 0.15
+    },
+    {
+      "id": "chainLightning",
+      "name": "Chain Lightning",
+      "desc": "Every 5th fireball arcs between nearby robots.",
+      "rarity": "common",
+      "max": 3,
+      "targets": [
+        0,
+        3,
+        4,
+        5
+      ],
+      "damage": [
+        0,
+        20,
+        28,
+        36
+      ]
+    },
+    {
+      "id": "junkShotgun",
+      "name": "Junk Shotgun",
+      "desc": "Right-click or special button: blast 8 junk pieces from your ball.",
+      "rarity": "common",
+      "max": 2,
+      "pieces": [
+        0,
+        8,
+        10
+      ],
+      "cooldown": [
+        0,
+        3,
+        2.4
+      ]
+    },
+    {
+      "id": "magnetMine",
+      "name": "Magnet Mine",
+      "desc": "Special: drop a mine that pulls robots in, then explodes. Costs 6 junk.",
+      "rarity": "common",
+      "max": 2,
+      "cost": 6,
+      "radius": [
+        0,
+        220,
+        260
+      ],
+      "damage": [
+        0,
+        40,
+        60
+      ],
+      "cooldown": 7
+    },
+    {
+      "id": "meteorDrop",
+      "name": "Meteor Drop",
+      "desc": "Hold left-click to drop a giant fused cube. Costs 20 junk.",
+      "rarity": "rare",
+      "max": 1,
+      "cost": 20,
+      "radius": 150,
+      "damage": 150,
+      "cooldown": 8,
+      "charge": 0.7
+    },
+    {
+      "id": "moltenCore",
+      "name": "Molten Core",
+      "desc": "Evolution (Hot Scrap + Explosive Cans): every piece burns hot and explodes on impact.",
+      "rarity": "epic",
+      "max": 1,
+      "requires": [
+        "hotScrap",
+        "explosiveCans"
+      ],
+      "burn": 30,
+      "radius": 45,
+      "damage": 22,
+      "cooldown": 2
+    },
+    {
+      "id": "buzzsaw",
+      "name": "Buzzsaw",
+      "desc": "Evolution (Spin Cycle + Second Ring): junk spins 50% faster and hits 50% harder.",
+      "rarity": "epic",
+      "max": 1,
+      "requires": [
+        "spinCycle",
+        "secondRing"
+      ],
+      "spin": 0.5,
+      "damage": 0.5
+    },
+    {
+      "id": "fireRing",
+      "name": "Fire Ring",
+      "desc": "Evolution (Hot Scrap + Shockwave): Pulse sets every robot it hits on fire.",
+      "rarity": "epic",
+      "max": 1,
+      "requires": [
+        "hotScrap",
+        "shockwave"
+      ],
+      "burn": 40,
+      "duration": 3
+    },
+    {
+      "id": "megaMagnet",
+      "name": "Mega Magnet",
+      "desc": "Evolution (Stronger Field + Junk Hoarder): +60 junk capacity and double pull range.",
+      "rarity": "epic",
+      "max": 1,
+      "requires": [
+        "strongerField",
+        "junkHoarder"
+      ],
+      "value": 60
+    },
+    {
+      "id": "inferno",
+      "name": "Inferno",
+      "desc": "Evolution (Hotter Fireballs + Molten Core): fireballs leave burning lava trails.",
+      "rarity": "epic",
+      "max": 1,
+      "requires": [
+        "hotterFireballs",
+        "moltenCore"
+      ],
+      "burn": 25
+    }
   ],
   "fallback": [
-    { "id": "scrapPile", "name": "Scrap Pile", "desc": "+25 scrap coins to spend in the Garage.", "rarity": "common", "max": 99, "value": 25 },
-    { "id": "patchUp", "name": "Patch Up", "desc": "Heal one heart.", "rarity": "common", "max": 99, "value": 1 }
-  ]
+    {
+      "id": "scrapPile",
+      "name": "Scrap Pile",
+      "desc": "+25 scrap coins to spend in the Garage.",
+      "rarity": "common",
+      "max": 99,
+      "value": 25
+    },
+    {
+      "id": "patchUp",
+      "name": "Patch Up",
+      "desc": "Heal 30 health.",
+      "rarity": "common",
+      "max": 99,
+      "value": 30
+    }
+  ],
+  "fireball": {
+    "cooldown": 0.6,
+    "speed": 560,
+    "range": 520,
+    "radius": 55,
+    "damage": 16,
+    "burn": 10,
+    "burnTime": 2.5,
+    "chainEvery": 5
+  }
 }

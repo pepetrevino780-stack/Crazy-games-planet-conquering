@@ -95,6 +95,17 @@ const DT = 1000 / FPS;
       }
       mx += (1400 - pl.x) * 0.0006;
       my += (1000 - pl.y) * 0.0006;
+      // Aim the mouse at the nearest robot and hold fire, like a desktop player.
+      const tgt = best && best.kind !== 'boss' ? best : null;
+      if (tgt) {
+        const cam = s.cameras.main;
+        C.aimX = (tgt.x - cam.worldView.x) * cam.zoom;
+        C.aimY = (tgt.y - cam.worldView.y) * cam.zoom;
+        C.hasAim = true;
+        C.fireHeld = true;
+      } else {
+        C.fireHeld = false;
+      }
       const l = Math.hypot(mx, my) || 1;
       C.touchActive = true;
       C.touchX = mx / l;

@@ -10,7 +10,8 @@
     "zip": "npm run build && cd dist && rm -f ../junk-magnet.zip && zip -qr ../junk-magnet.zip .",
     "build:play": "npm run build && rm -rf play && cp -r dist play",
     "playtest": "node tools/playtest.cjs",
-    "store-art": "node tools/store-art.cjs"
+    "store-art": "node tools/store-art.cjs",
+    "playtest:idle": "node tools/playtest.cjs --idle"
   },
   "dependencies": {
     "@fontsource/lilita-one": "^5.3.0",

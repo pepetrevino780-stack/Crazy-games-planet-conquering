@@ -19,7 +19,7 @@ export interface PlayerStats {
   spin: number;
   pulseCooldown: number;
   pulseRange: number;
-  maxHearts: number;
+  maxHp: number;
   massMult: number;
   damageMult: number;
   burnDps: number;
@@ -44,6 +44,19 @@ export interface PlayerStats {
   fireRing: boolean;
   fireRingDps: number;
   fireRingTime: number;
+  fbDamageMult: number;
+  fbRateMult: number;
+  chainTargets: number;
+  chainDamage: number;
+  shotgunPieces: number;
+  shotgunCooldown: number;
+  mineRadius: number;
+  mineDamage: number;
+  mineCooldown: number;
+  mineCost: number;
+  meteor: boolean;
+  inferno: boolean;
+  infernoBurn: number;
 }
 
 const cards = upgradeData.cards as CardDef[];
@@ -132,7 +145,7 @@ export class UpgradeSystem {
         (buzz ? 1 + c('buzzsaw').spin : 1),
       pulseCooldown: def.pulseCooldown * Math.pow(1 - c('quickCharge').value, lv('quickCharge')),
       pulseRange: def.pulseRange * (1 + c('bigPulse').value * lv('bigPulse')),
-      maxHearts: def.hearts + lv('spareHeart'),
+      maxHp: def.maxHp + c('spareHeart').value * lv('spareHeart'),
       massMult: Math.pow(1 + c('heavyMetal').value, lv('heavyMetal')),
       damageMult: buzz ? 1 + c('buzzsaw').damage : 1,
       burnDps: lv('moltenCore') ? molten.burn : hot.values[lv('hotScrap')],
@@ -157,6 +170,19 @@ export class UpgradeSystem {
       fireRing: lv('fireRing') > 0,
       fireRingDps: c('fireRing').burn,
       fireRingTime: c('fireRing').duration,
+      fbDamageMult: 1 + c('hotterFireballs').value * lv('hotterFireballs'),
+      fbRateMult: Math.pow(1 - c('hotterFireballs').rate, lv('hotterFireballs')),
+      chainTargets: c('chainLightning').targets[lv('chainLightning')],
+      chainDamage: c('chainLightning').damage[lv('chainLightning')],
+      shotgunPieces: c('junkShotgun').pieces[lv('junkShotgun')],
+      shotgunCooldown: c('junkShotgun').cooldown[lv('junkShotgun')],
+      mineRadius: c('magnetMine').radius[lv('magnetMine')],
+      mineDamage: c('magnetMine').damage[lv('magnetMine')],
+      mineCooldown: c('magnetMine').cooldown,
+      mineCost: c('magnetMine').cost,
+      meteor: lv('meteorDrop') > 0,
+      inferno: lv('inferno') > 0,
+      infernoBurn: c('inferno').burn,
     };
   }
 }

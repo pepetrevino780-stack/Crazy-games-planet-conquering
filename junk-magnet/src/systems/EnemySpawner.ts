@@ -85,7 +85,34 @@ export interface EnemyDef {
   compactRadius?: number;
   compactEvery?: number;
   junkKnock?: number;
+  dmg?: number;
+  chargeDamage?: number;
+  armorAfterSlam?: number;
+  stompDamage?: number;
+  bulletDmg?: number;
 }
+
+export interface Phase {
+  name: string;
+  at: number;
+  speed: number;
+  damage: number;
+  min: number;
+  max: number;
+  chaseRange?: number;
+  lunge?: boolean;
+  flank: number;
+  leadShots?: boolean;
+  ripChance: number;
+  fireRate: number;
+  aheadSpawn: number;
+  bomberRush?: number;
+  noCalm?: boolean;
+  weights: Record<string, number>;
+}
+
+export const PHASES = enemyData.phases as unknown as Phase[];
+export const PHASE_WARNING = enemyData.phaseWarning;
 
 interface Squad {
   id: string;
@@ -113,6 +140,9 @@ export const BOSS_ENTER = 5;
 export const MODE_MOVE = 0;
 export const MODE_TELEGRAPH = 1;
 export const MODE_ACT = 2;
+/** Crusher charge: aim (red line), then rush. */
+export const CRUSHER_AIM = 6;
+export const CRUSHER_CHARGE = 7;
 
 export interface Enemy {
   active: boolean;
@@ -156,6 +186,10 @@ export interface Enemy {
   ty: number;
   bounces: number;
   healing: boolean;
+  /** Crusher: immune to junk contact for a few seconds after each slam. */
+  junkImmune: number;
+  /** Which side this robot flanks from (−1 or 1). */
+  flankSide: number;
   seed: number;
   age: number;
   mode: number;
@@ -197,6 +231,7 @@ export interface EnemyHost {
   onThiefEscaped(e: Enemy): void;
   queueExplosion(x: number, y: number, r: number, damage: number, hurtsPlayer: boolean): void;
   onSpitterFire(): void;
+  onPhaseChange(index: number): void;
 }
 
 export class EnemySpawner {
@@ -209,6 +244,8 @@ export class EnemySpawner {
   bossSpawned = false;
   minibossSpawned = false;
   private time = 0;
+  phaseIndex = 0;
+  private fillTimer = 0;
   private bossWarned = false;
   private minibossWarned = false;
   private credit = 0;
@@ -262,6 +299,8 @@ export class EnemySpawner {
       ty: 0,
       bounces: 0,
       healing: false,
+      junkImmune: 0,
+      flankSide: 1,
       seed: 0,
       age: 0,
       mode: 0,
@@ -279,6 +318,10 @@ export class EnemySpawner {
       vy: 0,
       life: 0,
     }));
+  }
+
+  get phase(): Phase {
+    return PHASES[this.phaseIndex];
   }
 
   get hpMult(): number {
@@ -307,7 +350,7 @@ export class EnemySpawner {
     e.elite = !def.noElite && !big && this.time >= WAVES.eliteFrom && this.host.spawnRng.next() < eliteChance;
     const hp = big ? def.hp : def.hp * this.hpMult;
     e.maxHp = e.hp = hp * (e.elite ? WAVES.eliteHp : 1);
-    const speedMult = big ? 1 : Math.min(1.4, 1 + WAVES.speedPerWave * this.wave);
+    const speedMult = 1;
     e.speed = def.speed * speedScale * speedMult * (e.elite ? WAVES.eliteSpeed : 1) * (0.9 + Math.random() * 0.2);
     e.radius = r * (e.elite ? 1.15 : 1);
     e.xp = def.xp * (e.elite ? WAVES.eliteXp : 1);
@@ -332,6 +375,8 @@ export class EnemySpawner {
     e.fuse = 0;
     e.bounces = 0;
     e.healing = false;
+    e.junkImmune = 0;
+    e.flankSide = Math.random() < 0.5 ? -1 : 1;
     e.seed = Math.random() * 100;
     e.age = 0;
     e.mode = kind === 'boss' || kind === 'crusher' ? BOSS_ENTER : MODE_MOVE;
@@ -441,17 +486,26 @@ export class EnemySpawner {
     return { x: px + Math.cos(angle) * dist, y: py + Math.sin(angle) * dist };
   }
 
+  /** Mostly all around you; later phases also spawn ahead of where you're moving (no safe corners). */
+  private spawnAngle(): number {
+    const rng = this.host.spawnRng;
+    const pl = this.host.player;
+    const moving = Math.hypot(pl.vx, pl.vy) > 60;
+    if (moving && rng.next() < this.phase.aheadSpawn) return Math.atan2(pl.vy, pl.vx) + rng.range(-0.6, 0.6);
+    return rng.range(0, Math.PI * 2);
+  }
+
   private spawnGroup(kind: EnemyKind, px: number, py: number): void {
     const rng = this.host.spawnRng;
     const def = ENEMY_DEFS[kind];
-    const p = this.spawnPoint(px, py, rng.range(0, Math.PI * 2), this.host.spawnDistance());
+    const p = this.spawnPoint(px, py, this.spawnAngle(), this.host.spawnDistance());
     for (let i = 0; i < def.group; i++) this.spawn(kind, p.x + rng.range(-40, 40), p.y + rng.range(-40, 40));
   }
 
   /** Mixed squads: e.g. Shield Bots with a Repair Drone behind them. */
   private spawnSquad(squad: Squad, px: number, py: number): void {
     const rng = this.host.spawnRng;
-    const p = this.spawnPoint(px, py, rng.range(0, Math.PI * 2), this.host.spawnDistance());
+    const p = this.spawnPoint(px, py, this.spawnAngle(), this.host.spawnDistance());
     for (const [kind, count] of Object.entries(squad.members)) {
       for (let i = 0; i < count; i++) this.spawn(kind as EnemyKind, p.x + rng.range(-50, 50), p.y + rng.range(-50, 50));
     }
@@ -465,10 +519,11 @@ export class EnemySpawner {
       return d.unlockAt <= t && d.weight > 0 && (!d.map || d.map === map);
     });
     const squads = SQUADS.filter((s) => s.unlockAt <= t);
-    const total = kinds.reduce((s, k) => s + ENEMY_DEFS[k].weight, 0) + squads.reduce((s, q) => s + q.weight, 0);
+    const weight = (k: EnemyKind) => ENEMY_DEFS[k].weight * (this.phase.weights[k] ?? 1);
+    const total = kinds.reduce((s, k) => s + weight(k), 0) + squads.reduce((s, q) => s + q.weight, 0);
     let roll = rng.next() * total;
     for (const k of kinds) {
-      roll -= ENEMY_DEFS[k].weight;
+      roll -= weight(k);
       if (roll < 0) return { kind: k, cost: ENEMY_DEFS[k].cost };
     }
     for (const q of squads) {
@@ -482,6 +537,13 @@ export class EnemySpawner {
   private runSpawns(dt: number, t: number, px: number, py: number): void {
     const rng = this.host.spawnRng;
     const dist = this.host.spawnDistance();
+    // Aggression phases: Calm → Hunting → Swarming → Frenzy → Overdrive.
+    let pi = 0;
+    while (pi + 1 < PHASES.length && t >= PHASES[pi + 1].at) pi++;
+    if (pi !== this.phaseIndex) {
+      this.phaseIndex = pi;
+      this.host.onPhaseChange(pi);
+    }
     if (this.introStep === 0 && t >= INTRO.firstBotAt) {
       this.introStep = 1;
       const e = this.spawn('tin', px + dist * 0.62, py - 20, INTRO.firstBotSpeed);
@@ -505,7 +567,7 @@ export class EnemySpawner {
         this.trickle += INTRO.trickle * dt;
         while (this.trickle >= 1) {
           this.trickle -= 1;
-          this.spawnGroup('tin', px, py);
+          if (this.activeCount < this.phase.max) this.spawnGroup('tin', px, py);
         }
       }
       return;
@@ -543,7 +605,7 @@ export class EnemySpawner {
 
     const wave = Math.floor((t - WAVES.firstWaveAt) / WAVES.interval) + 1;
     const waveStart = WAVES.firstWaveAt + (wave - 1) * WAVES.interval;
-    const calm = t >= WAVES.calmEvery && t % WAVES.calmEvery < WAVES.calmLength;
+    const calm = !this.phase.noCalm && t >= WAVES.calmEvery && t % WAVES.calmEvery < WAVES.calmLength;
     if (wave !== this.wave) {
       this.wave = wave;
       let budget = WAVES.baseBudget + WAVES.budgetPerWave * (wave - 1) + WAVES.budgetQuad * (wave - 1) ** 2;
@@ -556,8 +618,17 @@ export class EnemySpawner {
       this.rate = (budget * (1 - (calmHere ? 0 : WAVES.burstFraction))) / spendTime;
     }
     if (calm) return;
+    // Keep the screen busy: never fewer than the phase minimum, never more than its maximum.
+    const ph = this.phase;
+    this.fillTimer -= dt;
+    if (this.activeCount < ph.min && this.fillTimer <= 0) {
+      this.fillTimer = 0.3;
+      const pick = this.pickNext(t);
+      if (pick.kind) this.spawnGroup(pick.kind, px, py);
+      else if (pick.squad) this.spawnSquad(pick.squad, px, py);
+    }
     this.credit += this.rate * dt;
-    while (this.activeCount < CAPS.enemies - 8) {
+    while (this.activeCount < Math.min(ph.max, CAPS.enemies - 8)) {
       if (!this.next) this.next = this.pickNext(t);
       if (this.credit < this.next.cost) break;
       this.credit -= this.next.cost;
@@ -588,6 +659,7 @@ export class EnemySpawner {
       const e = items[i];
       if (!e.active) continue;
       e.age += dt;
+      if (e.harmless && e.age > 8) e.harmless = false;
       if (e.numCd > 0) e.numCd -= dt;
       if (e.hurtCd > 0) e.hurtCd -= dt;
       const dx = px - e.x;
@@ -602,12 +674,17 @@ export class EnemySpawner {
         e.stun -= dt;
         mx = my = 0;
       } else {
-        const m = this.behave(e, dt, dist, nx, ny, menu, enraged);
+        const m = this.behave(e, dt, dist, nx, ny, menu, enraged) ?? this.chase(e, dt, dist, nx, ny, menu);
         if (m === null) continue; // removed this frame
-        if (m) {
-          mx = m.mx;
-          my = m.my;
-        }
+        mx = m.mx;
+        my = m.my;
+      }
+      if (e.junkImmune > 0) e.junkImmune -= dt;
+      // Phase speed (and burning robots panic and run faster).
+      if (!menu && e.kind !== 'boss' && e.kind !== 'crusher') {
+        const sm = this.phase.speed * (e.burnTimer > 0 ? 1.25 : 1);
+        mx *= sm;
+        my *= sm;
       }
 
       if (e.burnTimer > 0) {
@@ -622,6 +699,8 @@ export class EnemySpawner {
             endScale: 0.1,
           });
         }
+        // Fire spreads to robots it bumps into.
+        if (Math.random() < dt * 3) this.spreadFire(e);
         if (this.damage(e, e.burnDps * dt, e.x, e.y, 0)) continue;
       }
 
@@ -649,6 +728,40 @@ export class EnemySpawner {
     }
 
     this.updateBullets(dt);
+  }
+
+  /** Default movement: wander in the Calm phase, otherwise chase, flanking from the sides later on. */
+  private chase(e: Enemy, dt: number, dist: number, nx: number, ny: number, menu: boolean): { mx: number; my: number } {
+    const ph = this.phase;
+    if (e.burnTimer > 0) {
+      const w = Math.sin(e.age * 9 + e.seed) * 0.9;
+      return { mx: (nx - ny * w) * e.speed, my: (ny + nx * w) * e.speed };
+    }
+    if (!menu && ph.chaseRange && dist > ph.chaseRange) {
+      // Wandering, but drifting your way.
+      const toward = Math.atan2(ny, nx);
+      e.facing += (Math.sin(e.age * 0.9 + e.seed) * 1.6 + Phaser.Math.Angle.Wrap(toward - e.facing) * 0.6) * dt;
+      return { mx: Math.cos(e.facing) * e.speed * 0.6, my: Math.sin(e.facing) * e.speed * 0.6 };
+    }
+    if (!menu && ph.flank > 0) {
+      const k = ph.flank * 0.9 * e.flankSide * Phaser.Math.Clamp((dist - 90) / 260, 0, 1);
+      const c = Math.cos(k);
+      const sn = Math.sin(k);
+      return { mx: (nx * c - ny * sn) * e.speed, my: (nx * sn + ny * c) * e.speed };
+    }
+    return { mx: nx * e.speed, my: ny * e.speed };
+  }
+
+  private spreadFire(e: Enemy): void {
+    for (const o of this.pool.items) {
+      if (!o.active || o === e || o.burnTimer > 0 || o.hidden) continue;
+      const r = e.radius + o.radius + 22;
+      if ((o.x - e.x) ** 2 + (o.y - e.y) ** 2 < r * r) {
+        o.burnDps = e.burnDps * 0.8;
+        o.burnTimer = 1.6;
+        return;
+      }
+    }
   }
 
   /** Keep bots from stacking into one blob; big ones shove everyone aside. */
@@ -695,7 +808,8 @@ export class EnemySpawner {
       e.windup > 0 ||
       e.fuse > 0 ||
       (heavy && (e.mode === BOSS_TELEGRAPH || e.mode === BOSS_SLAM_TELEGRAPH)) ||
-      ((e.kind === 'press' || e.kind === 'burrower' || e.kind === 'crusher') && e.mode === MODE_TELEGRAPH);
+      ((e.kind === 'press' || e.kind === 'burrower' || e.kind === 'crusher') && e.mode === MODE_TELEGRAPH) ||
+      (e.kind === 'crusher' && e.mode === CRUSHER_AIM);
     if (telegraphing) {
       const k = Math.sin(e.age * 40) * 0.08;
       sx += k;
@@ -729,6 +843,21 @@ export class EnemySpawner {
     const host = this.host;
     switch (e.kind) {
       case 'sprinter':
+        // From the Hunting phase, Sprinters lunge when they get close.
+        if (!menu && this.phase.lunge) {
+          if (e.modeTimer > 0) {
+            e.modeTimer -= dt;
+            return { mx: e.cdx * e.speed * 2.4, my: e.cdy * e.speed * 2.4 };
+          }
+          e.fireTimer -= dt;
+          if (dist < 220 && e.fireTimer <= 0) {
+            e.modeTimer = 0.35;
+            e.fireTimer = 2.2;
+            e.cdx = nx;
+            e.cdy = ny;
+          }
+        }
+      // falls through
       case 'splitling': {
         const w = Math.sin(e.age * 6 + e.seed) * 0.5;
         return { mx: (nx - ny * w) * e.speed, my: (ny + nx * w) * e.speed };
@@ -809,7 +938,8 @@ export class EnemySpawner {
           return { mx: nx * e.speed * 0.3, my: ny * e.speed * 0.3 };
         }
         if (!menu && dist < (d.fuseRange ?? 95)) e.fuse = d.fuse ?? 0.8;
-        return undefined;
+        const rush = menu ? 1 : (this.phase.bomberRush ?? 1);
+        return rush > 1 ? { mx: nx * e.speed * rush, my: ny * e.speed * rush } : undefined;
       }
       case 'repair': {
         // Stays behind the nearest ally (away from you) and heals everyone around it.
@@ -922,7 +1052,7 @@ export class EnemySpawner {
         e.fireTimer -= dt;
         if (e.fireTimer <= 0) {
           e.windup = e.def.windup ?? 0.4;
-          e.fireTimer = e.def.fireInterval ?? 2.6;
+          e.fireTimer = (e.def.fireInterval ?? 2.6) / this.phase.fireRate;
         }
       }
     }
@@ -970,30 +1100,52 @@ export class EnemySpawner {
     return { mx: 0, my: 0 };
   }
 
-  /** Crusher mini-boss: slow, armoured, stomps (knocks junk loose) when you get close. */
+  /**
+   * Crusher mini-boss: alternates a ground slam (knocks junk off, then junk can't hurt it for a
+   * few seconds) and a charge along a red warning line.
+   */
   private crusherAI(e: Enemy, dt: number, dist: number, nx: number, ny: number): { mx: number; my: number } {
     const d = e.def;
     e.modeTimer -= dt;
-    if (e.mode === BOSS_ENTER) {
-      if (e.modeTimer <= 0) (e.mode = MODE_MOVE), (e.fireTimer = 1);
-      return { mx: nx * e.speed * 2, my: ny * e.speed * 2 };
-    }
-    if (e.mode === MODE_TELEGRAPH) {
-      if (e.modeTimer <= 0) {
-        this.host.onCrusherStomp(e);
-        e.mode = MODE_ACT;
-        e.modeTimer = 0.6;
+    switch (e.mode) {
+      case BOSS_ENTER:
+        if (e.modeTimer <= 0) (e.mode = MODE_MOVE), (e.fireTimer = 1);
+        return { mx: nx * e.speed * 2, my: ny * e.speed * 2 };
+      case MODE_TELEGRAPH:
+        if (e.modeTimer <= 0) {
+          this.host.onCrusherStomp(e);
+          e.junkImmune = d.armorAfterSlam ?? 3.5;
+          e.mode = MODE_ACT;
+          e.modeTimer = 0.6;
+        }
+        return { mx: 0, my: 0 };
+      case CRUSHER_AIM:
+        if (e.modeTimer > (d.telegraph ?? 0.9) * 0.4) (e.cdx = nx), (e.cdy = ny);
+        if (e.modeTimer <= 0) (e.mode = CRUSHER_CHARGE), (e.modeTimer = d.chargeTime ?? 0.9);
+        return { mx: 0, my: 0 };
+      case CRUSHER_CHARGE: {
+        if (e.modeTimer <= 0) (e.mode = MODE_ACT), (e.modeTimer = 0.7);
+        const sp = d.chargeSpeed ?? 480;
+        return { mx: e.cdx * sp, my: e.cdy * sp };
       }
-      return { mx: 0, my: 0 };
-    }
-    if (e.mode === MODE_ACT) {
-      if (e.modeTimer <= 0) (e.mode = MODE_MOVE), (e.fireTimer = d.stompEvery ?? 3.6);
-      return { mx: 0, my: 0 };
+      case MODE_ACT:
+        if (e.modeTimer <= 0) (e.mode = MODE_MOVE), (e.fireTimer = d.stompEvery ?? 3.6);
+        return { mx: 0, my: 0 };
+      default:
+        break;
     }
     e.fireTimer -= dt;
-    if (e.fireTimer <= 0 && dist < (d.stompRadius ?? 190) + 60) {
-      e.mode = MODE_TELEGRAPH;
-      e.modeTimer = d.telegraph ?? 0.9;
+    if (e.fireTimer <= 0) {
+      e.cycle++;
+      if (e.cycle % 2 === 1 && dist < (d.stompRadius ?? 190) + 60) {
+        e.mode = MODE_TELEGRAPH;
+        e.modeTimer = d.telegraph ?? 0.9;
+      } else {
+        e.mode = CRUSHER_AIM;
+        e.modeTimer = d.telegraph ?? 0.9;
+        e.cdx = nx;
+        e.cdy = ny;
+      }
       this.host.onBossTelegraph(e);
       return { mx: 0, my: 0 };
     }
@@ -1070,8 +1222,14 @@ export class EnemySpawner {
   private fire(e: Enemy, nx: number, ny: number): void {
     const d = e.def;
     const count = this.wave >= (d.volleyFromWave ?? 99) ? (d.volley ?? 1) : 1;
-    const base = Math.atan2(ny, nx);
     const speed = d.bulletSpeed ?? 175;
+    let base = Math.atan2(ny, nx);
+    if (this.phase.leadShots) {
+      // Aim where you're going to be.
+      const p = this.host.player;
+      const t = Math.hypot(p.x - e.x, p.y - e.y) / speed;
+      base = Math.atan2(p.y + p.vy * t * 0.8 - e.y, p.x + p.vx * t * 0.8 - e.x);
+    }
     for (let i = 0; i < count; i++) {
       const b = this.bullets.obtain();
       if (!b) return;

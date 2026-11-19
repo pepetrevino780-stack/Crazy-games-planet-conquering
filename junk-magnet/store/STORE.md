@@ -17,6 +17,8 @@ beat the Crusher at 2:45, and survive until The Compactor arrives at 6:00.
 **Controls:**
 - Move: WASD / arrow keys (ZQSD on AZERTY) · drag anywhere on mobile
 - Pulse: Space · Pulse button on mobile
+- Fireball: left-click (aims at the cursor; auto-aims on mobile)
+- Specials: right-click or E · special button on mobile
 - Pause: P · pause icon on mobile
 
 **Covers** (captured from the real game with `npm run store-art`):
