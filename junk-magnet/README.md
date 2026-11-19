@@ -21,10 +21,12 @@ npm run build:play   # copy the build to play/ (for GitHub Pages)
 | Core loop | Move, junk attaches and orbits in rings, contact damage = mass × speed |
 | Growth | Junk capacity starts at 60 and rises 10 per level (up to 250). A full ball fuses new junk into its lightest piece (bolt → gear → can → pipe → cube), so it keeps getting heavier. A bar under the counter shows it filling |
 | Pulse | Space / button. Hits harder the fuller the ball is, **Overcharged** (bigger, gold) when full; catching 6+ robots refunds half the cooldown and pays scrap |
-| Hits | Knock 20% of junk loose (some shatters); at zero junk you lose hearts (3) |
+| Health | 100 HP bar (flashes under 30%, heartbeat under 15%). Every hit costs HP; a full ball cuts damage by up to 40% and some junk gets knocked loose. No passive healing: rare health packs (~1 per 45 s), Spare Plating / Patch Up cards, Black Hole eating junk |
+| Aggression phases | Calm (0:00, wander) → Hunting (1:00, Sprinters lunge) → Swarming (2:30, flanking, leading shots, junk ripped off) → Frenzy (4:00, Bomber rushes, spawns ahead of you) → Overdrive (6:00). Speed, damage (4 → 12 HP) and robots on screen ramp per phase, with a warning banner and heavier music |
+| Aimed attacks | Left-click Fireball (auto-aims on touch, 0.6 s). Cards add Junk Shotgun (right-click / special button / E, spends 8 junk), Magnet Mine, Chain Lightning (every 5th fireball), Meteor Drop (hold left-click), Inferno evolution (lava trails). Cooldown icons sit next to Pulse; burning robots panic and spread fire |
 | Enemies | Tin Bot, Sprinter, Spitter, Shield Bot, Anti-Mag, Scrap Thief (1:00), Splitter (1:30), Burrower (2:00), Magnet Bot (2:30), Bomber (3:00), Repair Drone (3:30); mixed squads; glowing elites after 4:00; one map-only enemy per map (Tyre Roller, Press Bot, Gravity Mine) |
-| Bosses | Crusher mini-boss at 2:45 (armoured, stomps, drops a rare upgrade); The Compactor at 6:00 (charges, crushes junk into cubes, slams) |
-| Upgrades | 19 cards + 4 evolutions (Molten Core, Buzzsaw, Fire Ring, Mega Magnet); cards show their combo partner |
+| Bosses | Crusher mini-boss at 2:45 (6,500 HP, ~45 s fight: ground slam, then junk can't hurt it for 3.5 s; charge along a red line for 25 HP; drops a gold rare upgrade); The Compactor at 6:00 (charges, crushes junk into cubes, slams) |
+| Upgrades | 24 cards + 5 evolutions (Molten Core, Buzzsaw, Fire Ring, Mega Magnet, Inferno); cards show their combo partner; rare cards are gold, glow and chime |
 | Replay | Results show the next unlock ("120 more scrap for the Fridge Magnet"); 3 active challenges pay scrap and are shown on the title and results |
 | First 30 s | Title over live arena → magnet drops in → one slow bot pops into 3 bolts → pack of 6 → Pulse hint + cluster → first level-up, no text popups |
 | Meta | Scrap coins, Garage with 4 magnets and 3 maps, Daily Seed, saves in localStorage / CrazyGames data |
@@ -39,10 +41,11 @@ npm run build:play   # copy the build to play/ (for GitHub Pages)
 All balance lives in `src/data/*.json` (`enemies.json` has waves and the boss, `junk.json`
 has damage, knockback and the coin economy, `magnets.json`, `maps.json`, `upgrades.json`).
 
-`npm run playtest -- shots 4 520` runs a bot through a full run at 4× speed (needs `npm run dev`
-on port 5173, or `URL=...`). With the current numbers its ball follows the rising cap
-(60 → 250 pieces, total mass still climbing from fused pieces), it beats the Crusher at about
-3:00, takes ~40 hits and finishes around 7:50. The bot is a decent player, so
+`npm run playtest` runs a kiting bot through a full run at 4× speed, and `npm run playtest:idle`
+is the AFK test: an idle player must die before 1:30 or it exits with an error (both need
+`npm run dev` on port 5173, or `URL=...`). Currently the idle player dies at about 0:56. With the current numbers the bot beats the Crusher in about
+45 s and dies at about 6:00 when The Compactor arrives, which matches the target that most
+players die between 3:00 and 6:00. The bot is a decent player, so
 humans will find it harder; playtest with real people before trusting the numbers.
 
 ## Before submitting (needs a human)

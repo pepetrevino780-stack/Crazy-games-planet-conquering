@@ -19,12 +19,13 @@ export interface MagnetDef {
   ringSpacing: number;
   pulseCooldown: number;
   pulseRange: number;
-  hearts: number;
+  maxHp: number;
   bumpDamage: number;
   bumpCooldown: number;
   bumpKnockback: number;
   eatCost?: number;
   eatInterval?: number;
+  eatHeal?: number;
 }
 
 export class Player {
@@ -32,7 +33,7 @@ export class Player {
   y: number;
   vx = 0;
   vy = 0;
-  hearts: number;
+  hp: number;
   invuln = 0;
   pulseCd = 0;
   bumpTimer = 0;
@@ -55,7 +56,7 @@ export class Player {
     this.x = x;
     this.y = y;
     this.radius = def.radius;
-    this.hearts = stats.maxHearts;
+    this.hp = stats.maxHp;
     this.sprite = scene.add.image(x, y, def.texture).setScale(TS).setDepth(DEPTH.player);
     // WASD + arrows, plus Z/Q so AZERTY keyboards work without a setting.
     this.keys = scene.input.keyboard

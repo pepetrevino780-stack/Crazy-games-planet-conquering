@@ -1,18 +1,103 @@
 {
   "active": 3,
   "list": [
-    { "id": "sprinters", "text": "Smash 50 Sprinters", "type": "kills", "kind": "sprinter", "target": 50, "reward": 60 },
-    { "id": "noHeart", "text": "Reach 3:00 without losing a heart", "type": "noHeartTime", "target": 180, "reward": 80 },
-    { "id": "crusher", "text": "Defeat the Crusher", "type": "kills", "kind": "crusher", "target": 1, "reward": 100 },
-    { "id": "junk120", "text": "Hold 120 junk at once", "type": "junk", "target": 120, "reward": 60 },
-    { "id": "thieves", "text": "Catch 10 Scrap Thieves", "type": "kills", "kind": "thief", "target": 10, "reward": 60 },
-    { "id": "crowd8", "text": "Hit 8 robots with one Pulse", "type": "crowd", "target": 8, "reward": 70 },
-    { "id": "bombers", "text": "Smash 25 Bombers", "type": "kills", "kind": "bomber", "target": 25, "reward": 70 },
-    { "id": "survive5", "text": "Survive 5:00", "type": "time", "target": 300, "reward": 100 },
-    { "id": "level15", "text": "Reach level 15 in one run", "type": "level", "target": 15, "reward": 90 },
-    { "id": "elites", "text": "Smash 20 glowing elites", "type": "kills", "kind": "elite", "target": 20, "reward": 90 },
-    { "id": "compactor", "text": "Crush The Compactor", "type": "kills", "kind": "boss", "target": 1, "reward": 150 },
-    { "id": "total1000", "text": "Smash 1,000 robots in total", "type": "kills", "kind": "*", "target": 1000, "reward": 120 },
-    { "id": "junk200", "text": "Hold 200 junk at once", "type": "junk", "target": 200, "reward": 120 }
+    {
+      "id": "sprinters",
+      "text": "Smash 50 Sprinters",
+      "type": "kills",
+      "kind": "sprinter",
+      "target": 50,
+      "reward": 60
+    },
+    {
+      "id": "noHeart",
+      "text": "Reach 3:00 above half health",
+      "type": "noHeartTime",
+      "target": 180,
+      "reward": 80
+    },
+    {
+      "id": "crusher",
+      "text": "Defeat the Crusher",
+      "type": "kills",
+      "kind": "crusher",
+      "target": 1,
+      "reward": 200
+    },
+    {
+      "id": "junk120",
+      "text": "Hold 120 junk at once",
+      "type": "junk",
+      "target": 120,
+      "reward": 60
+    },
+    {
+      "id": "thieves",
+      "text": "Catch 10 Scrap Thieves",
+      "type": "kills",
+      "kind": "thief",
+      "target": 10,
+      "reward": 60
+    },
+    {
+      "id": "crowd8",
+      "text": "Hit 8 robots with one Pulse",
+      "type": "crowd",
+      "target": 8,
+      "reward": 70
+    },
+    {
+      "id": "bombers",
+      "text": "Smash 25 Bombers",
+      "type": "kills",
+      "kind": "bomber",
+      "target": 25,
+      "reward": 70
+    },
+    {
+      "id": "survive5",
+      "text": "Survive 5:00",
+      "type": "time",
+      "target": 300,
+      "reward": 100
+    },
+    {
+      "id": "level15",
+      "text": "Reach level 15 in one run",
+      "type": "level",
+      "target": 15,
+      "reward": 90
+    },
+    {
+      "id": "elites",
+      "text": "Smash 20 glowing elites",
+      "type": "kills",
+      "kind": "elite",
+      "target": 20,
+      "reward": 90
+    },
+    {
+      "id": "compactor",
+      "text": "Crush The Compactor",
+      "type": "kills",
+      "kind": "boss",
+      "target": 1,
+      "reward": 150
+    },
+    {
+      "id": "total1000",
+      "text": "Smash 1,000 robots in total",
+      "type": "kills",
+      "kind": "*",
+      "target": 1000,
+      "reward": 120
+    },
+    {
+      "id": "junk200",
+      "text": "Hold 200 junk at once",
+      "type": "junk",
+      "target": 200,
+      "reward": 120
+    }
   ]
 }

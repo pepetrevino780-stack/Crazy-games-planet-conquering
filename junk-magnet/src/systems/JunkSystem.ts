@@ -285,6 +285,26 @@ export class JunkSystem {
     }
   }
 
+  /** Junk Shotgun: pull the outermost pieces off the ball and return their types. */
+  takeOutermost(n: number): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < n && this.attached.length > 0; i++) {
+      const p = this.attached.pop()!;
+      out.push(p.type);
+      p.sprite.setVisible(false);
+      this.pool.release(p);
+    }
+    return out;
+  }
+
+  massOf(type: number): number {
+    return types[type].mass;
+  }
+
+  typeId(type: number): string {
+    return types[type].id;
+  }
+
   /** Polarity Flip: every loose piece on the map flies to you. */
   pullAll(): void {
     for (const p of this.pool.items) {

@@ -1,86 +1,146 @@
 /**
- * Automated balance playtest: a simple kiting bot plays a full run (optionally time-warped)
- * and logs junk, hearts, hits, kills and boss HP every 20 s of game time.
- * Run `npm run dev` first, then: node tools/playtest.cjs <screenshot-dir> [warp=4] [max-seconds=520]
+ * Automated playtests. Start `npm run dev` first (port 5173, or set URL=...).
+ *
+ *   node tools/playtest.cjs [--idle] [--warp=4] [--max=520] [--shots=dir]
+ *
+ * Default: a kiting bot plays a full run (time-warped) and logs health, junk, hits, kills and
+ * boss HP every 20 s of game time.
+ * --idle: the AFK test. Nobody touches the controls; the run must end in death before 1:30,
+ *         otherwise the script exits with code 1.
  */
-// Automated playtest: menu -> run with a kiting bot, random cards, screenshots, error capture.
 const { chromium } = require('playwright');
-const OUT = process.argv[2];
-const WARP = Number(process.argv[3] || 1);
-const MAXT = Number(process.argv[4] || 60);
-const VW = Number(process.argv[5] || 1280), VH = Number(process.argv[6] || 720);
+
+const args = Object.fromEntries(
+  process.argv.slice(2).map((a) => {
+    const [k, v] = a.replace(/^--/, '').split('=');
+    return [k, v ?? true];
+  }),
+);
+const IDLE = !!args.idle;
+const WARP = Number(args.warp ?? 4);
+const MAXT = Number(args.max ?? (IDLE ? 120 : 520));
+const SHOTS = args.shots;
+const URL = process.env.URL || 'http://localhost:5173/';
+const AFK_LIMIT = 90;
+
 (async () => {
-  const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] });
-  const p = await b.newPage({ viewport: { width: VW, height: VH } });
-  const errs = [];
-  p.on('pageerror', e => errs.push('pageerror: ' + e.message + '\n' + e.stack));
-  p.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') errs.push(m.type() + ': ' + m.text()); });
-  await p.goto(process.env.URL || 'http://localhost:5173/');
-  await p.waitForFunction(() => window.__jm && window.__jm.scene.isActive('Menu'), null, { timeout: 15000 });
-  await p.waitForTimeout(1200);
-  await p.screenshot({ path: `${OUT}/menu-${VW}.png` });
-  // Click PLAY (center, 58% height of the canvas)
-  const box = await p.locator('canvas').boundingBox();
-  await p.mouse.click(box.x + box.width / 2, box.y + box.height * 0.58);
-  await p.waitForFunction(() => window.__jm.scene.getScene('Game').state === 'playing', null, { timeout: 5000 });
+  const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(`${e.message}\n${e.stack}`));
+  await page.goto(URL);
+  await page.waitForFunction(() => window.__jm && window.__jm.scene.isActive('Menu'), null, { timeout: 20000 });
+  await page.evaluate(() => {
+    localStorage.clear();
+    window.__jm.scene.getScene('Menu').play(false);
+  });
+  await page.waitForFunction(() => window.__jm.scene.getScene('Game').state === 'playing', null, { timeout: 8000 });
+
+  await page.evaluate(
+    ({ warp, idle }) => {
+      window.__warp = warp;
+      const C = window.__controls;
+      const game = window.__jm;
+      window.__botTimer = setInterval(() => {
+        const g = game.scene.getScene('Game');
+        if (game.scene.isActive('Upgrade')) {
+          const u = game.scene.getScene('Upgrade');
+          if (!u.locked && u.cards.length) u.pick(Math.floor(Math.random() * u.cards.length));
+          return;
+        }
+        if (idle || g.state !== 'playing') return;
+        // Touch mode: fireballs auto-aim at the nearest robot.
+        C.isTouch = true;
+        const pl = g.player;
+        let best = null;
+        let bd = 1e9;
+        let ax = 0;
+        let ay = 0;
+        let near = 0;
+        const want = Math.max(40, g.junk.cloudRadius * 0.9);
+        for (const e of g.enemies.pool.items) {
+          if (!e.active || e.hidden) continue;
+          const dx = pl.x - e.x;
+          const dy = pl.y - e.y;
+          const d = Math.hypot(dx, dy) || 1;
+          if (e.kind === 'boss' || e.kind === 'crusher' || e.kind === 'bomber') {
+            if (d < 300) (ax += (dx / d) * 3), (ay += (dy / d) * 3);
+            continue;
+          }
+          if (d < bd) (bd = d), (best = e);
+          if (d < 90 && g.junk.count < 8) (ax += (dx / d) * 0.6), (ay += (dy / d) * 0.6);
+          if (d < g.junk.cloudRadius + 60) near++;
+        }
+        for (const b of g.enemies.bullets.items) {
+          if (!b.active) continue;
+          const d = Math.hypot(pl.x - b.x, pl.y - b.y);
+          if (d < 150) (ax -= (b.vy / 175) * 1.5), (ay += (b.vx / 175) * 1.5);
+        }
+        let mx = ax;
+        let my = ay;
+        if (best) {
+          const ux = (best.x - pl.x) / bd;
+          const uy = (best.y - pl.y) / bd;
+          const radial = Math.max(-1, Math.min(1, (bd - want) / 80));
+          mx += ux * radial - uy * 0.8;
+          my += uy * radial + ux * 0.8;
+        }
+        mx += (1400 - pl.x) * 0.0006;
+        my += (1000 - pl.y) * 0.0006;
+        const l = Math.hypot(mx, my) || 1;
+        C.touchActive = true;
+        C.touchX = mx / l;
+        C.touchY = my / l;
+        if (near >= 4 && pl.pulseCd <= 0) C.pulseQueued = true;
+        if (g.weapons.specials.length && g.weapons.specialCd <= 0 && g.junk.count > 40) C.specialQueued = true;
+      }, 40);
+    },
+    { warp: WARP, idle: IDLE },
+  );
+
+  let lastLog = -100;
+  let last = null;
   const t0 = Date.now();
-  await p.evaluate((warp) => {
-    window.__warp = warp;
-    const C = window.__controls;
-    const game = window.__jm;
-    window.__bot = setInterval(() => {
+  for (;;) {
+    const s = await page.evaluate(() => {
+      const game = window.__jm;
       const g = game.scene.getScene('Game');
-      if (game.scene.isActive('Upgrade')) {
-        const u = game.scene.getScene('Upgrade');
-        if (!u.locked && u.cards.length) u.pick(Math.floor(Math.random() * u.cards.length));
-        return;
-      }
-      if (g.state !== 'playing') return;
-      const pl = g.player;
-      let best = null, bd = 1e9, ax = 0, ay = 0, near = 0;
-      const want = Math.max(40, g.junk.cloudRadius * 0.9);
-      for (const e of g.enemies.pool.items) {
-        if (!e.active) continue;
-        const dx = pl.x - e.x, dy = pl.y - e.y, d = Math.hypot(dx, dy) || 1;
-        if (e.kind === 'boss') { if (d < 330) { ax += dx / d * 3; ay += dy / d * 3; } continue; }
-        if (d < bd) { bd = d; best = e; }
-        if (d < 90 && g.junk.count < 8) { ax += dx / d * 0.6; ay += dy / d * 0.6; }
-        if (d < g.junk.cloudRadius + 60) near++;
-      }
-      for (const bl of g.enemies.bullets.items) {
-        if (!bl.active) continue;
-        const dx = pl.x - bl.x, dy = pl.y - bl.y, d = Math.hypot(dx, dy) || 1;
-        if (d < 150) { ax -= bl.vy / 175 * 1.5; ay += bl.vx / 175 * 1.5; }
-      }
-      let mx = ax, my = ay;
-      if (best) {
-        const ux = (best.x - pl.x) / bd, uy = (best.y - pl.y) / bd;
-        const radial = Math.max(-1, Math.min(1, (bd - want) / 80));
-        mx += ux * radial - uy * 0.8; my += uy * radial + ux * 0.8;
-      }
-      mx += (1400 - pl.x) * 0.0006; my += (1000 - pl.y) * 0.0006;
-      const l = Math.hypot(mx, my) || 1; mx /= l; my /= l;
-      C.touchActive = true; C.touchX = mx; C.touchY = my;
-      if (near >= 4 && pl.pulseCd <= 0) C.pulseQueued = true;
-    }, 40);
-  }, WARP);
-  let lastLog = -10, shots = new Set();
-  const snap = async (name) => { if (!shots.has(name)) { shots.add(name); await p.screenshot({ path: `${OUT}/${name}.png` }); } };
-  while (true) {
-    const s = await p.evaluate(() => {
-      const game = window.__jm, g = game.scene.getScene('Game');
-      return { state: g.state, t: +g.runTime.toFixed(1), junk: g.junk.count, loose: g.junk.looseCount, hearts: g.player.hearts, lvl: g.level, kills: g.kills, hits: g.hitsTaken, bots: g.enemies.activeCount, wave: g.enemies.wave, boss: g.bossActive ? Math.round(g.bossActive.hp) : null, fps: Math.round(game.loop.actualFps), upg: game.scene.isActive('Upgrade'), res: game.scene.isActive('Results') };
+      return {
+        state: g.state,
+        t: +g.runTime.toFixed(1),
+        phase: g.phaseLabel,
+        hp: Math.round(g.player.hp),
+        junk: g.junk.count,
+        cap: g.junk.cap,
+        lvl: g.level,
+        kills: g.kills,
+        hits: g.hitsTaken,
+        bots: g.enemies.activeCount,
+        boss: g.bossActive ? `${g.bossActive.kind} ${Math.round(g.bossActive.hp)}` : null,
+        results: game.scene.isActive('Results'),
+      };
     });
-    if (s.t - lastLog >= 20 || s.res) { console.log(JSON.stringify(s)); lastLog = s.t; }
-    if (s.t > 6) await snap('run-06s');
-    if (s.upg) await snap('upgrade');
-    if (s.t > 45) await snap('run-45s');
-    if (s.t > 150) await snap('run-150s');
-    if (s.boss) await snap('boss');
-    if (s.res) { await p.waitForTimeout(1800); await snap('results'); break; }
-    if (s.t > MAXT || Date.now() - t0 > 600000) break;
-    await p.waitForTimeout(500);
+    last = s;
+    if (s.t - lastLog >= 20 || s.results) {
+      console.log(JSON.stringify(s));
+      lastLog = s.t;
+    }
+    if (SHOTS && s.results) await page.screenshot({ path: `${SHOTS}/playtest-results.png` });
+    if (s.results || s.state === 'dying' || s.t > MAXT || Date.now() - t0 > 900000) break;
+    await page.waitForTimeout(400);
   }
-  console.log('errors:', errs.slice(0, 15).join('\n'));
-  await b.close();
+  await browser.close();
+
+  if (errors.length) {
+    console.log('PAGE ERRORS:\n' + errors.join('\n'));
+    process.exitCode = 1;
+  }
+  if (IDLE) {
+    const died = last.state === 'dying' || last.state === 'over';
+    const ok = died && last.t < AFK_LIMIT;
+    console.log(ok ? `AFK test passed: idle player died at ${last.t}s` : `AFK test FAILED: idle player ${died ? `died at ${last.t}s` : `still alive at ${last.t}s`} (limit ${AFK_LIMIT}s)`);
+    if (!ok) process.exitCode = 1;
+  } else {
+    console.log(`Run ended at ${last.t}s in phase ${last.phase} (${last.state})`);
+  }
 })();

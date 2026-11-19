@@ -76,6 +76,7 @@ export class UpgradeScene extends Phaser.Scene {
       card.on('pointerup', () => this.pick(i));
     });
     this.layout();
+    if (this.defs.some((d) => d.rarity !== 'common' && d.max < 99)) this.time.delayedCall(350, () => Audio.rare());
     const h = this.scale.height;
     this.cards.forEach((card, i) => {
       const y = card.y;
@@ -87,6 +88,12 @@ export class UpgradeScene extends Phaser.Scene {
   private buildCard(def: CardDef, cw: number, ch: number): Phaser.GameObjects.Container {
     const k = cw / 260;
     const c = this.add.container(0, 0);
+    // Rare and evolution cards glow gold so they're impossible to miss.
+    if (def.rarity !== 'common' && def.max < 99) {
+      const glow = this.add.image(0, 0, 'elite-glow').setScale((Math.max(cw, ch) / 80) * 0.75);
+      c.add(glow);
+      this.tweens.add({ targets: glow, alpha: { from: 0.55, to: 1 }, scale: glow.scale * 1.08, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    }
     const g = this.add.graphics();
     const border = RARITY_COLOR[def.rarity] ?? PAL.steel;
     // Sticker: drop shadow, white die-cut edge, rarity border, dark face.
@@ -105,11 +112,11 @@ export class UpgradeScene extends Phaser.Scene {
     c.add(g);
 
     const lv = this.g.upgrades.level(def.id);
-    let tag = lv === 0 ? 'NEW' : `LV ${lv} → ${lv + 1}`;
+    let tag = lv === 0 ? (def.rarity === 'rare' ? 'RARE' : 'NEW') : `LV ${lv} → ${lv + 1}`;
     if (def.rarity === 'epic') tag = 'EVOLUTION';
     if (def.max >= 99) tag = 'BONUS';
     const hint = def.rarity === 'epic' ? null : this.g.upgrades.comboHint(def.id);
-    const tagColor = def.rarity === 'common' ? CSS.steel : def.rarity === 'rare' ? CSS.cyan : CSS.brass;
+    const tagColor = def.rarity === 'common' ? CSS.steel : CSS.brass;
     const nameColor = def.rarity === 'epic' ? CSS.brass : CSS.text;
     const pipsAt = (px: number, py: number, size: number, align: 'center' | 'left') => {
       if (def.max <= 1 || def.max >= 99) return;

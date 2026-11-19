@@ -21,6 +21,7 @@ class AudioManagerImpl {
   private lastTimes: Record<string, number> = {};
 
   private track: Track = null;
+  private intensity = 0;
   private step = 0;
   private nextStepTime = 0;
   private timer: number | null = null;
@@ -213,6 +214,44 @@ class AudioManagerImpl {
     this.tone(180, 0.25, 'sawtooth', 0.12, { slideTo: 60 });
   }
 
+  heartbeat(): void {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.tone(70, 0.12, 'sine', 0.5, { when: t, slideTo: 45 });
+    this.tone(64, 0.12, 'sine', 0.35, { when: t + 0.18, slideTo: 42 });
+  }
+
+  /** A short bright chime when a rare card shows up. */
+  rare(): void {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    [12, 19, 24].forEach((s, i) => this.tone(NOTE(3 + s), 0.35, 'triangle', 0.08, { when: t + i * 0.07 }));
+    this.tone(NOTE(39), 0.5, 'sine', 0.04, { when: t + 0.2 });
+  }
+
+  fireball(): void {
+    if (!this.ctx || !this.gate('fireball', 0.05)) return;
+    this.noiseBurst(0.18, 0.18, 'bandpass', 900, { sweepTo: 2400, q: 1.2 });
+    this.tone(260, 0.12, 'sawtooth', 0.04, { slideTo: 520 });
+  }
+
+  zap(): void {
+    if (!this.ctx || !this.gate('zap', 0.08)) return;
+    for (let i = 0; i < 4; i++) this.noiseBurst(0.03, 0.2, 'bandpass', 3000 + Math.random() * 4000, { when: this.ctx.currentTime + i * 0.03, q: 8 });
+    this.tone(1200, 0.15, 'square', 0.04, { slideTo: 300 });
+  }
+
+  shotgun(): void {
+    if (!this.ctx) return;
+    this.noiseBurst(0.2, 0.4, 'lowpass', 2500, { sweepTo: 400 });
+    this.tone(160, 0.15, 'square', 0.1, { slideTo: 60 });
+  }
+
+  /** Music gets heavier as the robots get angrier. */
+  setIntensity(level: number): void {
+    this.intensity = level;
+  }
+
   heartLost(): void {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
@@ -267,6 +306,7 @@ class AudioManagerImpl {
   // ---------- Music: a tiny 16-step chiptune sequencer ----------
 
   music(track: Track): void {
+    if (track === 'main' || track === 'menu') this.intensity = 0;
     if (this.track === track) return;
     this.track = track;
     this.step = 0;
@@ -293,7 +333,7 @@ class AudioManagerImpl {
       this.nextStepTime = this.ctx.currentTime + 0.05;
       return;
     }
-    const bpm = this.track === 'boss' ? 140 : 120;
+    const bpm = this.track === 'boss' ? 140 : 120 + this.intensity * 5;
     const stepDur = 60 / bpm / 4;
     while (this.nextStepTime < this.ctx.currentTime + 0.12) {
       this.playStep(this.step, this.nextStepTime);
@@ -328,7 +368,9 @@ class AudioManagerImpl {
     const menu = this.track === 'menu';
     if (s === 0 || s === 8 || (!menu && (s === 10 || s === 3))) this.kick(t, menu ? 0.5 : 0.8);
     if (!menu && (s === 4 || s === 12)) this.snare(t);
-    if (s % 2 === 0) this.hat(t, menu ? 0.025 : 0.04);
+    if (s % 2 === 0 || (!menu && this.intensity >= 2)) this.hat(t, menu ? 0.025 : 0.04);
+    if (!menu && this.intensity >= 3 && (s === 6 || s === 14)) this.kick(t, 0.6);
+    if (!menu && this.intensity >= 4 && s % 4 === 2) this.tone(NOTE(chord[0] + 12), 0.08, 'sawtooth', 0.02, { when: t, bus: this.musicBus });
     const bassSteps = [0, 3, 6, 8, 10, 14];
     if (bassSteps.includes(s)) {
       const octave = s === 6 || s === 14 ? 12 : 0;

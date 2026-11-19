@@ -55,8 +55,8 @@ export const DEPTH = {
 
 export const RARITY_COLOR: Record<string, number> = {
   common: 0xa7b0ba,
-  rare: 0x3ee6f2,
-  epic: 0xf2c14e,
+  rare: 0xf2c14e,
+  epic: 0xff9f1c,
 };
 
 export function hex(color: string): number {
