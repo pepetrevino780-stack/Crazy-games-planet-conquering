@@ -6,7 +6,7 @@
 npm run build
 ```
 
-This writes `dist/dominion-first-contact.zip` (well under 1 MB, with `index.html` at the root) and the unpacked files in `dist/game/`.
+This writes `dist/vulkara-conquest.zip` (well under 1 MB, with `index.html` at the root) and the unpacked files in `dist/game/`.
 Upload the zip as an **HTML5** game in the CrazyGames developer portal.
 
 ## 2. Submission settings
@@ -25,7 +25,7 @@ Upload the zip as an **HTML5** game in the CrazyGames developer portal.
 
 ### Listing text (ready to paste)
 
-**Title:** Dominion: First Contact (23 characters; it matches the in-game title). Formerly Planetfall Conquest: "Planetfall" is a registered video-game trademark, so the game was renamed.
+**Title:** Vulkara Conquest (16 characters; it matches the in-game title). Formerly Planetfall Conquest: "Planetfall" is a registered video-game trademark, so the game was renamed.
 
 **Short description:** A single-player strategy game: conquer five alien planets in real time. Expand, defend, disrupt and outplan smarter enemy civilizations, and earn permanent upgrades as you go.
 
@@ -40,7 +40,7 @@ Upload the zip as an **HTML5** game in the CrazyGames developer portal.
 ### Resubmission note (paste into the portal)
 
 Latest changes (launch review and revision plan, November 2026):
-- Renamed to Dominion: First Contact (formerly Planetfall Conquest), because "Planetfall" is a registered video-game trademark. Worlds, civilizations and art are unchanged.
+- Renamed to Vulkara Conquest (formerly Planetfall Conquest), because "Planetfall" is a registered video-game trademark. Worlds, civilizations and art are unchanged.
 - Map tooltips wait 0.5 s and sit in a top corner, never next to the cursor; the current goal has an arrow at the screen edge.
 - Building: tap the tool, then tap your land (dragging also works); a building you can afford glows, and tool tiles are bigger.
 - Loading: a logo and progress bar show from the first frame; the SDK loads without blocking and its start-up is capped, so the screen is never black.
