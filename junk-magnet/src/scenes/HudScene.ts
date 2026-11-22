@@ -12,6 +12,7 @@ export class HudScene extends Phaser.Scene {
   private xpBar!: Phaser.GameObjects.Graphics;
   private vignette!: Phaser.GameObjects.Graphics;
   private hpBar!: Phaser.GameObjects.Graphics;
+  private topBand!: Phaser.GameObjects.Graphics;
   private hpText!: Phaser.GameObjects.Text;
   private phaseText!: Phaser.GameObjects.Text;
   private shownHp = 1;
@@ -70,6 +71,8 @@ export class HudScene extends Phaser.Scene {
     this.hpText = this.add.text(0, 0, '', displayStyle(15)).setOrigin(0.5);
     this.phaseText = this.add.text(0, 0, '', displayStyle(24, CSS.pink)).setOrigin(1, 0.5);
 
+    // A dark band behind the top HUD so the arena never shows through the bars and numbers.
+    this.topBand = this.add.graphics();
     this.vignette = this.add.graphics();
     this.xpBar = this.add.graphics();
     this.levelText = this.add.text(0, 0, '', displayStyle(18, CSS.text)).setOrigin(0, 0.5);
@@ -190,6 +193,9 @@ export class HudScene extends Phaser.Scene {
     const w = this.scale.width;
     const h = this.scale.height;
     this.cameras.main.setSize(w, h);
+    this.topBand.clear();
+    this.topBand.fillGradientStyle(PAL.outline, PAL.outline, PAL.outline, PAL.outline, 0.85, 0.85, 0, 0);
+    this.topBand.fillRect(0, 0, w, 150);
     const touch = Controls.isTouch;
     this.levelText.setPosition(10, 11);
     this.coinIcon.setPosition(30, 84);

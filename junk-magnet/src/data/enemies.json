@@ -468,13 +468,13 @@
     "midbossWarning": 4
   },
   "intro": {
-    "firstBotAt": 3,
-    "firstBotSpeed": 0.6,
-    "packAt": 10,
+    "firstBotAt": 2,
+    "firstBotSpeed": 0.8,
+    "packAt": 6,
     "packSize": 6,
-    "clusterAt": 20,
-    "clusterSize": 5,
-    "trickle": 0.5
+    "clusterAt": 13,
+    "clusterSize": 6,
+    "trickle": 0.8
   },
   "squads": [
     {
@@ -514,7 +514,7 @@
       "at": 0,
       "speed": 0.6,
       "damage": 4,
-      "min": 5,
+      "min": 8,
       "max": 10,
       "flank": 0,
       "ripChance": 0,

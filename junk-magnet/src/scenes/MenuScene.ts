@@ -4,7 +4,7 @@ import { Audio } from '../systems/AudioManager';
 import { Controls } from '../systems/Controls';
 import { Meta } from '../systems/MetaSave';
 import { hashString, todayKey } from '../rng';
-import { DAILY_MODS, MODES, modeUnlocked } from './GameScene';
+import { DAILY_MODS, MAGNETS, MAPS, MODES, modeUnlocked } from './GameScene';
 import { Button } from '../ui/widgets';
 import { CrazySDK } from '../systems/CrazySDK';
 import { Rewards } from '../systems/Rewards';
@@ -88,17 +88,26 @@ export class MenuScene extends Phaser.Scene {
 
     const bw = Math.min(200, (w - 100) / 2);
     const rowY = h * 0.58 + 98;
-    new Button(this, w / 2 - bw / 2 - 12, rowY, {
+    // Pulse the Garage when you can afford something there.
+    const affordable = [...Object.entries(MAGNETS).filter(([id]) => !Meta.data.magnets.includes(id)), ...Object.entries(MAPS).filter(([id]) => !Meta.data.maps.includes(id))].some(
+      ([, def]) => def.price <= Meta.data.coins,
+    );
+    const garageBtn = new Button(this, w / 2 - bw / 2 - 12, rowY, {
       width: bw,
       height: 58,
-      label: 'GARAGE',
-      fill: 0x5a5266,
+      label: affordable ? 'GARAGE !' : 'GARAGE',
+      fill: affordable ? PAL.brass : 0x5a5266,
+      textColor: affordable ? CSS.outline : CSS.text,
       fontSize: 26,
       onClick: () => {
         this.scene.stop();
         this.scene.launch('Garage');
       },
     });
+    if (affordable) {
+      garageBtn.text.setStroke(CSS.outline, 0);
+      this.tweens.add({ targets: garageBtn, scale: 1.08, duration: 450, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    }
     new Button(this, w / 2 + bw / 2 + 12, rowY, {
       width: bw,
       height: 58,

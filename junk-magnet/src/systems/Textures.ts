@@ -1244,101 +1244,153 @@ export interface MapLook {
 }
 
 export function makeFloor(scene: Phaser.Scene, key: string, look: MapLook): void {
-  make(
-    scene,
-    key,
-    ARENA.width,
-    ARENA.height,
-    (c) => {
-      const W = ARENA.width;
-      const H = ARENA.height;
-      const rng = new Rng(1234);
-      c.fillStyle = look.floor;
-      c.fillRect(0, 0, W, H);
-      c.fillStyle = look.detail;
-      c.strokeStyle = look.detail;
+  make(scene, key, ARENA.width, ARENA.height, (c) => drawFloor(c, look), 1);
+}
 
-      if (look.props === 'station') {
-        for (let i = 0; i < 260; i++) {
-          circle(c, rng.range(0, W), rng.range(0, H), rng.range(0.8, 2.4));
-          c.fillStyle = i % 9 === 0 ? 'rgba(62,230,242,0.6)' : 'rgba(244,241,234,0.45)';
-          c.fill();
-        }
-        c.lineWidth = 2;
-        c.strokeStyle = look.detail;
-        for (let x = 0; x < W; x += 200) {
-          c.beginPath();
-          c.moveTo(x, 0);
-          c.lineTo(x, H);
-          c.stroke();
-        }
-        for (let y = 0; y < H; y += 200) {
-          c.beginPath();
-          c.moveTo(0, y);
-          c.lineTo(W, y);
-          c.stroke();
-        }
-      } else if (look.props === 'factory') {
-        c.globalAlpha = 0.55;
-        c.lineWidth = 3;
-        for (let x = 0; x < W; x += 160) {
-          c.beginPath();
-          c.moveTo(x, 0);
-          c.lineTo(x, H);
-          c.stroke();
-        }
-        for (let y = 0; y < H; y += 160) {
-          c.beginPath();
-          c.moveTo(0, y);
-          c.lineTo(W, y);
-          c.stroke();
-        }
-        c.fillStyle = look.detail;
-        for (let x = 0; x < W; x += 160) {
-          for (let y = 0; y < H; y += 160) {
-            for (const [dx, dy] of [
-              [12, 12],
-              [148, 12],
-              [12, 148],
-              [148, 148],
-            ]) {
-              circle(c, x + dx, y + dy, 3.5);
-              c.fill();
-            }
-          }
-        }
+export interface ThumbExtras {
+  conveyors?: { x: number; y: number; w: number; h: number }[];
+  hazards?: { type: string; x?: number; y?: number; w?: number; h?: number; x1?: number; y1?: number; x2?: number; y2?: number }[];
+}
+
+/** A small "screenshot" of a map for the Garage: the real floor, props and hazards, scaled down. */
+export function makeMapThumb(scene: Phaser.Scene, key: string, look: MapLook, extras: ThumbExtras, w = 150, h = 96): void {
+  make(scene, key, w, h, (c) => {
+    c.save();
+    c.scale(w / ARENA.width, h / ARENA.height);
+    drawFloor(c, look);
+    c.fillStyle = '#2A3236';
+    for (const b of extras.conveyors ?? []) c.fillRect(b.x, b.y, b.w, b.h);
+    c.fillStyle = 'rgba(242,193,78,0.9)';
+    for (const b of extras.conveyors ?? []) c.fillRect(b.x, b.y + b.h * 0.4, b.w, b.h * 0.2);
+    for (const hz of extras.hazards ?? []) {
+      if (hz.type === 'crusher') {
+        c.fillStyle = BRASS;
+        c.fillRect(hz.x ?? 0, hz.y ?? 0, hz.w ?? 160, hz.h ?? 160);
+        c.fillStyle = '#1A1620';
+        c.fillRect((hz.x ?? 0) + 25, (hz.y ?? 0) + 25, (hz.w ?? 160) - 50, (hz.h ?? 160) - 50);
       } else {
-        // Junkyard: oil stains, patches and cracks on old asphalt.
-        for (let i = 0; i < 22; i++) {
-          c.beginPath();
-          c.ellipse(rng.range(0, W), rng.range(0, H), rng.range(30, 110), rng.range(20, 70), rng.range(0, 3), 0, TAU);
-          c.fillStyle = i % 3 === 0 ? 'rgba(0,0,0,0.1)' : look.detail;
-          c.globalAlpha = i % 3 === 0 ? 1 : 0.18;
+        c.beginPath();
+        c.moveTo(hz.x1 ?? 0, hz.y1 ?? 0);
+        c.lineTo(hz.x2 ?? 0, hz.y2 ?? 0);
+        c.lineWidth = 30;
+        c.strokeStyle = CYAN;
+        c.stroke();
+      }
+    }
+    c.restore();
+    // A magnet with its junk ball and a few robots, so it reads as gameplay.
+    const cx = w * 0.5;
+    const cy = h * 0.52;
+    for (let i = 0; i < 18; i++) {
+      const a = (i / 18) * TAU;
+      circle(c, cx + Math.cos(a) * 13, cy + Math.sin(a) * 13, 2.2);
+      c.fillStyle = i % 3 ? RUST : STEEL;
+      c.fill();
+    }
+    circle(c, cx, cy, 5);
+    fillOut(c, RED, 1.5);
+    for (const [x, y] of [
+      [0.22, 0.3],
+      [0.78, 0.36],
+      [0.7, 0.75],
+    ]) {
+      circle(c, w * x, h * y, 4);
+      fillOut(c, LIME, 1.5);
+    }
+    rr(c, 1, 1, w - 2, h - 2, 8);
+    c.lineWidth = 3;
+    c.strokeStyle = OUT;
+    c.stroke();
+  });
+}
+
+function drawFloor(c: C, look: MapLook): void {
+  const W = ARENA.width;
+  const H = ARENA.height;
+  const rng = new Rng(1234);
+  c.fillStyle = look.floor;
+  c.fillRect(0, 0, W, H);
+  c.fillStyle = look.detail;
+  c.strokeStyle = look.detail;
+
+  if (look.props === 'station') {
+    for (let i = 0; i < 260; i++) {
+      circle(c, rng.range(0, W), rng.range(0, H), rng.range(0.8, 2.4));
+      c.fillStyle = i % 9 === 0 ? 'rgba(62,230,242,0.6)' : 'rgba(244,241,234,0.45)';
+      c.fill();
+    }
+    c.lineWidth = 2;
+    c.strokeStyle = look.detail;
+    for (let x = 0; x < W; x += 200) {
+      c.beginPath();
+      c.moveTo(x, 0);
+      c.lineTo(x, H);
+      c.stroke();
+    }
+    for (let y = 0; y < H; y += 200) {
+      c.beginPath();
+      c.moveTo(0, y);
+      c.lineTo(W, y);
+      c.stroke();
+    }
+  } else if (look.props === 'factory') {
+    c.globalAlpha = 0.55;
+    c.lineWidth = 3;
+    for (let x = 0; x < W; x += 160) {
+      c.beginPath();
+      c.moveTo(x, 0);
+      c.lineTo(x, H);
+      c.stroke();
+    }
+    for (let y = 0; y < H; y += 160) {
+      c.beginPath();
+      c.moveTo(0, y);
+      c.lineTo(W, y);
+      c.stroke();
+    }
+    c.fillStyle = look.detail;
+    for (let x = 0; x < W; x += 160) {
+      for (let y = 0; y < H; y += 160) {
+        for (const [dx, dy] of [
+          [12, 12],
+          [148, 12],
+          [12, 148],
+          [148, 148],
+        ]) {
+          circle(c, x + dx, y + dy, 3.5);
           c.fill();
         }
-        c.globalAlpha = 0.45;
-        c.lineWidth = 2;
-        c.strokeStyle = look.detail;
-        for (let i = 0; i < 18; i++) {
-          let x = rng.range(0, W);
-          let y = rng.range(0, H);
-          c.beginPath();
-          c.moveTo(x, y);
-          for (let j = 0; j < 5; j++) {
-            x += rng.range(-60, 60);
-            y += rng.range(-60, 60);
-            c.lineTo(x, y);
-          }
-          c.stroke();
-        }
-        c.globalAlpha = 1;
       }
+    }
+  } else {
+    // Junkyard: oil stains, patches and cracks on old asphalt.
+    for (let i = 0; i < 22; i++) {
+      c.beginPath();
+      c.ellipse(rng.range(0, W), rng.range(0, H), rng.range(30, 110), rng.range(20, 70), rng.range(0, 3), 0, TAU);
+      c.fillStyle = i % 3 === 0 ? 'rgba(0,0,0,0.1)' : look.detail;
+      c.globalAlpha = i % 3 === 0 ? 1 : 0.18;
+      c.fill();
+    }
+    c.globalAlpha = 0.45;
+    c.lineWidth = 2;
+    c.strokeStyle = look.detail;
+    for (let i = 0; i < 18; i++) {
+      let x = rng.range(0, W);
+      let y = rng.range(0, H);
+      c.beginPath();
+      c.moveTo(x, y);
+      for (let j = 0; j < 5; j++) {
+        x += rng.range(-60, 60);
+        y += rng.range(-60, 60);
+        c.lineTo(x, y);
+      }
+      c.stroke();
+    }
+    c.globalAlpha = 1;
+  }
 
-      c.globalAlpha = 1;
-      drawEdgeProps(c, look, rng);
-    },
-    1,
-  );
+  c.globalAlpha = 1;
+  drawEdgeProps(c, look, rng);
 }
 
 function drawEdgeProps(c: C, look: MapLook, rng: Rng): void {
@@ -1892,4 +1944,87 @@ export function makeAllTextures(scene: Phaser.Scene): void {
   makeFx(scene);
   makeIcons(scene);
   makeBelt(scene);
+}
+
+/** Car crusher hazard: a riveted pit with hazard stripes, and the heavy plate that slams down. */
+export function makeCrusherTextures(scene: Phaser.Scene, w: number, h: number): { base: string; plate: string } {
+  const base = `crusher-base-${w}x${h}`;
+  const plate = `crusher-plate-${w}x${h}`;
+  make(scene, base, w + 16, h + 16, (c) => {
+    c.translate(8, 8);
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    rr(c, 4, 8, w, h, 10);
+    c.fill();
+    rr(c, 0, 0, w, h, 10);
+    c.save();
+    c.clip();
+    c.fillStyle = BRASS;
+    c.fillRect(0, 0, w, h);
+    c.strokeStyle = OUT;
+    c.lineWidth = 9;
+    for (let d = -h; d < w + h; d += 24) {
+      c.beginPath();
+      c.moveTo(d, 0);
+      c.lineTo(d + h, h);
+      c.stroke();
+    }
+    c.restore();
+    rr(c, 0, 0, w, h, 10);
+    c.lineWidth = 4;
+    c.strokeStyle = OUT;
+    c.stroke();
+    // The pit.
+    rr(c, 14, 14, w - 28, h - 28, 6);
+    fillOut(c, '#1A1620', 3);
+    c.strokeStyle = '#2E2838';
+    c.lineWidth = 2;
+    for (let x = 24; x < w - 20; x += 18) {
+      c.beginPath();
+      c.moveTo(x, 18);
+      c.lineTo(x, h - 18);
+      c.stroke();
+    }
+    for (const [x, y] of [
+      [7, 7],
+      [w - 7, 7],
+      [7, h - 7],
+      [w - 7, h - 7],
+    ]) {
+      circle(c, x, y, 3);
+      fillOut(c, STEEL, 1.5);
+    }
+  });
+  make(scene, plate, w + 16, h + 24, (c) => {
+    c.translate(8, 4);
+    c.fillStyle = 'rgba(0,0,0,0.4)';
+    rr(c, 6, 14, w - 4, h - 4, 10);
+    c.fill();
+    rr(c, 4, 4, w - 8, h - 8, 10);
+    const g = c.createLinearGradient(0, 4, 0, h);
+    g.addColorStop(0, '#C9D0D8');
+    g.addColorStop(1, '#6E7681');
+    c.fillStyle = g;
+    c.fill();
+    c.lineWidth = 4;
+    c.strokeStyle = OUT;
+    c.stroke();
+    c.strokeStyle = 'rgba(18,15,22,0.35)';
+    c.lineWidth = 3;
+    for (let y = 26; y < h - 16; y += 22) {
+      c.beginPath();
+      c.moveTo(16, y);
+      c.lineTo(w - 16, y);
+      c.stroke();
+    }
+    for (const [x, y] of [
+      [16, 16],
+      [w - 16, 16],
+      [16, h - 16],
+      [w - 16, h - 16],
+    ]) {
+      circle(c, x, y, 4);
+      fillOut(c, '#A7B0BA', 2);
+    }
+  });
+  return { base, plate };
 }
