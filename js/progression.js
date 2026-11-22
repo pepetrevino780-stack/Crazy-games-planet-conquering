@@ -1,5 +1,6 @@
 // Permanent progression: rewards, upgrades, civilizations and the save file.
-import { PLANETS } from './campaign.js';
+import { PLANETS, SKIRMISH_MODES } from './campaign.js';
+import { THEME_IDS } from './world/themes.js';
 
 export const SAVE_KEY = 'planet-conquest-campaign';
 export const SAVE_VERSION = 1;
@@ -51,6 +52,7 @@ export function newCampaign() {
     // played most recently (the title's Continue).
     saves: { tutorial: null, campaign: null, skirmish: null },
     lastSlot: null,
+    daily: { date: null, won: false }, // today's daily challenge
   };
 }
 
@@ -110,6 +112,7 @@ export function normalizeCampaign(raw) {
   // Older saves had a single slot.
   if (okSave(raw.battle)) { c.saves[slotOf(raw.battle.configId)] = raw.battle; c.lastSlot = slotOf(raw.battle.configId); }
   if (SAVE_SLOTS.includes(raw.lastSlot)) c.lastSlot = raw.lastSlot;
+  if (raw.daily && typeof raw.daily.date === 'string') c.daily = { date: raw.daily.date.slice(0, 10), won: !!raw.daily.won };
   return c;
 }
 
@@ -154,10 +157,20 @@ export function nextWorld(campaign, id) {
 // unconquered world in the recommended order (Vulkara when all are done).
 export function playTarget(campaign) {
   if (!campaign) return { kind: 'tutorial', lesson: 1 };
-  if (latestSave(campaign)) return { kind: 'resume' };
+  const save = latestSave(campaign);
+  const conquered = PLANETS.some(p => campaign.planets[p.id].completed);
+  const next = PLANETS.find(p => !campaign.planets[p.id].completed) || PLANETS[0];
+  if (save) {
+    // New players go to the tutorial and the easiest unbeaten world first: a
+    // save on a harder world stays one click away (the title's Continue).
+    const at = PLANETS.findIndex(p => p.id === save.configId);
+    if (at >= 0 && at > PLANETS.indexOf(next)) {
+      return !conquered && !campaign.tutorial.done.length ? { kind: 'tutorial', lesson: 1, saved: true } : { kind: 'world', id: next.id, saved: true };
+    }
+    return { kind: 'resume' };
+  }
   const fresh = !campaign.tutorial.done.length && !PLANETS.some(p => campaign.planets[p.id].attempts > 0);
   if (fresh) return { kind: 'tutorial', lesson: 1 };
-  const next = PLANETS.find(p => !campaign.planets[p.id].completed) || PLANETS[0];
   return { kind: 'world', id: next.id };
 }
 
@@ -294,4 +307,14 @@ export function assistLevel(campaign, planetId) {
   const rec = campaign.planets[planetId];
   if (!rec) return 0;
   return rec.completed ? 0 : Math.min(3, rec.defeats);
+}
+
+// The daily challenge: one skirmish per day, the same world and mode for
+// everyone (seeded by the date). `date` is a Date; the day is in UTC.
+export function dailyChallenge(date = new Date()) {
+  const day = date.toISOString().slice(0, 10);
+  let h = 2166136261;
+  for (const ch of day) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  const modes = Object.keys(SKIRMISH_MODES);
+  return { date: day, seed: 1 + (h % 999983), theme: THEME_IDS[h % THEME_IDS.length], mode: modes[(h >>> 8) % modes.length] };
 }

@@ -24,6 +24,7 @@
         <label class="name-field">Commander name <input id="player-name" maxlength="16" autocomplete="off" spellcheck="false"></label>
         <div class="menu">
           <button id="btn-play" class="btn primary big">Play</button>
+          <button id="btn-resume-title" class="btn hidden">Continue</button>
           <button id="btn-continue" class="btn">Campaign map</button>
           <button id="btn-tutorial" class="btn">Tutorial</button>
           <button id="btn-skirmish" class="btn">Skirmish</button>
@@ -82,6 +83,7 @@
         <span></span>
       </header>
       <div class="scroll narrow">
+        <div id="daily" class="daily panel"></div>
         <p class="note">A new procedurally generated world every time. Set up the match, then pick a world type.</p>
         <div class="skirmish-setup panel">
           <label class="field">Mode <select id="skirmish-mode"></select></label>
@@ -161,6 +163,7 @@
 
 
       <div id="battles" class="hud-box battles hidden" aria-live="polite"></div>
+      <button id="btn-reinforce" class="btn ad-btn reinforce hidden" data-tip="Watch a short video ad: +50% troops right now. Once per battle."></button>
       <button id="battles-chip" class="btn small battles-chip hidden"></button>
       <div id="inspector" class="hud-box inspector hidden"></div>
       <div id="radial" class="radial hidden" role="menu"></div>

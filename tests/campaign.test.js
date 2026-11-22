@@ -1409,3 +1409,50 @@ test('early calm: nations regrow slower and leave the land around the landing fr
   }
   assert.ok(free / all > 0.8, `${Math.round(100 * free / all)}% of the land around the landing is free or yours`);
 });
+
+test('Play suggests the easiest unbeaten world; a save on a harder one stays under Continue', () => {
+  const c = newCampaign();
+  c.saves.campaign = { v: 4, configId: 'mycelion', time: 60 };
+  c.lastSlot = 'campaign';
+  assert.deepEqual(playTarget(c), { kind: 'tutorial', lesson: 1, saved: true }, 'a brand-new player goes to the tutorial');
+  c.tutorial.done = [1];
+  assert.deepEqual(playTarget(c), { kind: 'world', id: 'vulkara', saved: true });
+  c.saves.campaign.configId = 'vulkara';
+  assert.deepEqual(playTarget(c), { kind: 'resume' }, 'a save on the next world resumes');
+});
+
+test('rewards: a defeated player can be revived once; reinforcements add 50% once', async () => {
+  const { revivePlayer, reinforce } = await import('../js/sim/engine.js');
+  const s = battle('cryonis');
+  advance(s, 1);
+  const f = s.factions[PLAYER];
+  const t0 = f.troops;
+  assert.equal(reinforce(s), Math.round(t0 * 0.5));
+  assert.equal(reinforce(s), 0, 'only once per battle');
+  // Wipe the player out.
+  for (let i = 0; i < s.owner.length; i++) if (s.owner[i] === PLAYER) s.owner[i] = 0;
+  f.tiles = 0;
+  advance(s, 0.5);
+  assert.equal(s.status, 'lost');
+  assert.ok(revivePlayer(s));
+  assert.equal(s.status, 'playing');
+  assert.ok(f.alive && f.tiles > 50 && f.troops > 0);
+  const home = site(s, 'player-capital');
+  assert.equal(s.owner[home.y * s.w + home.x], PLAYER, 'back at the home capital');
+  advance(s, 2);
+  assert.equal(s.status, 'playing');
+  const d = deserialize(serialize(s));
+  assert.ok(d.revived && d.reinforced, 'both are remembered in the save');
+});
+
+test('daily challenge: the same world for everyone on a day, a new one the next day', async () => {
+  const { dailyChallenge } = await import('../js/progression.js');
+  const a = dailyChallenge(new Date('2026-11-22T08:00:00Z')), b = dailyChallenge(new Date('2026-11-22T23:00:00Z'));
+  assert.deepEqual(a, b);
+  assert.equal(a.date, '2026-11-22');
+  assert.ok(THEME_IDS.includes(a.theme) && a.seed >= 1);
+  const days = new Set(Array.from({ length: 7 }, (_, k) => JSON.stringify(dailyChallenge(new Date(Date.UTC(2026, 10, 22 + k))))));
+  assert.equal(days.size, 7);
+  const c = normalizeCampaign(JSON.parse(JSON.stringify({ ...newCampaign(), daily: { date: a.date, won: true } })));
+  assert.deepEqual(c.daily, { date: a.date, won: true });
+});

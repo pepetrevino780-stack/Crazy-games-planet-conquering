@@ -3,13 +3,13 @@ import { PLANETS, getPlanet, WORLD_TOOLS, BUILDINGS, RESEARCH, SITE_TYPES, PERSO
 import {
   newCampaign, loadCampaign, saveCampaign, isUnlocked, UPGRADES, CIVS, ABILITIES, upgradeCost,
   buyUpgrade, unlockCiv, playerLoadout, cleanName, nextWorld, playTarget, completeLesson, TUTORIAL_REWARD, computeRewards, applyVictory, applyDefeat, assistLevel, starsFor,
-  slotOf, latestSave,
+  slotOf, latestSave, dailyChallenge,
 } from './progression.js';
 import {
   createBattle, step, spawnPlayer, canSpawnAt, playerAttack, playerDropship, playerBuild,
   playerResearch, useAbility, abilityReady, ABILITY_ENERGY, DROPSHIP_COST, canDropship, currentObjective, playerRetreat, expeditionPlan,
   condProgress, battleResult, serialize, deserialize, analyzeDefeat, TICK, PLAYER,
-  tutorialStep, tutorialSteps, tutorialUnlocked, skipTutorial, playerBuildShip, playerMoveFleet, buildPreview,
+  tutorialStep, tutorialSteps, tutorialUnlocked, skipTutorial, revivePlayer, reinforce, playerBuildShip, playerMoveFleet, buildPreview,
 } from './sim/engine.js';
 import { SHIP_COST } from './sim/ships.js';
 import {
@@ -167,7 +167,10 @@ function renderTitle() {
   }
   // One big Play button: one click back into the action.
   const b = latestSave(campaign), t = playTarget(campaign);
-  $('#btn-play').textContent = t.kind === 'resume' ? `Continue: ${battleName(b)} ${fmtTime(b.time)}` : t.kind === 'world' ? `Play: ${getPlanet(t.id).name}` : 'Play';
+  $('#btn-play').textContent = t.kind === 'resume' ? `Continue: ${battleName(b)} ${fmtTime(b.time)}` : t.kind === 'world' ? `Play: ${getPlanet(t.id).name}` : t.saved ? 'Play: Tutorial' : 'Play';
+  // A save Play does not lead to (a harder world) stays one click away.
+  $('#btn-resume-title').classList.toggle('hidden', !t.saved);
+  if (t.saved) $('#btn-resume-title').textContent = `Continue: ${battleName(b)} ${fmtTime(b.time)}`;
   $('#btn-new').classList.toggle('hidden', !hasProgress());
   if (document.activeElement !== $('#player-name')) $('#player-name').value = campaign?.settings.name || 'Commander';
 }
@@ -186,13 +189,14 @@ function renderCampaign() {
     const rec = campaign.planets[p.id];
     const unlocked = isUnlocked(campaign, i);
     const li = document.createElement('li');
-    li.className = 'planet panel' + (unlocked ? '' : ' locked') + (rec.completed ? ' done' : '');
+    const next = PLANETS.find(x => !campaign.planets[x.id].completed) === p;
+    li.className = 'planet panel' + (unlocked ? '' : ' locked') + (rec.completed ? ' done' : '') + (next ? ' next' : '');
     const objs = `${rec.objectives.length}/${p.objectives.length} objectives`;
     const status = rec.completed ? `Conquered · best ${fmtTime(rec.bestTime)}<br>${objs}`
       : rec.attempts ? `${rec.defeats} defeat${rec.defeats === 1 ? '' : 's'} · ${objs}` : esc(p.title);
     const pips = '<span class="pip on"></span>'.repeat(p.difficulty) + '<span class="pip"></span>'.repeat(5 - p.difficulty);
     // Every card shows its stars (empty until conquered) and a clear mark once won.
-    li.innerHTML = `<span class="step" title="Recommended order">#${i + 1}</span>${starRow(rec.completed ? rec.stars || 1 : 0)}<h3>${esc(p.name)}</h3>${rec.completed ? '<div class="conquered">&#10003; Conquered</div>' : ''}<div class="lesson">${esc(p.lesson)}</div>
+    li.innerHTML = `${next ? '<span class="next-badge">Next</span>' : ''}<span class="step" title="Recommended order">#${i + 1}</span>${starRow(rec.completed ? rec.stars || 1 : 0)}<h3>${esc(p.name)}</h3>${rec.completed ? '<div class="conquered">&#10003; Conquered</div>' : ''}<div class="lesson">${esc(p.lesson)}</div>
       <div class="difficulty" aria-label="Difficulty ${p.difficulty} of 5" title="Difficulty ${p.difficulty} of 5">${pips}</div><div class="status">${status}</div>
       <button class="btn ${unlocked && !rec.completed ? 'primary' : ''}" ${unlocked ? '' : 'disabled'}>${rec.completed ? 'Replay' : 'Invade'}</button>`;
     li.insertBefore(orbCanvas(p.theme), li.querySelector('h3'));
@@ -201,7 +205,17 @@ function renderCampaign() {
   });
 }
 
+// Today's daily challenge card on the skirmish screen.
+function renderDaily() {
+  const d = dailyChallenge();
+  const won = campaign.daily.date === d.date && campaign.daily.won;
+  $('#daily').innerHTML = `<div class="daily-info"><small>DAILY CHALLENGE · ${d.date}</small><b>${esc(THEMES[d.theme].name)} · ${esc(SKIRMISH_MODES[d.mode].name)}</b><p>${esc(SKIRMISH_MODES[d.mode].desc)} Everyone plays the same world today.</p></div><button class="btn ${won ? '' : 'primary'}">${won ? '&#10003; Won today · Play again' : 'Play today\'s world'}</button>`;
+  $('#daily').appendChild(orbCanvas(d.theme, 48));
+  $('#daily button').onclick = () => launch({ configId: 'skirmish', theme: d.theme, worldSeed: d.seed, mode: d.mode, daily: d.date });
+}
+
 function renderSkirmish() {
+  renderDaily();
   $('#skirmish-seed').value = skirmishSeed;
   const sel = $('#skirmish-mode');
   if (!sel.options.length) {
@@ -282,19 +296,42 @@ function renderUpgrades() {
 
 // Worlds start straight away. The mission (victory goals, enemy, field notes)
 // lives in the in-battle Mission panel (the ? button), not a screen to pass.
-async function launch(ref) {
+async function launch(ref, fromResults = false) {
   // Only a save of the same mode is replaced (one slot each for campaign,
   // tutorial and skirmish).
   const slot = slotOf(ref.configId), saved = campaign.saves[slot];
   if (saved && !(await confirmBox(`Abandon your saved battle (${battleName(saved)})?`))) return;
   campaign.saves[slot] = null;
-  beginBattle(ref);
+  beginBattle(ref, fromResults);
+}
+
+// Rewarded ads are marked with a video sign and say the exact reward.
+const AD_MARK = '<span class="ad-mark" aria-label="Video ad">&#9654;</span>';
+
+// Reinforcements: once per battle, +50% troops after a rewarded ad. Offered
+// from 30 s in, while playing on the portal.
+function updateReinforce() {
+  const btn = $('#btn-reinforce');
+  const show = !!battle && platformActive() && battle.status === 'playing' && !battle.reinforced && battle.time > 30 && !config(battle).tutorialWorld;
+  btn.classList.toggle('hidden', !show);
+  if (show) btn.innerHTML = `${AD_MARK} +${fmt(battle.factions[PLAYER].troops * 0.5)} troops`;
+}
+async function watchReinforce() {
+  const btn = $('#btn-reinforce');
+  btn.disabled = true;
+  const ok = await rewardedAd();
+  btn.disabled = false;
+  if (!ok || !battle) { toast('No ad available right now.', 'bad', 2200); return; }
+  const add = reinforce(battle);
+  if (add) { toast(`Reinforcements landed: +${fmt(add)} troops.`, 'good', 3000); sfx.capture(); }
 }
 
 // ---------- Battle lifecycle ----------
 
-async function beginBattle(ref) {
-  if (battlesEnded > 0) await midgameAd();
+// A midgame ad plays only between battles, when the player moves on from a
+// results screen (Next world, Retry, Replay): never mid-battle or from menus.
+async function beginBattle(ref, fromResults = false) {
+  if (fromResults && battlesEnded > 0) await midgameAd();
   startBattle(ref);
 }
 
@@ -310,6 +347,7 @@ function startBattle(ref) {
     // (a short version for players who finished the standalone tutorial).
     tutorial: rec?.completed ? false : campaign.tutorial.done.length >= TUTORIAL_REWARD.lessons ? 'short' : true,
   });
+  if (ref.daily) battle.daily = ref.daily;
   enterBattle();
 }
 
@@ -438,7 +476,7 @@ function endTutorialLesson() {
     const newPlayer = !PLANETS.some(p => campaign.planets[p.id].attempts > 0);
     if (newPlayer || !nextLesson) {
       $('#btn-debrief-primary').textContent = `Play: ${PLANETS[0].name}`;
-      $('#btn-debrief-primary').onclick = () => launch({ configId: PLANETS[0].id });
+      $('#btn-debrief-primary').onclick = () => launch({ configId: PLANETS[0].id }, true);
     } else {
       $('#btn-debrief-primary').textContent = `Next: ${nextLesson.name}`;
       $('#btn-debrief-primary').onclick = () => startTutorial(nextLesson.id);
@@ -467,39 +505,42 @@ function endBattle() {
   const result = battleResult(battle);
   const chart = landChart(battle);
   const replayRef = cfg.skirmish ? { configId: 'skirmish', theme: battle.theme, worldSeed: battle.seed, mode: battle.mode } : { configId: cfg.id };
-  $('#btn-debrief-replay').onclick = () => launch(replayRef);
+  $('#btn-debrief-replay').onclick = () => launch(replayRef, true);
   $('#debrief-icon').src = iconURL(won ? 'victory' : 'defeat', 4);
   if (won) {
     const stars = starsFor(cfg, result);
     const rewards = computeRewards(campaign, cfg, result);
     applyVictory(campaign, cfg, result, rewards);
+    if (battle.daily) campaign.daily = { date: battle.daily, won: true };
     persist();
     happytime();
     const idx = PLANETS.indexOf(cfg);
     const next = idx >= 0 ? nextWorld(campaign, cfg.id) : null;
     $('#debrief-title').textContent = `${cfg.skirmish ? 'World' : cfg.name} conquered`;
     $('#debrief-sub').textContent = `${cfg.lesson} · ${fmtTime(result.time)}`;
-    const bonus = Math.ceil(rewards.total / 2);
+    const bonus = rewards.total; // the rewarded ad doubles the cores
     body.innerHTML = `<div class="star-box">${starRow(stars.count)}<div class="star-marks">${stars.marks.map(m => `<span class="${m.got ? 'got' : ''}">${m.got ? '★' : '☆'} ${esc(m.label)}</span>`).join('')}</div></div>
       ${battleStats(battle, result)}<div class="chart-slot"></div>
       <table class="reward-table">${rewards.lines.map(l => `<tr><td>${esc(l.label)}</td><td>+${l.value}</td></tr>`).join('')}
       <tr class="total"><td>Stellar Cores earned</td><td>+${rewards.total}</td></tr></table>
-      ${platformActive() ? `<p class="reward-ad"><button id="btn-reward-ad" class="btn">Watch an ad: +${bonus} bonus cores</button></p>` : ''}
+      ${platformActive() && bonus > 0 ? `<p class="reward-ad"><button id="btn-reward-ad" class="btn ad-btn">${AD_MARK} Double your Stellar Cores: +${bonus}</button></p>` : ''}
       <h3>Skills proven</h3><ul class="bullets">${cfg.lessons.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
       ${next ? `<div class="next-world panel"><div class="next-orb"></div><div><small>NEXT WORLD</small><b>${esc(next.name)}: ${esc(next.title)}</b><p>${esc(next.lesson)}. ${esc(next.tagline)}</p></div></div>` : ''}`;
     if (next) body.querySelector('.next-orb').appendChild(orbCanvas(next.theme, 56));
     const adBtn = $('#btn-reward-ad');
     if (adBtn) adBtn.onclick = async () => {
       adBtn.disabled = true;
-      if (await rewardedAd()) { campaign.cores += bonus; campaign.totalEarned += bonus; persist(); adBtn.textContent = `+${bonus} bonus cores added`; }
+      if (await rewardedAd()) { campaign.cores += bonus; campaign.totalEarned += bonus; persist(); adBtn.textContent = `Doubled: +${bonus} Stellar Cores added`; }
       else adBtn.textContent = 'No ad available right now';
     };
     $('#btn-debrief-primary').textContent = next ? `Next: ${next.name}` : cfg.skirmish ? 'New skirmish' : 'Campaign';
-    $('#btn-debrief-primary').onclick = () => (next ? launch({ configId: next.id }) : show(cfg.skirmish ? 'skirmish' : 'campaign'));
+    $('#btn-debrief-primary').onclick = () => (next ? launch({ configId: next.id }, true) : show(cfg.skirmish ? 'skirmish' : 'campaign'));
     $('#btn-debrief-secondary').textContent = 'Command upgrades';
     $('#btn-debrief-secondary').onclick = () => show('upgrades');
   } else {
     const tips = analyzeDefeat(battle);
+    // One revive per battle, after a rewarded ad (portal only).
+    const lost = battle, canRevive = platformActive() && !battle.revived && battle.sites.some(x => x.id === 'player-capital');
     applyDefeat(campaign, cfg);
     persist();
     const assist = cfg.skirmish ? 0 : assistLevel(campaign, cfg.id);
@@ -507,10 +548,21 @@ function endBattle() {
     $('#debrief-sub').textContent = `${cfg.skirmish ? 'Skirmish' : cfg.name} · ${fmtTime(battle.time)} · ${cfg.lesson}`;
     body.innerHTML = `${battleStats(battle, result)}<div class="chart-slot"></div><h3>What went wrong</h3><ul class="bullets">${tips.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
       <h3>This world tests</h3><ul class="bullets">${cfg.lessons.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
-      ${assist ? `<p class="assist">Adaptive assist ${assist}/3 active for your next attempt.</p>` : ''}`;
+      ${assist ? `<p class="assist">Adaptive assist ${assist}/3 active for your next attempt.</p>` : ''}
+      ${canRevive ? `<p class="reward-ad"><button id="btn-revive-ad" class="btn ad-btn">${AD_MARK} Revive at your capital with half an army</button></p>` : ''}`;
+    const reviveBtn = $('#btn-revive-ad');
+    if (reviveBtn) reviveBtn.onclick = async () => {
+      reviveBtn.disabled = true;
+      if (await rewardedAd() && revivePlayer(lost)) {
+        if (campaign.planets[cfg.id]) campaign.planets[cfg.id].defeats = Math.max(0, campaign.planets[cfg.id].defeats - 1);
+        battle = lost;
+        enterBattle();
+        toast('Revived: you landed again at your capital.', 'good', 3000);
+      } else reviveBtn.textContent = 'No ad available right now';
+    };
     const ref = { configId: battle.configId, theme: battle.theme, worldSeed: battle.seed, mode: battle.mode };
     $('#btn-debrief-primary').textContent = 'Retry';
-    $('#btn-debrief-primary').onclick = () => beginBattle(ref);
+    $('#btn-debrief-primary').onclick = () => beginBattle(ref, true);
     $('#btn-debrief-secondary').textContent = cfg.skirmish ? 'Skirmish menu' : 'Campaign';
     $('#btn-debrief-secondary').onclick = () => show(cfg.skirmish ? 'skirmish' : 'campaign');
   }
@@ -759,7 +811,44 @@ function bindDrag() {
 function worldHasTool(id) {
   const cfg = battle && config(battle);
   const list = cfg && (cfg.tools || WORLD_TOOLS[cfg.id]);
-  return !list || list.includes(id);
+  return (!list || list.includes(id)) && toolRevealed(id);
+}
+
+// Every mission starts with a few tools; the rest appear once they become
+// useful, and stay (kept in the save). Tutorial lessons show everything.
+const ALWAYS_TOOLS = ['habitat', 'extractor', 'strike'];
+const TOOL_NAMES = { dropship: 'Expedition', ship: 'Battleship', research: 'Research' };
+function toolUseful(id) {
+  const f = battle.factions[PLAYER];
+  const mine = battle.buildings.filter(b => battle.owner[b.y * battle.w + b.x] === PLAYER);
+  switch (id) {
+    case 'starport': case 'dropship': return canDropship(battle);
+    case 'bastion': return graceLeft(battle) <= 0 || Object.keys(f.attackedBy).length > 0 || battle.factions.some(o => o && o.alive && o.id !== PLAYER && borders(battle, PLAYER, o.id));
+    case 'spire': return mine.length >= 2;
+    case 'research': return f.exotic > 0 || mine.some(b => b.type === 'spire');
+    case 'ship': return mine.some(b => b.type === 'starport');
+    case 'rally': case 'emp': return f.abilities.includes(id) && f.energy >= ABILITY_ENERGY[id];
+    default: return true;
+  }
+}
+function toolRevealed(id) {
+  if (!battle || config(battle).tutorialWorld || ALWAYS_TOOLS.includes(id)) return true;
+  return (battle.revealedTools || []).includes(id);
+}
+// Called with the HUD refresh: reveal tools that just became useful.
+function revealTools() {
+  if (!battle || battle.status !== 'playing' || config(battle).tutorialWorld) return;
+  const cfg = config(battle), list = cfg.tools || WORLD_TOOLS[cfg.id];
+  const fresh = [...Object.keys(BUILDINGS), 'dropship', 'ship', 'research', ...Object.keys(ABILITIES)]
+    .filter(id => !ALWAYS_TOOLS.includes(id) && (!list || list.includes(id)) && !(battle.revealedTools || []).includes(id) && toolUseful(id));
+  if (!fresh.length) return;
+  battle.revealedTools = [...(battle.revealedTools || []), ...fresh];
+  buildToolbar();
+  const id = fresh[0], name = BUILDINGS[id]?.name || ABILITIES[id]?.name || TOOL_NAMES[id] || id;
+  showToolTab(id);
+  document.querySelector(`.tool[data-id="${id}"]`)?.classList.add('glow');
+  setTimeout(() => document.querySelector(`.tool[data-id="${id}"]`)?.classList.remove('glow'), 4000);
+  toast(`New tool: <b>${esc(name)}</b>${fresh.length > 1 ? ` (+${fresh.length - 1} more)` : ''}. Hover it to see what it does.`, 'good', 3500);
 }
 
 function toolUnlocked(kind, id) {
@@ -1555,6 +1644,8 @@ function updateHud(force = false) {
   const now = performance.now();
   if (!force && now - lastHud < 120) return;
   lastHud = now;
+  revealTools();
+  updateReinforce();
   renderer.insets = layoutHud();
   const f = battle.factions[PLAYER];
   const max = maxTroops(battle, f);
@@ -2099,6 +2190,8 @@ async function init() {
     else if (t.kind === 'tutorial') startTutorial(t.lesson);
     else launch({ configId: t.id });
   };
+  $('#btn-resume-title').onclick = () => { sfx.click(); resumeBattle(); };
+  $('#btn-reinforce').onclick = watchReinforce;
   $('#btn-continue').onclick = () => { if (!campaign) { campaign = newCampaign(); persist(); } sfx.click(); show('campaign'); };
   $('#btn-tutorial').onclick = () => show('tutorial');
   $('#btn-skirmish').onclick = () => { if (!campaign) { campaign = newCampaign(); persist(); } show('skirmish'); };

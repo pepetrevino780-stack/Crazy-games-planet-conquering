@@ -1121,6 +1121,42 @@ function advanceTutorial(state) {
   }
 }
 
+// Revive (once per battle, after a rewarded ad): a defeated player lands
+// again at their home capital, which is cleared around it, with half a
+// full army. Nations that took the land simply lose that patch.
+export function revivePlayer(state) {
+  const f = state.factions[PLAYER];
+  const home = state.sites.find(s => s.id === 'player-capital');
+  if (state.status !== 'lost' || state.revived || !home) return false;
+  const r = 7 * mapScale(state), terrain = world(state).terrain;
+  f.alive = true;
+  f.exile = null;
+  f.seat = null;
+  for (let y = Math.max(0, Math.floor(home.y - r)); y <= Math.min(state.h - 1, home.y + r); y++) {
+    for (let x = Math.max(0, Math.floor(home.x - r)); x <= Math.min(state.w - 1, home.x + r); x++) {
+      const i = y * state.w + x;
+      if (isLand(terrain[i]) && Math.hypot(x - home.x, y - home.y) <= r) setOwner(state, i, PLAYER);
+    }
+  }
+  // Attacks on that patch stop; the attackers' troops go home.
+  for (let k = state.attacks.length - 1; k >= 0; k--) if (state.attacks[k].target === PLAYER) endAttack(state, state.attacks[k], k);
+  f.troops = maxTroops(state, f) * 0.5;
+  state.status = 'playing';
+  state.revived = true;
+  notice(state, 'revived', { x: home.x, y: home.y });
+  return true;
+}
+
+// Reinforcements (once per battle, after a rewarded ad): +50% troops now.
+export function reinforce(state) {
+  const f = state.factions[PLAYER];
+  if (state.status !== 'playing' || state.reinforced || !alive(f)) return 0;
+  const add = Math.round(f.troops * 0.5);
+  f.troops += add;
+  state.reinforced = true;
+  return add;
+}
+
 export function skipTutorial(state) {
   if (state.tutorial >= 0) state.tutorial = tutorialSteps(state).length;
 }

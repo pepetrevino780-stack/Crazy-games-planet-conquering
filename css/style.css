@@ -459,3 +459,24 @@ kbd.cap { display: inline-block; min-width: 22px; padding: 2px 5px 4px; font-fam
 .tool-tabs { display: flex; flex-direction: column; gap: 2px; margin-right: 3px; }
 .tool-tab { flex: 1; min-height: 0; padding: 0 8px; font-size: 14px; line-height: 1; border-color: var(--line); color: var(--muted); }
 .tool-tab.on { color: var(--gold); border-color: var(--gold); background: #2a2410; }
+
+/* Campaign: the five worlds on one path, left to right, with the next one marked. */
+#planet-list { grid-template-columns: repeat(5, minmax(140px, 1fr)); overflow-x: auto; padding: 16px 2px 4px; }
+#planet-list .planet::after { content: ""; position: absolute; top: 56px; right: -11px; width: 10px; height: 3px; background: var(--line); }
+#planet-list .planet:last-child::after { display: none; }
+#planet-list .planet.done::after { background: var(--good); }
+#planet-list .planet.next { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(255, 210, 94, 0.25); }
+.planet .next-badge { position: absolute; top: -12px; line-height: 1.4; left: 50%; transform: translateX(-50%); padding: 1px 8px; background: var(--gold); color: #1a1206; font-family: var(--font-head); font-size: 14px; }
+
+/* Rewarded ads: a video sign and the exact reward on the button. */
+.ad-btn { border-color: var(--gold); color: var(--gold); }
+.ad-mark { display: inline-block; margin-right: 6px; padding: 0 4px; background: var(--gold); color: #1a1206; font-size: 14px; line-height: 1.3; }
+.reinforce { position: absolute; left: 6px; top: var(--hud-top); z-index: 2; font-size: 14px; padding: 4px 8px; }
+
+/* Daily challenge card (skirmish screen). */
+.daily { display: flex; align-items: center; gap: 14px; padding: 10px 14px; margin-bottom: 12px; border-color: var(--gold); }
+.daily canvas { order: -1; width: 48px; height: 48px; image-rendering: pixelated; }
+.daily-info { flex: 1; }
+.daily-info small { color: var(--gold); font-family: var(--font-head); font-size: 14px; }
+.daily-info b { display: block; font-size: 16px; }
+.daily-info p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
