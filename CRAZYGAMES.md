@@ -39,7 +39,18 @@ Upload the zip as an **HTML5** game in the CrazyGames developer portal.
 
 ### Resubmission note (paste into the portal)
 
-Changes since the second quality review (spec v2):
+Latest changes (launch review, November 2026):
+- Loading: a logo and progress bar show from the first frame; the SDK loads without blocking and its start-up is capped, so the screen is never black.
+- Map: brighter ground, more solid territory, organic starting borders instead of circles, your empire highlighted with a bright edge and glow, labels only for you, the main enemy and your neighbours, range rings only on hover.
+- Text: nothing under 14 px; tools grouped into Build / Fleet / Powers tabs (5 buttons in view instead of 12).
+- Opening: for the first 2 minutes rival nations grow slower and leave the land around your landing free, so new players are never boxed in.
+- Every mission starts with three tools; the rest appear as they become useful.
+- Play leads new players to the tutorial and the easiest unbeaten world; the campaign shows the five worlds on one path with the next one marked.
+- Rewarded ads with a video mark and the exact reward: +50% troops once per battle, revive at your capital after a defeat, double Stellar Cores on victory. Midgame ads only when moving on from a results screen.
+- Daily challenge: one seeded skirmish per day.
+- Store: new 18 s preview videos showing the crash-landing, a big border push and a capital capture.
+
+Earlier changes (second quality review, spec v2):
 
 Visuals
 - V1 Terrain repainted: a few flat tones per biome, no dithering on land, seas darker and desaturated, a soft highlight along the shore. Land and sea read apart in grayscale.

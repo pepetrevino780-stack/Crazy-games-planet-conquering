@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds the two CrazyGames preview videos (17 s, 30 fps, no sound): 0.5 s on
+# Builds the two CrazyGames preview videos (about 18.5 s, 30 fps, no sound): 0.5 s on
 # the matching cover, then gameplay recorded by tools/record-preview.cjs.
 # Needs ffmpeg, Playwright and a local server on :8080.
 set -e

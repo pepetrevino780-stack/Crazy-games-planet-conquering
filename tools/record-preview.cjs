@@ -1,4 +1,5 @@
-// Records a preview video frame by frame on a virtual clock (30 fps, real game speed).
+// Records a preview video frame by frame on a virtual clock (30 fps, real game speed):
+// the crash-landing, a big border push, a battleship duel and a capital falling.
 // usage: node tools/record-preview.cjs <width> <height> <frames dir> [world] [seed]
 // Then tools/make-previews.sh assembles the MP4s (0.5 s on the cover, then the action).
 // Needs a local server on :8080 (npx http-server -c-1 -p 8080 .) and Playwright.
@@ -30,11 +31,49 @@ const FPS = 30;
   await page.goto('http://localhost:8080/');
   await page.addStyleTag({ content: '#toasts, #tooltip, #banner { display: none !important; } * { cursor: none !important; }' });
   const run = async ms => page.evaluate(ms => { for (let t = 0; t < ms; t += 1000 / 30) window.__rec.step(1000 / 30); }, ms);
+  let frame = 0;
+  const shoot = () => page.screenshot({ path: `${OUT}/f${String(frame++).padStart(4, '0')}.jpg`, type: 'jpeg', quality: 92 });
+  const frames = async (seconds, at, each) => {
+    for (let k = 0; k < Math.round(seconds * FPS); k++) {
+      if (at && at[k]) await page.evaluate(at[k]);
+      if (each) await each(k);
+      await page.evaluate(() => window.__rec.step(1000 / 30));
+      await shoot();
+    }
+  };
+  const camera = (x, y, z) => page.evaluate(([x, y, z]) => { const r = window.__planetConquest.renderer(); r.target.zoom = r.cam.zoom = r.maxZoom() * z; r.centerOn(x, y, true); }, [x, y, z]);
   await run(300);
   await page.click('#btn-play');
   await run(300);
-  await page.evaluate(() => { window.__planetConquest.battle().spawnLeft = 0.01; });
-  await run(3500);
+  // Shot 1: the crash-landing. The camera finds the landing site as soon as
+  // it is chosen, then the ship comes down and the territory spreads out.
+  await page.evaluate(() => { window.__planetConquest.battle().spawnLeft = 0.3; });
+  let landed = false;
+  await frames(5, null, async () => {
+    if (landed) return;
+    const c = await page.evaluate(() => window.__planetConquest.battle().sites.find(s => s.id === 'player-capital'));
+    if (c) { landed = true; await camera(c.x, c.y, 0.55); }
+  });
+  // Shot 2: a big border push into the wilderness.
+  const push = await page.evaluate(async () => {
+    const pc = window.__planetConquest, b = pc.battle(), eng = await import('/js/sim/engine.js');
+    pc.advance(20);
+    const c = b.sites.find(s => s.id === 'player-capital');
+    // The open direction: the tile ~30 tiles out with the most wilderness around it.
+    let best = null, bestN = -1;
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2, x = Math.round(c.x + Math.cos(a) * 30), y = Math.round(c.y + Math.sin(a) * 30);
+      if (x < 8 || y < 8 || x >= b.w - 8 || y >= b.h - 8) continue;
+      let n = 0;
+      for (let dy = -6; dy <= 6; dy += 2) for (let dx = -6; dx <= 6; dx += 2) if (b.owner[(y + dy) * b.w + x + dx] === 0) n++;
+      if (n > bestN) { bestN = n; best = { x, y }; }
+    }
+    b.factions[1].troops = Math.max(b.factions[1].troops, 12000);
+    eng.playerAttack(b, best.y * b.w + best.x, 0.8);
+    return { x: (c.x + best.x) / 2, y: (c.y + best.y) / 2 };
+  });
+  await camera(push.x, push.y, 0.5);
+  await frames(4.5);
   // Let the tactical AI play our side for a few minutes: a real mid-game war.
   const info = await page.evaluate(async () => {
     const pc = window.__planetConquest, b = pc.battle();
@@ -42,21 +81,10 @@ const FPS = 30;
     b.factions[1].profile = AI_PROFILES.tactical;
     b.ai[1] = { next: 0, lastTarget: null };
     b.factions[1].minerals += 3000;
-    pc.advance(230);
+    pc.advance(210);
     return { status: b.status, t: Math.round(b.time), tiles: b.factions[1].tiles, attacks: b.attacks.length, ships: b.ships.length };
   });
   console.log('staged', JSON.stringify(info));
-  let frame = 0;
-  const shoot = () => page.screenshot({ path: `${OUT}/f${String(frame++).padStart(4, '0')}.jpg`, type: 'jpeg', quality: 92 });
-  const frames = async (seconds, at) => {
-    for (let k = 0; k < Math.round(seconds * FPS); k++) {
-      if (at && at[k]) await page.evaluate(at[k]);
-      await page.evaluate(() => window.__rec.step(1000 / 30));
-      await shoot();
-    }
-  };
-  const camera = (x, y, z) => page.evaluate(([x, y, z]) => { const r = window.__planetConquest.renderer(); r.target.zoom = r.cam.zoom = r.maxZoom() * z; r.centerOn(x, y, true); }, [x, y, z]);
-  // Where things happen.
   const pick = () => page.evaluate(async () => {
     const pc = window.__planetConquest, b = pc.battle(), W = b.w;
     const margin = 40;
@@ -73,10 +101,7 @@ const FPS = 30;
   });
   let p = await pick();
   console.log('pick', JSON.stringify(p));
-  // Shot A: the busiest front, close.
-  if (p.front) await camera(p.front.x, p.front.y, 0.85);
-  await frames(6);
-  // Shot B: battleships shelling a coast (we launch one if nobody has).
+  // Shot 3: battleships shelling a coast (we launch one if nobody has).
   p = await pick();
   if (!p.ship) {
     p.ship = await page.evaluate(async () => {
@@ -120,8 +145,8 @@ const FPS = 30;
     }, [p.ship.x, p.ship.y, p.ship.owner]);
     await camera(c.x, c.y, 1.0);
   }
-  await frames(5);
-  // Shot C: a capital falls.
+  await frames(3);
+  // Shot 4: a capital falls.
   p = await pick();
   if (p.storm) {
     await camera(p.storm.x, p.storm.y, 0.7);
