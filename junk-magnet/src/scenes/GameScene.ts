@@ -35,6 +35,9 @@ import { Player, type MagnetDef } from '../systems/Player';
 import { TS, makeCrusherTextures, makeFloor } from '../systems/Textures';
 import { UpgradeSystem, cardById, pathDef, xpForLevel, type CardDef, type PlayerStats } from '../systems/UpgradeSystem';
 
+/** Screen pixels the top HUD covers (health, swarm counter, cap bar, timer, phase). */
+const HUD_TOP_PAD = 120;
+
 export interface RunConfig {
   mode: 'menu' | 'run';
   daily?: boolean;
@@ -1673,6 +1676,10 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     this.zoom += (target - this.zoom) * (1 - Math.exp(-2.5 * realDt));
     const zoom = this.zoom - this.juice.zoomPunch;
     cam.setZoom(zoom);
+    // During a run, let the camera scroll a HUD's height past the top wall so the arena edge,
+    // its border props, and the Hive Core near it never sit under the top HUD (counter, timer).
+    const hudPad = this.isRun ? HUD_TOP_PAD / zoom : 0;
+    cam.setBounds(0, -hudPad, ARENA.width, ARENA.height + hudPad);
     // On the title screen, keep the attract-mode magnet out from behind the logo and buttons.
     const menuShiftX = this.state === 'menu' && cam.width > cam.height ? (cam.width * 0.3) / zoom : 0;
     const menuShiftY = this.state === 'menu' && cam.width <= cam.height ? -(cam.height * 0.3) / zoom : 0;
