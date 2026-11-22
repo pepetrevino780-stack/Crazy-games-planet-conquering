@@ -2,28 +2,28 @@
   "list": [
     {
       "id": "noPulse",
-      "title": "Pulse-Free",
-      "desc": "Survive 5:00 without using Pulse"
+      "title": "Burst-Free",
+      "desc": "Survive 5:00 without using Spore Burst"
     },
     {
       "id": "hoarder",
       "title": "Hoarder",
-      "desc": "Hold 250 junk at once"
+      "desc": "Hold 250 swarmlings at once"
     },
     {
       "id": "crusher",
-      "title": "Crusher Crusher",
-      "desc": "Defeat the Crusher"
+      "title": "Walker Toppler",
+      "desc": "Defeat the Siege Walker"
     },
     {
       "id": "magnetron",
-      "title": "Short Circuit",
-      "desc": "Defeat the Magnetron"
+      "title": "Grounded",
+      "desc": "Defeat the Drop Carrier"
     },
     {
       "id": "win",
-      "title": "Compactor Breaker",
-      "desc": "Crush The Compactor"
+      "title": "Planet Defender",
+      "desc": "Down The Colony Ship"
     },
     {
       "id": "winHard",
@@ -38,7 +38,7 @@
     {
       "id": "frenzy",
       "title": "Frenzied",
-      "desc": "Trigger SCRAP FRENZY!"
+      "desc": "Trigger HIVE FRENZY!"
     },
     {
       "id": "path",
@@ -47,13 +47,13 @@
     },
     {
       "id": "chests",
-      "title": "Treasure Hunter",
-      "desc": "Open 3 chests in one run"
+      "title": "Scavenger",
+      "desc": "Open 3 supply crates in one run"
     },
     {
       "id": "golden",
-      "title": "Gold Digger",
-      "desc": "Catch a Golden Robot"
+      "title": "VIP Catch",
+      "desc": "Catch a VIP Courier"
     },
     {
       "id": "untouched",

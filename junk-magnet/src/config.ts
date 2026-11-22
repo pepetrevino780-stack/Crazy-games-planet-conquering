@@ -6,32 +6,34 @@ export const PORTRAIT_BASE = 560;
 export const ARENA = { width: 2800, height: 2000, margin: 80 };
 
 export const PAL = {
-  floor: 0x1e1b24,
-  floorDetail: 0x2e2838,
+  floor: 0x1f1530,
+  floorDetail: 0x2c1d45,
   outline: 0x120f16,
   red: 0xe8423f,
-  cyan: 0x3ee6f2,
+  cyan: 0x7cff6b,
+  hive: 0xe04fd8,
   steel: 0xa7b0ba,
   rust: 0xd9772b,
   brass: 0xf2c14e,
   lime: 0x9be564,
   pink: 0xff3d7f,
   text: 0xf4f1ea,
-  plum: 0x2e2838,
-  panel: 0x231f2b,
+  plum: 0x2c1d45,
+  panel: 0x22172f,
 };
 
 export const CSS = {
   text: '#F4F1EA',
   outline: '#120F16',
-  cyan: '#3EE6F2',
+  cyan: '#7CFF6B',
+  hive: '#E04FD8',
   brass: '#F2C14E',
   pink: '#FF3D7F',
   lime: '#9BE564',
   red: '#E8423F',
   steel: '#A7B0BA',
   rust: '#D9772B',
-  dim: '#9C93A8',
+  dim: '#A895BD',
 };
 
 export const FONT_DISPLAY = '"Lilita One", "Arial Black", sans-serif';

@@ -42,7 +42,7 @@ export class PauseScene extends Phaser.Scene {
         this.tweens.add({ targets: hint, alpha: { from: 1, to: 0.5 }, duration: 700, yoyo: true, repeat: -1 });
       }
 
-      new Button(this, w / 2, py + 132, { width: pw - 80, height: 66, label: 'RESUME', fill: PAL.red, onClick: () => g.resumeFromPause() });
+      new Button(this, w / 2, py + 132, { width: pw - 80, height: 66, label: 'RESUME', fill: PAL.hive, onClick: () => g.resumeFromPause() });
 
       const row = (y: number, label: string) => this.add.text(px + 40, y, label, bodyStyle(22, CSS.text)).setOrigin(0, 0.5);
       const sliderW = pw - 210;

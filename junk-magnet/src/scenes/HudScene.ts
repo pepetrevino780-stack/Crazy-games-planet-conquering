@@ -67,12 +67,13 @@ export class HudScene extends Phaser.Scene {
     this.joyId = -1;
     this.shownHp = this.lastHp = 1;
     this.hpShake = 0;
+    // A dark band behind the top HUD so the arena never shows through the bars and numbers.
+    // Created first so it sits BEHIND the health bar (on top, it made the bar look greyed out).
+    this.topBand = this.add.graphics();
     this.hpBar = this.add.graphics();
     this.hpText = this.add.text(0, 0, '', displayStyle(15)).setOrigin(0.5);
     this.phaseText = this.add.text(0, 0, '', displayStyle(24, CSS.pink)).setOrigin(1, 0.5);
 
-    // A dark band behind the top HUD so the arena never shows through the bars and numbers.
-    this.topBand = this.add.graphics();
     this.vignette = this.add.graphics();
     this.xpBar = this.add.graphics();
     this.levelText = this.add.text(0, 0, '', displayStyle(18, CSS.text)).setOrigin(0, 0.5);
@@ -444,18 +445,22 @@ export class HudScene extends Phaser.Scene {
     const hh = 20;
     const low = hpFrac < 0.3;
     const blink = low && Math.sin(_now / 90) > 0;
-    const color = low ? (blink ? 0xffffff : PAL.red) : hpFrac < 0.5 ? PAL.brass : PAL.lime;
+    // Bright, saturated fill: green when healthy, yellow from half, red (blinking) when low.
+    const color = low ? (blink ? 0xffffff : 0xff3b30) : hpFrac < 0.5 ? 0xffd23f : 0x39e75f;
     this.hpBar.clear();
     this.hpBar.fillStyle(PAL.outline);
     this.hpBar.fillRoundedRect(hx - 3, hy - 3, hw + 6, hh + 6, 8);
-    this.hpBar.fillStyle(0x3a3346);
+    this.hpBar.fillStyle(0x1a1024);
     this.hpBar.fillRoundedRect(hx, hy, hw, hh, 6);
-    this.hpBar.fillStyle(0xffffff, 0.35);
-    this.hpBar.fillRoundedRect(hx, hy, Math.max(6, hw * this.shownHp), hh, 6);
+    // Damage trail: only the chunk just lost, in orange, shrinking after a hit.
+    if (this.shownHp > hpFrac + 0.003) {
+      this.hpBar.fillStyle(0xff8a3d, 0.9);
+      this.hpBar.fillRoundedRect(hx, hy, Math.max(6, hw * this.shownHp), hh, 6);
+    }
     this.hpBar.fillStyle(color);
     this.hpBar.fillRoundedRect(hx, hy, Math.max(6, hw * hpFrac), hh, 6);
-    this.hpBar.fillStyle(0xffffff, 0.3);
-    this.hpBar.fillRoundedRect(hx + 3, hy + 3, Math.max(0, hw * hpFrac - 6), 5, 3);
+    this.hpBar.fillStyle(0xffffff, 0.22);
+    this.hpBar.fillRoundedRect(hx + 4, hy + 3, Math.max(0, hw * hpFrac - 8), 4, 2);
     const hpLabel = `${Math.ceil(g.player.hp)}/${Math.round(g.stats.maxHp)}`;
     if (this.hpText.text !== hpLabel) this.hpText.setText(hpLabel);
     this.hpText.setPosition(hx + hw / 2, hy + hh / 2);

@@ -42,7 +42,7 @@ export class ChestScene extends Phaser.Scene {
     this.tweens.add({ targets: glow, angle: 360, duration: 6000, repeat: -1 });
     const chest = this.add.image(w / 2, py + 150, 'chest').setScale(0);
     this.tweens.add({ targets: chest, scale: 1.2, duration: 450, ease: 'Back.easeOut' });
-    this.add.text(w / 2, py + 44, this.cfg.mode === 'run' ? 'TREASURE CHEST!' : this.cfg.mode === 'bonus' ? 'BONUS CHEST!' : 'DAILY CHEST!', displayStyle(40, CSS.brass)).setOrigin(0.5);
+    this.add.text(w / 2, py + 44, this.cfg.mode === 'run' ? 'SUPPLY CRATE!' : this.cfg.mode === 'bonus' ? 'BONUS POD!' : 'DAILY POD!', displayStyle(40, CSS.brass)).setOrigin(0.5);
     Audio.rare();
     if (this.cfg.mode === 'run') this.time.delayedCall(500, () => this.spinUpgrades(py, pw, ph, chest));
     else this.time.delayedCall(500, () => this.spinScrap(py, ph, chest));
@@ -118,7 +118,7 @@ export class ChestScene extends Phaser.Scene {
     this.reel(label, ['+40', '+60', '+80', '+100', '+150'], `+${amount}`, 1300, () => {
       Audio.coin();
       this.add.image(w / 2 - label.width / 2 - 30, py + 150, 'coin').setScale(1.2);
-      this.add.text(w / 2, py + 220, `Wallet: ${Meta.data.coins} scrap`, bodyStyle(20, CSS.dim)).setOrigin(0.5);
+      this.add.text(w / 2, py + 220, `Biomass: ${Meta.data.coins}`, bodyStyle(20, CSS.dim)).setOrigin(0.5);
       this.finish(py + ph - 56, () => {
         this.scene.stop();
         this.scene.launch('Menu');

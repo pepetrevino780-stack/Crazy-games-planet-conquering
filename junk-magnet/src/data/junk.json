@@ -87,7 +87,7 @@
       "radius": 6,
       "weight": 5,
       "power": "shock",
-      "desc": "zaps nearby robots"
+      "desc": "zaps nearby colonists"
     },
     {
       "id": "fuel",
@@ -95,7 +95,7 @@
       "radius": 7,
       "weight": 4,
       "power": "explode",
-      "desc": "explodes on impact"
+      "desc": "bursts into acid on impact"
     },
     {
       "id": "spring",
@@ -103,7 +103,7 @@
       "radius": 6,
       "weight": 4,
       "power": "bounce",
-      "desc": "bounces robots away"
+      "desc": "bounces colonists away"
     },
     {
       "id": "gold",
@@ -111,7 +111,7 @@
       "radius": 6,
       "weight": 3,
       "power": "gold",
-      "desc": "worth extra scrap"
+      "desc": "worth extra biomass"
     }
   ],
   "health": {

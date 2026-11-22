@@ -37,7 +37,7 @@ export class Button extends Phaser.GameObjects.Container {
     private readonly opts: ButtonOptions,
   ) {
     super(scene, x, y);
-    this.fill = opts.fill ?? PAL.red;
+    this.fill = opts.fill ?? PAL.hive;
     this.bg = scene.add.graphics();
     this.face = scene.add.container(0, 0);
     const size = opts.fontSize ?? Math.round(opts.height * 0.46);

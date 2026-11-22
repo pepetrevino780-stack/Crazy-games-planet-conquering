@@ -4,7 +4,7 @@ import { CrazySDK } from '../systems/CrazySDK';
 import { Button, drawPanel } from '../ui/widgets';
 import type { GameScene } from './GameScene';
 
-/** Once per run: watch an ad to come back with half health and your junk ball. Optional. */
+/** Once per run: watch an ad to come back with half health and your swarm. Optional. */
 export class ReviveScene extends Phaser.Scene {
   private left = 6;
   private busy = false;
@@ -26,7 +26,7 @@ export class ReviveScene extends Phaser.Scene {
     const py = h / 2 - ph / 2;
     drawPanel(this.add.graphics(), px, py, pw, ph, PAL.lime);
     this.add.text(w / 2, py + 52, 'REVIVE?', displayStyle(52, CSS.lime)).setOrigin(0.5);
-    this.add.text(w / 2, py + 102, 'Come back with half health and your junk ball.', bodyStyle(19)).setOrigin(0.5);
+    this.add.text(w / 2, py + 102, 'Come back with half health and your swarm.', bodyStyle(19)).setOrigin(0.5);
     const timer = this.add.text(w / 2, py + 140, '6', displayStyle(34, CSS.dim)).setOrigin(0.5);
     const revive: Button = new Button(this, w / 2, py + 210, {
       width: Math.min(340, pw - 50),
