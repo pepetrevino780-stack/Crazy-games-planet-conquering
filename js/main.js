@@ -89,7 +89,7 @@ const REASONS = {
   cooldown: 'Still recharging.',
   locked: 'Unlock this ability in Command Upgrades.',
   terrain: 'Build on your own flat land (not mountains, rivers or volcanoes).',
-  crowded: 'Too close to another structure.',
+  crowded: 'Too close to your capital or another building: pick open land a little further away.',
   maxLevel: 'That building is already at its highest level (3).',
   coast: 'Starports must be built within 3 tiles of the coast.',
   noStarport: 'Build a Starport first: battleships are launched from one.',
@@ -584,7 +584,10 @@ function toast(html, kind = '', ms = 4200) {
   const box = $('#toasts');
   const live = [...box.children].filter(c => !c.classList.contains('out'));
   if (live.some(c => c.innerHTML === html) || toastQueue.some(t => t.html === html)) return;
-  if (live.length || (battle && transientBusy())) {
+  // An error answers what the player just did: it never waits in the queue
+  // (a failed drop or click must say why at once), it replaces the toast shown.
+  if (kind === 'bad') for (const c of live) c.classList.add('out');
+  else if (live.length || (battle && transientBusy())) {
     toastQueue.push({ html, kind, ms });
     while (toastQueue.length > 3) toastQueue.shift();
     return;
@@ -597,7 +600,7 @@ function toast(html, kind = '', ms = 4200) {
 }
 function flushToasts() {
   // A card that opens over a showing toast wins: the toast fades out.
-  if (battle && transientBusy()) for (const c of $('#toasts').children) c.classList.add('out');
+  if (battle && transientBusy()) for (const c of $('#toasts').children) if (!c.classList.contains('bad')) c.classList.add('out');
   if (!toastQueue.length || (battle && transientBusy()) || [...$('#toasts').children].some(c => !c.classList.contains('out'))) return;
   const t = toastQueue.shift();
   toast(t.html, t.kind, Math.min(t.ms, 3500));
@@ -634,6 +637,33 @@ function currentGoal() {
   const next = conds.find(x => !x.pr.done);
   const frac = Math.max(...conds.map(x => (x.pr.done ? 1 : x.pr.frac || 0)), 0);
   return { label: next ? next.c.label + (next.pr.text || '') : '', frac };
+}
+
+// Where the current goal is on the map (for the edge arrow): the tutorial
+// step's site, else the objective's highlighted site type (nearest one not
+// yet yours), else the first unfinished capture goal.
+function goalTarget() {
+  if (!battle || battle.status !== 'playing') return null;
+  const mine = s => battle.owner[s.y * battle.w + s.x] === PLAYER;
+  const tut = tutorialStep(battle);
+  if (tut?.point?.startsWith('site:')) {
+    const s = battle.sites.find(x => x.id === tut.point.slice(5));
+    return s && !mine(s) ? { x: s.x, y: s.y, name: s.name } : null;
+  }
+  const cur = currentObjective(battle);
+  if (cur?.highlight) {
+    const cap = capitalOf(battle, PLAYER) || homeCapital(battle, PLAYER);
+    const list = battle.sites.filter(x => x.type === cur.highlight && !mine(x));
+    if (cap && list.length) {
+      const s = list.reduce((a, b) => (Math.hypot(a.x - cap.x, a.y - cap.y) <= Math.hypot(b.x - cap.x, b.y - cap.y) ? a : b));
+      return { x: s.x, y: s.y, name: s.name };
+    }
+  }
+  for (const c of config(battle).victory.conds) {
+    const s = c.site && battle.sites.find(x => x.id === c.site);
+    if (s && !mine(s)) return { x: s.x, y: s.y, name: s.name };
+  }
+  return null;
 }
 
 // A goal or training step is done: flash the chip; a finished goal also gets
@@ -787,7 +817,7 @@ function ghostLabel(p, type) {
   if (p.ok) return p.upgrade ? `Upgrade to level ${p.level} · ${fmt(p.cost)}` : `${BUILDINGS[type].name} · ${fmt(p.cost)}`;
   if (p.reason === 'maxLevel') return 'Already level 3';
   if (p.reason === 'minerals') return `Need ${fmt(p.cost)} minerals`;
-  return { terrain: 'Only on your own flat land', crowded: 'Too close to another structure', coast: 'Must be near the coast' }[p.reason] || 'Cannot build here';
+  return { terrain: 'Only on your own flat land', crowded: 'Too close: move a little further out', coast: 'Must be near the coast' }[p.reason] || 'Cannot build here';
 }
 
 function bindDrag() {
@@ -909,6 +939,7 @@ function updateToolbar() {
       b.querySelector('.cd').style.width = `${100 * (1 - left / total)}%`;
     }
     setOff(b, !!toolBlockReason(kind, id));
+    b.classList.toggle('ready', kind === 'build' && !b.classList.contains('off'));
   });
 }
 
@@ -1104,16 +1135,15 @@ function showTooltip(html, x, y) {
 function placeMapTooltip(x, y) {
   tipXY = { x, y };
   const el = $('#tooltip'), r = el.getBoundingClientRect();
-  const scr = window.getComputedStyle($("#screen-battle"));
-  const top = parseFloat(scr.getPropertyValue('--hud-top')) || 60, bottom = parseFloat(scr.getPropertyValue('--hud-bottom')) || 60;
-  // Beside the cursor, on the side facing the middle of the screen (never in a
-  // corner, where it would cover the battles chip or HUD), clear of the HUD bars.
-  const gap = 28;
-  let left = x < window.innerWidth / 2 ? x + gap : x - gap - r.width;
-  let t = y < window.innerHeight / 2 ? y + gap : y - gap - r.height;
-  left = Math.max(4, Math.min(window.innerWidth - r.width - 4, left));
-  t = Math.max(top + 4, Math.min(window.innerHeight - bottom - r.height - 6, t));
-  el.style.left = `${Math.round(left)}px`;
+  const scr = window.getComputedStyle($('#screen-battle'));
+  const top = parseFloat(scr.getPropertyValue('--hud-top')) || 60;
+  // In a top corner on the far side from the cursor, never next to it (that
+  // is where you are about to click), below the battles chip or the
+  // reinforcements button when they show.
+  const right = x < window.innerWidth / 2;
+  const below = sel => { const e = $(sel); return e && !e.classList.contains('hidden') && e.offsetParent ? e.getBoundingClientRect().bottom + 4 : 0; };
+  const t = Math.max(top + 4, right ? below('#battles-chip') : below('#btn-reinforce'), right ? below('#battles') : 0);
+  el.style.left = `${Math.round(right ? window.innerWidth - r.width - 6 : 6)}px`;
   el.style.top = `${Math.round(t)}px`;
 }
 
@@ -1135,9 +1165,9 @@ function hideTooltip() {
 }
 
 // Called with the HUD refresh so costs, rates and the hovered tile stay live.
-// Tooltips appear only after the pointer has rested 400 ms, and never while
+// Tooltips appear only after the pointer has rested 500 ms, and never while
 // dragging, building or attacking.
-const TIP_DELAY = 400;
+const TIP_DELAY = 500;
 let lastMoveAt = 0, lastPressAt = 0, mapPressed = false, tipTimer = 0;
 const tipReady = () => {
   const now = performance.now();
@@ -2129,6 +2159,7 @@ function frame(ts) {
     now: ts, dt, reducedMotion: s.motion, labels: s.labels, spawnHover,
     hoverOwner: hoverTile >= 0 ? battle.owner[hoverTile] : 0,
     hoverTile,
+    goal: goalTarget(),
     inspectOwner: inspectTile >= 0 ? battle.owner[inspectTile] : 0,
     highlights: new Set(cur?.highlight ? [cur.highlight] : []),
     intents,
@@ -2313,6 +2344,7 @@ window.__planetConquest = {
   pointer: () => tutPointer,
   tipSource: () => (tipSource === 'map' ? 'map' : tipSource ? tipSource.id || tipSource.className : null),
   advance: seconds => { for (let k = 0; k < seconds / TICK && battle?.status === 'playing'; k++) step(battle, TICK); },
+  drag: () => drag && { active: drag.active, tile: drag.tile, type: drag.type },
 };
 
 init();

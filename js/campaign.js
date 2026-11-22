@@ -121,7 +121,7 @@ export const PLANETS = [
       { id: 'expand', label: 'Tap the land next to your border', point: 'frontier', waitFor: { type: 'attack' },
         icon: 'click', text: 'Tap the land next to your border.' },
       { id: 'habitat', label: 'Build a Habitat', point: 'tool:habitat', unlock: ['habitat'], waitFor: { type: 'build', building: 'habitat' },
-        icon: 'drag', keys: ['1'], ensureBuild: 'habitat', text: 'Drag a Habitat onto your land.' },
+        icon: 'click', keys: ['1'], ensureBuild: 'habitat', text: 'Tap Habitat, then tap your land (or drag it).' },
       { id: 'capital', label: 'Capture the Ember Throne', point: 'site:enemy-capital',
         unlock: ['extractor', 'starport', 'bastion', 'spire', 'dropship', 'ship', 'research', 'exotic', 'energy', 'abilities'],
         icon: 'click', text: 'Capture the Ember Throne to win.' },
@@ -330,7 +330,7 @@ export const TUTORIAL_LESSONS = [
   { id: 1, name: 'First landing', desc: 'Take land, build a Habitat, capture a capital.', setup: { minerals: 400 }, boost: { troops: 2, speed: 1.5 }, win: true, tools: WORLD_TOOLS.vulkara,
     steps: [
       step('attack', 'Tap the land next to your border', { type: 'attack' }, 'Tap the land next to your border.', { point: 'frontier', icon: 'click' }),
-      step('build', 'Build a Habitat', { type: 'build', building: 'habitat' }, 'Drag a Habitat onto your land.', { point: 'tool:habitat', icon: 'drag', keys: ['1'] }),
+      step('build', 'Build a Habitat', { type: 'build', building: 'habitat' }, 'Tap Habitat, then tap your land (or drag it).', { point: 'tool:habitat', icon: 'click', keys: ['1'] }),
       step('capital', 'Capture the Training Fort', null, 'Capture the Training Fort to win.', { point: 'site:enemy-capital', icon: 'click' }),
     ] },
   { id: 2, name: 'Direction and survivors', desc: 'Troops push where you click, and survivors come home.', setup: {},
@@ -340,9 +340,9 @@ export const TUTORIAL_LESSONS = [
     ] },
   { id: 3, name: 'Build and upgrade', desc: 'Place buildings, then stack them to level 2 and 3.', setup: { minerals: 3000 },
     steps: [
-      step('build', 'Build a Habitat', { type: 'build', building: 'habitat' }, 'Drag a Habitat onto your land.', { point: 'tool:habitat', icon: 'drag', keys: ['1'] }),
-      step('upgrade', 'Upgrade the Habitat', flag('upgraded_habitat'), 'Drop another Habitat on it: level 2.', { point: 'tool:habitat', icon: 'drag', keys: ['1'] }),
-      step('extract', 'Build an Extractor', { type: 'build', building: 'extractor' }, 'Drag an Extractor for more minerals.', { point: 'tool:extractor', icon: 'drag', keys: ['2'] }),
+      step('build', 'Build a Habitat', { type: 'build', building: 'habitat' }, 'Tap Habitat, then tap your land (or drag it).', { point: 'tool:habitat', icon: 'click', keys: ['1'] }),
+      step('upgrade', 'Upgrade the Habitat', flag('upgraded_habitat'), 'Tap Habitat, then tap your Habitat: level 2.', { point: 'tool:habitat', icon: 'click', keys: ['1'] }),
+      step('extract', 'Build an Extractor', { type: 'build', building: 'extractor' }, 'Tap Extractor, then tap your land.', { point: 'tool:extractor', icon: 'click', keys: ['2'] }),
     ] },
   { id: 4, name: 'The battle panel', desc: 'Read your troops against theirs, and retreat.', setup: {},
     steps: [
@@ -351,7 +351,7 @@ export const TUTORIAL_LESSONS = [
     ] },
   { id: 5, name: 'Across the sea', desc: 'Expeditions reach other continents; Starports speed them up.', setup: { minerals: 2000 },
     steps: [
-      step('port', 'Build a Starport', { type: 'build', building: 'starport' }, 'Drag a Starport onto your coast.', { point: 'tool:starport', icon: 'drag', keys: ['3'] }),
+      step('port', 'Build a Starport', { type: 'build', building: 'starport' }, 'Tap Starport, then tap your coast.', { point: 'tool:starport', icon: 'click', keys: ['3'] }),
       step('drop', 'Send an expedition', flag('dropship'), 'Click land across the sea.', { point: 'tool:dropship', icon: 'click', keys: ['6'] }),
     ] },
   { id: 6, name: 'Research and abilities', desc: 'Spend exotic matter on research, energy on abilities.', setup: { exotic: 120, energy: 120, abilities: ['strike', 'rally', 'emp'] },

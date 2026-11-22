@@ -1024,6 +1024,7 @@ export class MapRenderer {
     }
 
     if (ui.labels !== false) { this.drawContinents(o, z); this.drawLabels(o, z); }
+    if (ui.goal) this.drawGoal(o, z, ui.goal, now, motion);
     if (ghostLabel) {
       ctx.font = `700 ${Math.round(12 * d)}px "Alien Body", monospace`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
@@ -1032,6 +1033,50 @@ export class MapRenderer {
       ctx.fillStyle = ghostLabel.col;
       ctx.fillText(ghostLabel.text, ghostLabel.x, ghostLabel.y);
     }
+  }
+
+  // The current goal: a bobbing marker above it when on screen, else a gold
+  // arrow at the screen edge pointing at it, with its name.
+  drawGoal(o, z, g, now, motion) {
+    const ctx = this.ctx, d = this.dpr, i = this.insets;
+    const px = o.x + (g.x + 0.5) * z, py = o.y + (g.y + 0.5) * z;
+    const m = 30 * d;
+    const x0 = (i.left || 0) * d + m, x1 = this.canvas.width - (i.right || 0) * d - m;
+    const y0 = (i.top || 0) * d + m, y1 = this.canvas.height - (i.bottom || 0) * d - m;
+    const bob = motion ? Math.sin(now * 5) * 3 * d : 0;
+    ctx.save();
+    ctx.fillStyle = '#ffd25e';
+    ctx.strokeStyle = '#1a1206';
+    ctx.lineWidth = 2 * d;
+    if (px >= x0 && px <= x1 && py >= y0 && py <= y1) {
+      // On screen: a small downward chevron above the target.
+      const y = py - 18 * d + bob, s = 7 * d;
+      ctx.beginPath(); ctx.moveTo(px - s, y - s); ctx.lineTo(px + s, y - s); ctx.lineTo(px, y + s * 0.4); ctx.closePath();
+      ctx.stroke(); ctx.fill();
+      ctx.restore();
+      return;
+    }
+    // Off screen: clamp the direction from the centre to the free area's edge.
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, dx = px - cx, dy = py - cy;
+    const k = Math.min(Math.abs((x1 - cx) / (dx || 1e-6)), Math.abs((y1 - cy) / (dy || 1e-6)));
+    const ax = cx + dx * k, ay = cy + dy * k, ang = Math.atan2(dy, dx), s = 15 * d;
+    ctx.translate(ax + Math.cos(ang) * bob, ay + Math.sin(ang) * bob);
+    ctx.rotate(ang);
+    ctx.beginPath(); ctx.moveTo(s, 0); ctx.lineTo(-s * 0.7, -s * 0.8); ctx.lineTo(-s * 0.3, 0); ctx.lineTo(-s * 0.7, s * 0.8); ctx.closePath();
+    ctx.stroke(); ctx.fill();
+    ctx.rotate(-ang);
+    // The name, on the inner side of the arrow.
+    ctx.font = `700 ${Math.round(13 * d)}px "Alien Body", monospace`;
+    // Aligned so the name always reads inward from the edge.
+    const c = Math.cos(ang);
+    ctx.textAlign = c > 0.3 ? 'right' : c < -0.3 ? 'left' : 'center';
+    ctx.textBaseline = 'middle';
+    const lx = -c * 22 * d, ly = -Math.sin(ang) * 22 * d;
+    ctx.lineWidth = 3 * d;
+    ctx.strokeStyle = 'rgba(5,4,12,0.9)';
+    ctx.strokeText(g.name, lx, ly);
+    ctx.fillText(g.name, lx, ly);
+    ctx.restore();
   }
 
   // True if a screen box reaches into the HUD bars at the top or bottom.

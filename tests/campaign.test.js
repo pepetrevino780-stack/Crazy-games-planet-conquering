@@ -1082,11 +1082,11 @@ test('drag-and-drop preview: green where a building fits, red with a reason, upg
   assert.ok(poor !== undefined, 'shows when you cannot afford it');
 });
 
-test('training text teaches dragging buildings', () => {
+test('training text teaches building by tap-then-tap (dragging still works)', () => {
   const vul = getPlanet('vulkara');
   const steps = JSON.stringify(vul.tutorial) + JSON.stringify(TUTORIAL_LESSONS);
   assert.ok(!/Press 1 or tap Habitat/.test(steps));
-  assert.ok(/Drag a Habitat onto your land/.test(steps));
+  assert.ok(/Tap Habitat, then tap your land \(or drag it\)/.test(steps));
 });
 
 // ---------- Battle animations ----------
