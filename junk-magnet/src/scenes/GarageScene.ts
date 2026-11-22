@@ -1,11 +1,12 @@
 import Phaser from 'phaser';
-import { CSS, PAL, bodyStyle, displayStyle, hex } from '../config';
+import { CSS, PAL, bodyStyle, displayStyle } from '../config';
 import { Audio } from '../systems/AudioManager';
 import { Meta } from '../systems/MetaSave';
 import { CrazySDK } from '../systems/CrazySDK';
 import { Rewards } from '../systems/Rewards';
 import { Button, drawPanel } from '../ui/widgets';
 import { MAGNETS, MAPS, type GameScene } from './GameScene';
+import { makeMapThumb } from '../systems/Textures';
 
 type Kind = 'magnet' | 'map';
 
@@ -121,27 +122,10 @@ export class GarageScene extends Phaser.Scene {
       if (!owned) img.setTint(0x6a6378);
     } else {
       const m = MAPS[id];
-      const sw = this.add.graphics();
-      sw.fillStyle(PAL.outline);
-      sw.fillRoundedRect(x - 54, iconY - 34, 108, 68, 10);
-      sw.fillStyle(hex(m.floor));
-      sw.fillRoundedRect(x - 50, iconY - 30, 100, 60, 8);
-      sw.fillStyle(hex(m.detail));
-      sw.fillCircle(x - 22, iconY - 8, 14);
-      sw.fillCircle(x + 24, iconY + 12, 10);
-      if (m.props === 'station') {
-        sw.fillStyle(PAL.text, 0.7);
-        for (const [sx, sy] of [
-          [-36, -18],
-          [10, -20],
-          [34, -6],
-          [-8, 16],
-        ]) sw.fillCircle(x + sx, iconY + sy, 1.8);
-      }
-      if (m.props === 'factory') {
-        sw.fillStyle(PAL.brass, 0.6);
-        sw.fillRect(x - 50, iconY - 4, 100, 10);
-      }
+      const key = `thumb-${id}`;
+      makeMapThumb(this, key, m, { conveyors: m.conveyors, hazards: m.hazards });
+      const thumb = this.add.image(x, iconY, key).setScale(Math.min(0.5, (cw - 30) / 300));
+      if (!owned) thumb.setTint(0x8a8296);
     }
     if (!owned) this.add.image(x + cw / 2 - 30, y - ch / 2 + 30, 'lock').setScale(0.55);
 

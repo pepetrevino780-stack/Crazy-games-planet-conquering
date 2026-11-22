@@ -52,6 +52,10 @@ const SIZES = [
         g.juice.damageNumber(x, y - 20, 40 + i * 13, i % 3 === 0);
       }
       g.juice.ring(g.player.x, g.player.y, 0x3ee6f2, 0.3, 0.6, 3.6);
+      // The Compactor looming at the edge of the ball, and a treasure chest in reach.
+      const boss = g.enemies.spawn('boss', g.player.x + 230, g.player.y - 205);
+      if (boss) boss.age = 1;
+      g.dropChest(g.player.x - 230, g.player.y + 150);
       window.__zoomOverride = zoom;
     }, s.zoom);
     await page.waitForTimeout(180);

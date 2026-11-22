@@ -32,7 +32,7 @@ import { CAN_TYPE, JUNK, JunkSystem, type Belt, type JunkFrame, type Repeller } 
 import { Meta } from '../systems/MetaSave';
 import { applyRun, type ChallengeProgress } from '../systems/Challenges';
 import { Player, type MagnetDef } from '../systems/Player';
-import { makeFloor } from '../systems/Textures';
+import { TS, makeCrusherTextures, makeFloor } from '../systems/Textures';
 import { UpgradeSystem, cardById, pathDef, xpForLevel, type CardDef, type PlayerStats } from '../systems/UpgradeSystem';
 
 export interface RunConfig {
@@ -156,6 +156,8 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
   readonly runKills: Record<string, number> = {};
   lowHpAt = -1;
   reviveUsed = false;
+  private rescueGiven = false;
+  private rescueTimer = 0;
   private savedJunk: number[] = [];
   healthTimer = 0;
   phaseLabel = 'CALM';
@@ -176,6 +178,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
   frenzyTimer = 0;
   private hazardClock = 0;
   private hazardGfx!: Phaser.GameObjects.Graphics;
+  private hazardSprites = new Map<Hazard, { base: Phaser.GameObjects.Image; plate: Phaser.GameObjects.Image }>();
   private shopPending = false;
   rerollUsed = false;
   hurtFlash = 0;
@@ -240,6 +243,8 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     for (const k of Object.keys(this.runKills)) delete this.runKills[k];
     this.lowHpAt = -1;
     this.reviveUsed = false;
+    this.rescueGiven = false;
+    this.rescueTimer = 0;
     this.savedJunk = [];
     this.healthTimer = 0;
     this.phaseLabel = 'CALM';
@@ -317,6 +322,21 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     this.field = this.add.graphics().setDepth(DEPTH.field);
     this.weapons = new Weapons(this, this);
     this.hazardGfx = this.add.graphics().setDepth(DEPTH.belt + 0.8);
+    this.hazardSprites = new Map();
+    if (this.isRun) {
+      for (const hz of this.mapDef.hazards ?? []) {
+        if (hz.type !== 'crusher') continue;
+        const w = hz.w ?? 160;
+        const h = hz.h ?? 160;
+        const keys = makeCrusherTextures(this, w, h);
+        const cx = (hz.x ?? 0) + w / 2;
+        const cy = (hz.y ?? 0) + h / 2;
+        this.hazardSprites.set(hz, {
+          base: this.add.image(cx, cy + 4, keys.base).setScale(TS).setDepth(DEPTH.belt + 0.7),
+          plate: this.add.image(cx, cy, keys.plate).setScale(TS).setDepth(DEPTH.junk + 3),
+        });
+      }
+    }
     for (let i = 0; i < 3; i++) this.chests.push(this.add.image(0, 0, 'chest').setScale(0.7).setDepth(DEPTH.loose + 1).setVisible(false));
     for (let i = 0; i < 4; i++) this.pickups.push(this.add.image(0, 0, 'health-pack').setScale(0.55).setDepth(DEPTH.loose + 1).setVisible(false));
 
@@ -695,20 +715,19 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
         const h = hz.h ?? 160;
         const warn = t > every - 1;
         const down = t < 0.4;
-        g.fillStyle(0x2a2533, 0.9);
-        g.fillRect(x, y, w, h);
-        g.lineStyle(6, PAL.outline);
-        g.strokeRect(x, y, w, h);
-        g.lineStyle(4, warn ? (Math.sin(this.clock * 30) > 0 ? PAL.red : PAL.brass) : PAL.brass, 0.9);
-        g.strokeRect(x + 6, y + 6, w - 12, h - 12);
-        if (down) {
-          g.fillStyle(0x6e7681, 1);
-          g.fillRect(x + 4, y + 4, w - 8, h - 8);
-          g.lineStyle(4, PAL.outline);
-          g.strokeRect(x + 4, y + 4, w - 8, h - 8);
-        } else if (warn) {
-          g.fillStyle(PAL.red, 0.18);
-          g.fillRect(x, y, w, h);
+        // The plate hangs see-through above the pit, drops during the warning, then slams.
+        const sprites = this.hazardSprites.get(hz);
+        if (sprites) {
+          const lift = down ? 0 : warn ? 48 * (every - t) : 48;
+          const shakeX = warn ? Math.sin(this.clock * 60) * 2 : 0;
+          sprites.plate
+            .setPosition(x + w / 2 + shakeX, y + h / 2 - lift)
+            .setAlpha(down ? 1 : warn ? 0.85 : 0.5)
+            .setScale(TS * (1 + lift / 600));
+        }
+        if (warn) {
+          g.fillStyle(PAL.red, 0.12 + Math.abs(Math.sin(this.clock * 14)) * 0.18);
+          g.fillRect(x + 12, y + 12, w - 24, h - 24);
         }
         if (active && t < prev) {
           // SLAM.
@@ -1021,6 +1040,11 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     p.hp = Math.max(0, p.hp - taken);
     if (this.junk.count > 0) this.junk.knockLoose(fraction * this.stats.knockMult, fromX, fromY, JUNK.shatterFraction);
     if (this.lowHpAt < 0 && p.hp < p.stats.maxHp * H.halfHealth) this.lowHpAt = this.runTime;
+    // Once per run, dropping under 30% guarantees a health pack nearby within a few seconds.
+    if (!this.rescueGiven && p.hp > 0 && p.hp < p.stats.maxHp * 0.3) {
+      this.rescueGiven = true;
+      this.rescueTimer = 3;
+    }
     this.hurtFlash = Math.min(1, 0.35 + taken / 20);
     this.juice.label(p.x, p.y - 34, `-${Math.round(taken)}`, CSS.red, 24);
     Audio.hurt();
@@ -1042,6 +1066,18 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     const p = this.player;
     const H = JUNK.health;
     if (this.state === 'playing') this.healthTimer += dt;
+    if (this.rescueTimer > 0 && this.state === 'playing') {
+      this.rescueTimer -= dt;
+      if (this.rescueTimer <= 0) {
+        const a = Math.random() * Math.PI * 2;
+        const m = ARENA.margin + 40;
+        this.dropHealth(
+          Phaser.Math.Clamp(p.x + Math.cos(a) * 170, m, ARENA.width - m),
+          Phaser.Math.Clamp(p.y + Math.sin(a) * 170, m, ARENA.height - m),
+        );
+        this.juice.label(p.x, p.y - 60, 'HEALTH PACK!', CSS.lime, 24);
+      }
+    }
     for (const k of this.pickups) {
       if (!k.visible) continue;
       const life = (k.getData('life') as number) - dt;

@@ -146,15 +146,16 @@ const DT = 1000 / FPS;
     s.enemies.minibossWarned = s.enemies.minibossSpawned = true;
     s.enemies.midbossWarned = s.enemies.midbossSpawned = true;
     s.enemies.goldenTimer = 1e9;
-    for (const [id, n] of [['strongerField', 1], ['spinCycle', 2], ['hotScrap', 2], ['secondRing', 1]]) for (let i = 0; i < n; i++) s.upgrades.take(id);
+    // A fire build: Molten Core + Inferno (lava trails), spinning a huge ball.
+    for (const [id, n] of [['hotScrap', 3], ['explosiveCans', 3], ['moltenCore', 1], ['hotterFireballs', 3], ['inferno', 1], ['spinCycle', 2], ['secondRing', 1], ['junkHoarder', 2]]) for (let i = 0; i < n; i++) s.upgrades.take(id);
     s.stats = s.upgrades.stats(s.magnetDef);
     s.player.stats = s.stats;
-    s.level = 9;
+    s.level = 14;
     s.updateCap();
     s.xpNeed = 1e9;
     s.runTime = 148;
     s.player.invuln = 1e9;
-    for (let i = 0; i < 110; i++) s.junk.spawnLoose(s.player.x + Math.cos(i) * 50, s.player.y + Math.sin(i) * 50, i % 23 === 0 ? 4 : i % 4);
+    for (let i = 0; i < s.junk.cap + 10; i++) s.junk.spawnLoose(s.player.x + Math.cos(i) * 50, s.player.y + Math.sin(i) * 50, i % 23 === 0 ? 4 : i % 11 === 0 ? 6 + (i % 4) : i % 4);
     window.__advance(75, true);
     for (let i = 0; i < 26; i++) {
       const a = (i / 26) * Math.PI * 2;
@@ -169,22 +170,12 @@ const DT = 1000 / FPS;
   };
   // A: swarm + two Pulses (6 s).
   await record(6, { 30: pulse, 120: pulse });
-  // B: level-up and a card pick (3.2 s).
-  await record(3.2, {
-    0: () => {
+  // B: a treasure chest opening (slot machine, 3 upgrades) (4.2 s).
+  await record(4.2, {
+    0: () => window.__g().openChest(),
+    122: () => {
       const s = window.__g();
-      s.xpNeed = 30;
-      s.xp = 0;
-      s.gainXp(30);
-      s.xpNeed = 1e9;
-    },
-    50: () => {
-      const u = window.__jm.scene.getScene('Upgrade');
-      if (u && u.cards && u.cards.length) u.select(1);
-    },
-    62: () => {
-      const u = window.__jm.scene.getScene('Upgrade');
-      if (u && u.cards && u.cards.length) u.pick(1);
+      if (window.__jm.scene.isActive('Chest')) s.closeChest();
     },
   });
   // Stage the boss (not recorded): full ball.
@@ -200,7 +191,7 @@ const DT = 1000 / FPS;
     window.__advance(45, true);
   });
   // C: warning banner, the Compactor drops in on screen, charges, falls; everything explodes.
-  await record(7.3, {
+  await record(6.8, {
     0: () => {
       const s = window.__g();
       s.player.invuln = 0.01;
