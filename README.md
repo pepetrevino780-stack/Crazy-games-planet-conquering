@@ -1,10 +1,10 @@
-# Dominion: First Contact (formerly Planetfall Conquest)
+# Vulkara Conquest (formerly Planetfall Conquest)
 
 A real-time territory-conquest strategy game in retro pixel art, for desktop and mobile browsers.
 Land on a strange alien world, grow your empire tile by tile, and break rival civilizations across a
 five-planet campaign. Each planet teaches a new strategy. Skirmish mode generates a new world every time.
 
-**Publishing on CrazyGames:** `npm run build` creates `dist/dominion-first-contact.zip`. See [CRAZYGAMES.md](CRAZYGAMES.md).
+**Publishing on CrazyGames:** `npm run build` creates `dist/vulkara-conquest.zip`. See [CRAZYGAMES.md](CRAZYGAMES.md).
 
 ## Play
 

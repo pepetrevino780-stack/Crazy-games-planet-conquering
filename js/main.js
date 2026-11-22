@@ -1135,16 +1135,27 @@ function showTooltip(html, x, y) {
 function placeMapTooltip(x, y) {
   tipXY = { x, y };
   const el = $('#tooltip'), r = el.getBoundingClientRect();
+  const W = window.innerWidth, H = window.innerHeight;
   const scr = window.getComputedStyle($('#screen-battle'));
-  const top = parseFloat(scr.getPropertyValue('--hud-top')) || 60;
-  // In a top corner on the far side from the cursor, never next to it (that
-  // is where you are about to click), below the battles chip or the
-  // reinforcements button when they show.
-  const right = x < window.innerWidth / 2;
-  const below = sel => { const e = $(sel); return e && !e.classList.contains('hidden') && e.offsetParent ? e.getBoundingClientRect().bottom + 4 : 0; };
-  const t = Math.max(top + 4, right ? below('#battles-chip') : below('#btn-reinforce'), right ? below('#battles') : 0);
-  el.style.left = `${Math.round(right ? window.innerWidth - r.width - 6 : 6)}px`;
-  el.style.top = `${Math.round(t)}px`;
+  const hudTop = parseFloat(scr.getPropertyValue('--hud-top')) || 60, hudBottom = parseFloat(scr.getPropertyValue('--hud-bottom')) || 60;
+  // Never next to the cursor (that is where you are about to click) and never
+  // over the current goal: of the four corners of the free area, take the
+  // one farthest from both. Corners sit clear of the chips, the reinforcements
+  // button, the tutorial card and the toasts.
+  const shown = sel => { const e = $(sel); return e && !e.classList.contains('hidden') && e.offsetParent ? e.getBoundingClientRect() : null; };
+  const chip = shown('#battles-chip'), list = shown('#battles'), boost = shown('#btn-reinforce'), card = shown('#tutorial');
+  const top = { l: Math.max(hudTop + 4, boost ? boost.bottom + 4 : 0), r: Math.max(hudTop + 4, chip ? chip.bottom + 4 : 0, list ? list.bottom + 4 : 0) };
+  const bottom = { l: (card ? card.top : H - hudBottom) - 6 - r.height, r: H - hudBottom - 6 - r.height - 40 };
+  const corners = [
+    { x: 6, y: top.l }, { x: W - r.width - 6, y: top.r },
+    { x: 6, y: bottom.l }, { x: W - r.width - 6, y: bottom.r },
+  ];
+  const g = battle && goalTarget(), avoid = [{ x, y }];
+  if (g) { const p = renderer.tileToCss(g.x, g.y); avoid.push({ x: Math.max(0, Math.min(W, p.x)), y: Math.max(0, Math.min(H, p.y)) }); }
+  const clear = c => Math.min(...avoid.map(a => Math.hypot(Math.max(c.x, Math.min(a.x, c.x + r.width)) - a.x, Math.max(c.y, Math.min(a.y, c.y + r.height)) - a.y)));
+  const best = corners.reduce((p, c) => (clear(c) > clear(p) ? c : p));
+  el.style.left = `${Math.round(best.x)}px`;
+  el.style.top = `${Math.round(Math.max(4, best.y))}px`;
 }
 
 function placeTooltip(x, y) {

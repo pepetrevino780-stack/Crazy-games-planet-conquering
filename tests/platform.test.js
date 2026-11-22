@@ -111,7 +111,7 @@ test('one look on every planet: every UI icon lives in js/art/sprites.js and not
   assert.doesNotMatch(css, /\.(png|svg|gif)\b/);
   // Nothing styles the HUD by planet: no theme classes or attributes, no theme colours in CSS.
   assert.doesNotMatch(main, /(classList\.(add|toggle)|dataset)\.?[^;\n]*\btheme\b/);
-  assert.doesNotMatch(css, /\b(vulkara|cryonis|mycelion|xythera|noctyra)\b|\[data-theme/i);
+  assert.doesNotMatch(css.replace(/\/\*[\s\S]*?\*\//g, ''), /\b(vulkara|cryonis|mycelion|xythera|noctyra)\b|\[data-theme/i);
 });
 
 // ---------- Audio ----------

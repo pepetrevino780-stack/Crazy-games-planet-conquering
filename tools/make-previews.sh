@@ -5,7 +5,7 @@
 set -e
 cd "$(dirname "$0")/.."
 OUT=assets/crazygames
-TMP=${TMPDIR:-/tmp}/dominion-frames
+TMP=${TMPDIR:-/tmp}/vulkara-frames
 node tools/record-preview.cjs 1920 1080 "$TMP/land" xythera
 node tools/record-preview.cjs 1080 1620 "$TMP/port" xythera
 make() { # frames cover width height output

@@ -1,8 +1,8 @@
 {
-  "name": "dominion-first-contact",
+  "name": "vulkara-conquest",
   "version": "1.0.0",
   "private": true,
-  "description": "Dominion: First Contact (formerly Planetfall Conquest) — single-player real-time territory conquest across five planets.",
+  "description": "Vulkara Conquest (formerly Planetfall Conquest) — single-player real-time territory conquest across five planets.",
   "type": "module",
   "scripts": {
     "start": "npx http-server -c-1 -p 8080 .",
