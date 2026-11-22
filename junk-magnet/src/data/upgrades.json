@@ -11,16 +11,16 @@
   "cards": [
     {
       "id": "strongerField",
-      "name": "Stronger Field",
-      "desc": "+25% magnet radius. Grab junk from further away.",
+      "name": "Wider Reach",
+      "desc": "+25% pull radius. Grab swarmlings from further away.",
       "rarity": "common",
       "max": 5,
       "value": 0.25
     },
     {
       "id": "spinCycle",
-      "name": "Spin Cycle",
-      "desc": "Junk orbits 30% faster. Faster junk hits harder.",
+      "name": "Frenzy Orbit",
+      "desc": "The swarm circles 30% faster. Faster swarmlings hit harder.",
       "rarity": "common",
       "max": 5,
       "value": 0.3,
@@ -28,8 +28,8 @@
     },
     {
       "id": "heavyMetal",
-      "name": "Heavy Metal",
-      "desc": "Junk is 50% heavier and hits harder. You are 15% slower.",
+      "name": "Thick Carapace",
+      "desc": "Swarmlings are 50% heavier and hit harder. You are 15% slower.",
       "rarity": "common",
       "max": 3,
       "value": 0.5,
@@ -38,8 +38,8 @@
     },
     {
       "id": "quickCharge",
-      "name": "Quick Charge",
-      "desc": "Pulse recharges 20% faster.",
+      "name": "Quick Spores",
+      "desc": "Spore Burst recharges 20% faster.",
       "rarity": "common",
       "max": 3,
       "value": 0.2,
@@ -47,8 +47,8 @@
     },
     {
       "id": "hotScrap",
-      "name": "Hot Scrap",
-      "desc": "Junk sets robots on fire. Burning bots take damage over time.",
+      "name": "Caustic Bite",
+      "desc": "Swarmlings melt colonists with acid. Melting colonists take damage over time.",
       "rarity": "common",
       "max": 3,
       "values": [
@@ -62,8 +62,8 @@
     },
     {
       "id": "explosiveCans",
-      "name": "Explosive Cans",
-      "desc": "Cans explode on impact, hurting every robot nearby.",
+      "name": "Volatile Crawlers",
+      "desc": "Crawlers burst on impact, hurting every colonist nearby.",
       "rarity": "common",
       "max": 3,
       "radius": [
@@ -83,8 +83,8 @@
     },
     {
       "id": "bigPulse",
-      "name": "Big Pulse",
-      "desc": "Pulse reaches 30% further.",
+      "name": "Big Burst",
+      "desc": "Spore Burst reaches 30% further.",
       "rarity": "common",
       "max": 3,
       "value": 0.3,
@@ -93,7 +93,7 @@
     {
       "id": "shockwave",
       "name": "Shockwave",
-      "desc": "Pulse deals 50% more damage.",
+      "desc": "Spore Burst deals 50% more damage.",
       "rarity": "common",
       "max": 3,
       "value": 0.5,
@@ -101,7 +101,7 @@
     },
     {
       "id": "quickFeet",
-      "name": "Quick Feet",
+      "name": "Skitter",
       "desc": "Move 10% faster.",
       "rarity": "common",
       "max": 3,
@@ -109,8 +109,8 @@
     },
     {
       "id": "junkHoarder",
-      "name": "Junk Hoarder",
-      "desc": "Your ball holds 25 more pieces of junk.",
+      "name": "Brood Mother",
+      "desc": "Your swarm holds 25 more swarmlings.",
       "rarity": "common",
       "max": 3,
       "value": 25,
@@ -118,8 +118,8 @@
     },
     {
       "id": "sharpEdges",
-      "name": "Sharp Edges",
-      "desc": "+8% chance for junk to land a double-damage critical hit.",
+      "name": "Sharp Mandibles",
+      "desc": "+8% chance for swarmlings to land a double-damage critical hit.",
       "rarity": "common",
       "max": 3,
       "value": 0.08,
@@ -127,15 +127,15 @@
     },
     {
       "id": "scrapCollector",
-      "name": "Scrap Collector",
-      "desc": "Robots pay 40% more scrap coins.",
+      "name": "Biomass Harvest",
+      "desc": "Colonists drop 40% more biomass.",
       "rarity": "common",
       "max": 2,
       "value": 0.4
     },
     {
       "id": "spareHeart",
-      "name": "Spare Plating",
+      "name": "Thick Membrane",
       "desc": "+25 max health, and heal 25.",
       "rarity": "rare",
       "max": 2,
@@ -144,15 +144,15 @@
     },
     {
       "id": "polarityFlip",
-      "name": "Polarity Flip",
-      "desc": "Pulse also pulls in all loose junk on the map.",
+      "name": "Rally Call",
+      "desc": "Spore Burst also calls in every loose swarmling on the map.",
       "rarity": "rare",
       "max": 1
     },
     {
       "id": "secondRing",
-      "name": "Second Ring",
-      "desc": "Junk forms counter-rotating rings that spin 15% faster.",
+      "name": "Second Swarm",
+      "desc": "The swarm forms counter-rotating rings that spin 15% faster.",
       "rarity": "rare",
       "max": 1,
       "value": 0.15,
@@ -160,16 +160,16 @@
     },
     {
       "id": "scrapShield",
-      "name": "Scrap Shield",
-      "desc": "The first hit each wave loses no junk.",
+      "name": "Chitin Shield",
+      "desc": "The first hit each wave loses no swarmlings.",
       "rarity": "rare",
       "max": 1,
       "path": "tank"
     },
     {
       "id": "staticCharge",
-      "name": "Static Charge",
-      "desc": "Pulse stuns every robot it hits.",
+      "name": "Paralytic Spores",
+      "desc": "Spore Burst stuns every colonist it hits.",
       "rarity": "rare",
       "max": 2,
       "values": [
@@ -181,8 +181,8 @@
     },
     {
       "id": "reinforced",
-      "name": "Reinforced",
-      "desc": "Hits knock 25% less junk loose.",
+      "name": "Clingers",
+      "desc": "Hits knock 25% fewer swarmlings loose.",
       "rarity": "rare",
       "max": 2,
       "value": 0.25,
@@ -190,16 +190,16 @@
     },
     {
       "id": "luckyFind",
-      "name": "Lucky Find",
-      "desc": "Heavy gold TVs drop three times as often.",
+      "name": "Royal Jelly",
+      "desc": "Royal swarmlings hatch three times as often.",
       "rarity": "rare",
       "max": 1,
       "value": 3
     },
     {
       "id": "hotterFireballs",
-      "name": "Hotter Fireballs",
-      "desc": "Fireballs deal 30% more damage and fire 15% faster.",
+      "name": "Stronger Acid",
+      "desc": "Acid Spit deals 30% more damage and fire 15% faster.",
       "rarity": "common",
       "max": 3,
       "value": 0.3,
@@ -209,7 +209,7 @@
     {
       "id": "chainLightning",
       "name": "Chain Lightning",
-      "desc": "Every 5th fireball arcs between nearby robots.",
+      "desc": "Every 5th Acid Spit arcs lightning between nearby colonists.",
       "rarity": "common",
       "max": 3,
       "targets": [
@@ -228,8 +228,8 @@
     },
     {
       "id": "junkShotgun",
-      "name": "Junk Shotgun",
-      "desc": "Right-click or special button: blast 8 junk pieces from your ball.",
+      "name": "Barb Volley",
+      "desc": "Right-click or special button: fling 8 swarmlings from your swarm.",
       "rarity": "common",
       "max": 2,
       "pieces": [
@@ -246,8 +246,8 @@
     },
     {
       "id": "magnetMine",
-      "name": "Magnet Mine",
-      "desc": "Special: drop a mine that pulls robots in, then explodes. Costs 6 junk.",
+      "name": "Spore Mine",
+      "desc": "Special: plant a spore mine that pulls colonists in, then bursts. Costs 6 swarmlings.",
       "rarity": "common",
       "max": 2,
       "cost": 6,
@@ -265,8 +265,8 @@
     },
     {
       "id": "meteorDrop",
-      "name": "Meteor Drop",
-      "desc": "Hold left-click to drop a giant fused cube. Costs 20 junk.",
+      "name": "Hive Drop",
+      "desc": "Hold left-click to drop a giant titan. Costs 20 swarmlings.",
       "rarity": "rare",
       "max": 1,
       "cost": 20,
@@ -277,8 +277,8 @@
     },
     {
       "id": "moltenCore",
-      "name": "Molten Core",
-      "desc": "Evolution (Hot Scrap + Explosive Cans): every piece burns hot and explodes on impact.",
+      "name": "Magma Gland",
+      "desc": "Evolution (Caustic Bite + Volatile Crawlers): every swarmling burns and bursts on impact.",
       "rarity": "epic",
       "max": 1,
       "requires": [
@@ -293,8 +293,8 @@
     },
     {
       "id": "buzzsaw",
-      "name": "Buzzsaw",
-      "desc": "Evolution (Spin Cycle + Second Ring): junk spins 50% faster and hits 50% harder.",
+      "name": "Razor Swarm",
+      "desc": "Evolution (Frenzy Orbit + Second Swarm): the swarm spins 50% faster and hits 50% harder.",
       "rarity": "epic",
       "max": 1,
       "requires": [
@@ -307,8 +307,8 @@
     },
     {
       "id": "fireRing",
-      "name": "Fire Ring",
-      "desc": "Evolution (Hot Scrap + Shockwave): Pulse sets every robot it hits on fire.",
+      "name": "Acid Ring",
+      "desc": "Evolution (Caustic Bite + Shockwave): Spore Burst melts every colonist it hits.",
       "rarity": "epic",
       "max": 1,
       "requires": [
@@ -321,8 +321,8 @@
     },
     {
       "id": "megaMagnet",
-      "name": "Mega Magnet",
-      "desc": "Evolution (Stronger Field + Junk Hoarder): +60 junk capacity and double pull range.",
+      "name": "Endless Brood",
+      "desc": "Evolution (Wider Reach + Brood Mother): +60 swarm size and double pull range.",
       "rarity": "epic",
       "max": 1,
       "requires": [
@@ -334,8 +334,8 @@
     },
     {
       "id": "inferno",
-      "name": "Inferno",
-      "desc": "Evolution (Hotter Fireballs + Molten Core): fireballs leave burning lava trails.",
+      "name": "Lava Bloom",
+      "desc": "Evolution (Stronger Acid + Magma Gland): Acid Spit leaves burning lava trails.",
       "rarity": "epic",
       "max": 1,
       "requires": [
@@ -347,8 +347,8 @@
     },
     {
       "id": "blackHolePulse",
-      "name": "Black Hole Pulse",
-      "desc": "Evolution (Stronger Field + Polarity Flip): Pulse sucks in the whole screen, then explodes.",
+      "name": "Void Burst",
+      "desc": "Evolution (Wider Reach + Rally Call): Spore Burst sucks in the whole screen, then explodes.",
       "rarity": "epic",
       "max": 1,
       "requires": [
@@ -364,15 +364,15 @@
   "fallback": [
     {
       "id": "scrapPile",
-      "name": "Scrap Pile",
-      "desc": "+25 scrap coins to spend in the Garage.",
+      "name": "Biomass Cache",
+      "desc": "+25 biomass to spend in the Evolution Chamber.",
       "rarity": "common",
       "max": 99,
       "value": 25
     },
     {
       "id": "patchUp",
-      "name": "Patch Up",
+      "name": "Regrow",
       "desc": "Heal 30 health.",
       "rarity": "common",
       "max": 99,
@@ -391,32 +391,32 @@
   },
   "paths": {
     "fire": {
-      "name": "FIRE",
+      "name": "ACID",
       "color": "#D9772B",
       "opposite": "storm",
       "perkAt": 6,
-      "perk": "Burning robots explode when they die."
+      "perk": "Melting colonists burst when they fall."
     },
     "storm": {
       "name": "STORM",
       "color": "#3EE6F2",
       "opposite": "fire",
       "perkAt": 6,
-      "perk": "Every Pulse fires chain lightning."
+      "perk": "Every Spore Burst fires chain lightning."
     },
     "tank": {
       "name": "TANK",
       "color": "#A7B0BA",
       "opposite": "shredder",
       "perkAt": 6,
-      "perk": "+20 max health and junk blocks 50% instead of 35%."
+      "perk": "+20 max health and the swarm blocks 50% instead of 35%."
     },
     "shredder": {
-      "name": "SHREDDER",
+      "name": "RAZOR",
       "color": "#FF3D7F",
       "opposite": "tank",
       "perkAt": 6,
-      "perk": "Junk deals 25% more damage."
+      "perk": "Swarmlings deal 25% more damage."
     },
     "lockAt": 3
   }

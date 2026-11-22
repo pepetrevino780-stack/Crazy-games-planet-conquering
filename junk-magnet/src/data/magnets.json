@@ -1,7 +1,7 @@
 {
   "horseshoe": {
-    "name": "Horseshoe",
-    "desc": "The classic. Round rings of junk, steady spin.",
+    "name": "Hive Core",
+    "desc": "The first heart of the hive. Round rings of swarmlings, steady spin.",
     "price": 0,
     "texture": "magnet-horseshoe",
     "radius": 18,
@@ -20,8 +20,8 @@
     "maxHp": 100
   },
   "fridge": {
-    "name": "Fridge Magnet",
-    "desc": "Junk sticks in a long flat bar. Swing it like a bat.",
+    "name": "Lash Core",
+    "desc": "The swarm forms a long flat bar. Swing it like a whip.",
     "price": 350,
     "texture": "magnet-fridge",
     "radius": 18,
@@ -40,8 +40,8 @@
     "maxHp": 100
   },
   "electro": {
-    "name": "Electromagnet",
-    "desc": "Pulse every 2 s and every Pulse throws lightning. Holds 20 less junk.",
+    "name": "Storm Core",
+    "desc": "Spore Burst every 2 s and every Burst throws lightning. Holds 20 fewer swarmlings.",
     "price": 600,
     "texture": "magnet-electro",
     "radius": 18,
@@ -62,8 +62,8 @@
     "pulseZap": 4
   },
   "blackhole": {
-    "name": "Black Hole",
-    "desc": "Tight orbit. Eats 12 junk to repair 12 health.",
+    "name": "Void Core",
+    "desc": "Tight orbit. Devours 12 swarmlings to heal 12 health.",
     "price": 900,
     "texture": "magnet-blackhole",
     "radius": 18,
@@ -85,8 +85,8 @@
     "eatHeal": 12
   },
   "mega": {
-    "name": "Mega Magnet",
-    "desc": "A huge, heavy, slow ball: +60 junk and heavier hits.",
+    "name": "Titan Core",
+    "desc": "A huge, heavy, slow swarm: +60 swarmlings and heavier hits.",
     "price": 1200,
     "texture": "magnet-mega",
     "radius": 22,
@@ -107,8 +107,8 @@
     "massMult": 1.4
   },
   "repulsor": {
-    "name": "Repulsor",
-    "desc": "Junk orbits far out like a shield and shoves robots hard.",
+    "name": "Bastion Core",
+    "desc": "The swarm circles far out like a shield and shoves colonists hard.",
     "price": 1500,
     "texture": "magnet-repulsor",
     "radius": 18,

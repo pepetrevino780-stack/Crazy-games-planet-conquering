@@ -1,16 +1,24 @@
-# Junk Magnet
+# Mycelion (formerly Junk Magnet)
 
-Top-down survivors-like for CrazyGames: you are a magnet, broken robots drop junk that orbits
-you, and the growing junk ball is your weapon and armour. Design spec: [SPEC.md](SPEC.md).
+*Hive Rising.* They came to conquer your planet. Turn their army into your swarm.
+
+Top-down survivors-like for CrazyGames. You're the Hive Core, the living heart of the alien
+world Mycelion. Human colonists drop from orbit to take it; every invader you kill is infected
+and joins the swarm circling you, and that growing swarm is your weapon and your armour.
+Design spec: [SPEC.md](SPEC.md).
+
+> The project folder, its `play/` build, the npm package and the save key keep the old
+> `junk-magnet` name on purpose, so existing links keep working:
+> **Play:** https://pepetrevino780-stack.github.io/Crazy-games-planet-conquering/junk-magnet/play/
 
 Phaser 3 + TypeScript + Vite. Every sprite, sound and music track is generated in code,
-so the whole build is about **0.4 MB gzipped** (1.3 MB JS + 40 KB fonts).
+so the whole build is about **0.4 MB gzipped**.
 
 ```bash
 npm install
 npm run dev          # play locally at http://localhost:5173
 npm run build        # type-check + static build in dist/ (relative paths)
-npm run zip          # build + junk-magnet.zip ready to upload to CrazyGames
+npm run zip          # build + junk-magnet.zip ready to upload to CrazyGames (upload it as "Mycelion")
 npm run build:play   # copy the build to play/ (for GitHub Pages)
 ```
 
@@ -18,26 +26,40 @@ npm run build:play   # copy the build to play/ (for GitHub Pages)
 
 | Area | Status |
 | --- | --- |
-| Core loop | Move, junk attaches and orbits in rings, contact damage = mass × speed |
-| Growth | Junk capacity starts at 60 and rises 10 per level (up to 250). A full ball fuses new junk into its lightest piece (bolt → gear → can → pipe → cube), so it keeps getting heavier. A bar under the counter shows it filling |
-| Pulse | Space / button. Hits harder the fuller the ball is, **Overcharged** (bigger, gold) when full; catching 6+ robots refunds half the cooldown and pays scrap |
-| Difficulty | Robots that reach your junk ball now hit you through it (junk cuts damage by up to 35%; less if you keep moving), Drillers bore through the ball from 2:00, and Crusher slams and Bomber blasts rip 35–45% of your junk off. Hard and Nightmare unlock after wins |
-| Health | 100 HP bar (flashes under 30%, heartbeat under 15%). Every hit costs HP; a full ball cuts damage by up to 40% and some junk gets knocked loose. No passive healing: rare health packs (~1 per 45 s), Spare Plating / Patch Up cards, Black Hole eating junk |
-| Aggression phases | Calm (0:00, wander) → Hunting (1:00, Sprinters lunge) → Swarming (2:30, flanking, leading shots, junk ripped off) → Frenzy (4:00, Bomber rushes, spawns ahead of you) → Overdrive (6:00). Speed, damage (4 → 12 HP) and robots on screen ramp per phase, with a warning banner and heavier music |
-| Aimed attacks | Left-click Fireball (auto-aims on touch, 0.6 s). Cards add Junk Shotgun (right-click / special button / E, spends 8 junk), Magnet Mine, Chain Lightning (every 5th fireball), Meteor Drop (hold left-click), Inferno evolution (lava trails). Cooldown icons sit next to Pulse; burning robots panic and spread fire |
-| Enemies | Tin Bot, Sprinter, Spitter, Shield Bot, Anti-Mag, Scrap Thief (1:00), Splitter (1:30), Burrower (2:00), Magnet Bot (2:30), Bomber (3:00), Repair Drone (3:30); mixed squads; glowing elites after 4:00; one map-only enemy per map (Tyre Roller, Press Bot, Gravity Mine) |
-| Bosses | Crusher at 2:30 (13,000 HP: ground slam that rips junk off and makes it junk-proof for 3.5 s, red-line charge for 25 HP, drops a chest and a rare upgrade); Magnetron at 4:30 (rips junk off, fires bolt rings, calls minions, drops a chest); The Compactor at 6:00 (30,000 HP: charges, crushes junk into cubes, slams) |
-| Upgrades | 24 cards + 5 evolutions (Molten Core, Buzzsaw, Fire Ring, Mega Magnet, Inferno); cards show their combo partner; rare cards are gold, glow and chime |
-| Content | Slot-machine treasure chests (1, 3 or 5 upgrades; the first of each run gives 3) from elites, the Magnetron and Golden Robots; battery, fuel, spring and gold junk with powers; Fire / Storm / Tank / Shredder build paths that lock out their opposite and give a perk at 6 levels; Black Hole Pulse evolution; a junk shop between phases; car crushers and electric fences; kill-streak calls (SCRAP FRENZY! = damage boost) |
-| Ads | Optional rewarded ads only when an ad can play: revive once per run (after 1:00), reroll cards once per run, daily bonus chest, "need scrap?" in the Garage (100 → 50 → 25 a day), double scrap. Midgame ad only on Play again, max one per 3 min, and never right after a rewarded ad. Input is blocked during ads; nothing is given on ad errors. `?fakeads` simulates ads in `npm run dev` |
-| Replay | Daily free chest; Daily Seed modifiers (Everything Explodes, Double Speed, Only Sprinters, Glass Cannon, Gold Rush); 12 achievements with titles; Mega Magnet and Repulsor magnets. Results show the next unlock ("120 more scrap for the Fridge Magnet"); 3 active challenges pay scrap and are shown on the title and results |
-| First 30 s | Title over live arena → magnet drops in → one slow bot pops into 3 bolts → pack of 6 → Pulse hint + cluster → first level-up, no text popups |
-| Meta | Scrap coins, Garage with 4 magnets and 3 maps, Daily Seed, saves in localStorage / CrazyGames data |
-| Juice | Hit flash, hit-stop, capped shake (toggle), squash & stretch, zoom punch, sparks / dust / confetti, slow-mo on death and boss kill, rolling numbers, batched damage numbers |
-| Clarity | Flat floors, bright rim on every robot, thick XP bar, telegraph circles and beams for every attack |
-| Audio | Synthesised SFX with the rising clink ladder, chiptune music (menu / run / boss), music + SFX sliders |
-| Mobile | Floating joystick, Pulse button, pause icon; portrait and landscape layouts |
-| CrazyGames SDK v3 | Wrapper loads only when embedded; loading / gameplay events, midgame ad on Play again (≥ 3 min apart), rewarded "Double scrap", mutes during ads |
+| Core loop | Move; infected colonists become swarmlings that circle you in a living cloud; contact damage = mass × speed |
+| Growth | Swarm size starts at 60 and rises 10 per level (up to 250). A full swarm merges new swarmlings into its lightest one (spore → grub → crawler → brute → titan), so it keeps getting heavier |
+| Spore Burst | Space / button. Hits harder the bigger the swarm, **Overcharged** when full; catching 6+ colonists refunds half the cooldown |
+| Health | 100 HP bar, bright green → yellow (half) → red (blinking under 30%). A full swarm cuts damage by up to 40%; no passive healing, only rare nectar pods and cards |
+| Aggression phases | Calm → Hunting (1:00) → Swarming (2:30) → Frenzy (4:00) → Overdrive (6:00), with banners and heavier music |
+| Aimed attacks | Left-click Acid Spit. Cards add Barb Volley, Spore Mine, Chain Lightning, Hive Drop and the Lava Bloom evolution |
+| Colonists | Trooper, Scout Bike, Rifleman, Riot Shield, Jammer, Harvester Kid, Squad Pod, Tunneler, Siphon Trooper, Demolisher, Medic Drone; squads; glowing elites; world-only Rover, Pile Driver and Grav Mine |
+| Bosses | Siege Walker at 2:30, Drop Carrier at 4:30, The Colony Ship at 6:00 |
+| Upgrades | 24 cards + 6 evolutions (Magma Gland, Razor Swarm, Acid Ring, Endless Brood, Lava Bloom, Void Burst); Acid / Storm / Tank / Razor build paths |
+| Content | Slot-machine supply crates; shock, acid, bouncer and golden swarmlings; a Feeding Pit between phases; lava vents and thorn walls on every world; kill-streak calls (HIVE FRENZY! = damage boost) |
+| Meta | Biomass; the Evolution Chamber with 6 hive cores and 3 worlds (Mycelion, Vulkara, Cryonis); Daily Seed with modifiers; challenges; 12 achievements; Hard and Nightmare |
+| Ads | Optional rewarded ads only when an ad can play (revive, reroll, bonus pod, need biomass, double biomass); midgame ad only on Play again, max one per 3 min. `?fakeads` simulates ads in `npm run dev` |
+| Audio | Synthesised wet squelches, chitter and a hive hum; the attach sound still climbs the same rising pitch ladder; music for menu / run / boss |
+| Mobile | Floating joystick, Spore Burst button, pause icon; portrait and landscape layouts |
+| CrazyGames SDK v3 | Loads only when embedded; loading / gameplay events, midgame + rewarded ads, mutes during ads |
+
+### Old → new names
+
+Internal ids in `src/data/*.json` and texture keys keep their old names (`bot-tin`, `junk-bolt`,
+`magnet-horseshoe`, `crusher`…) so saves, balance and code are unchanged; only art, names,
+text, colours and sounds changed.
+
+| Junk Magnet | Mycelion |
+| --- | --- |
+| Red horseshoe magnet | Hive Core |
+| Junk ball, bolt → gear → can → pipe → cube | Swarm, spore → grub → crawler → brute → titan |
+| Battery / fuel / spring / gold junk | Shock / acid / bouncer / golden swarmlings |
+| Pulse, Fireball | Spore Burst, Acid Spit |
+| Junk Shotgun, Magnet Mine, Meteor Drop | Barb Volley, Spore Mine, Hive Drop |
+| Robots (Tin Bot, Sprinter, Spitter, Shield Bot, Anti-Mag, Repair Drone…) | Colonists (Trooper, Scout Bike, Rifleman, Riot Shield, Jammer, Medic Drone…) |
+| Crusher, Magnetron, The Compactor | Siege Walker, Drop Carrier, The Colony Ship |
+| Scrap coins, Garage, Junk shop, treasure chest | Biomass, Evolution Chamber, Feeding Pit, supply crate |
+| Junkyard, Factory, Space Station | Mycelion, Vulkara, Cryonis |
+| Car crushers, electric fences | Lava vents, thorn walls |
 
 ## Tuning
 
@@ -45,10 +67,9 @@ All balance lives in `src/data/*.json` (`enemies.json` has waves and the boss, `
 has damage, knockback and the coin economy, `magnets.json`, `maps.json`, `upgrades.json`).
 
 `npm run playtest` runs a kiting bot (target: dies before 5:00) through a full run at 4× speed, and `npm run playtest:idle`
-is the AFK test: an idle player must die before 1:30 (and `--fullball`, with a full junk ball, before 2:00) or it exits with an error (both need
-`npm run dev` on port 5173, or `URL=...`). Currently: idle ≈ 0:37, idle with a full ball ≈ 1:50, bot ≈ 3:00. With the current numbers the bot beats the Crusher in about
-45 s and dies at about 6:00 when The Compactor arrives, which matches the target that most
-players die between 3:00 and 6:00. The bot is a decent player, so
+is the AFK test: an idle player must die before 1:30 (and `--fullball`, with a full swarm, before 2:00) or it exits with an error (both need
+`npm run dev` on port 5173, or `URL=...`). Currently (after the Mycelion reskin, numbers unchanged): idle ≈ 0:33, idle with a full swarm ≈ 1:41, bot ≈ 3:09 (dies to the Siege Walker's
+Swarming phase), inside the target that most players die between 3:00 and 6:00. The bot is a decent player, so
 humans will find it harder; playtest with real people before trusting the numbers.
 
 ## Before submitting (needs a human)

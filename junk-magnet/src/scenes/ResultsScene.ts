@@ -51,7 +51,7 @@ export class ResultsScene extends Phaser.Scene {
     drawPanel(panel, px, py, pw, ph, r.win ? PAL.brass : PAL.pink);
 
     const title = this.add
-      .text(w / 2, py + 54, r.win ? 'COMPACTOR CRUSHED!' : 'SCRAPPED!', displayStyle(r.win ? 44 : 56, r.win ? CSS.brass : CSS.text))
+      .text(w / 2, py + 54, r.win ? 'COLONY SHIP DOWN!' : 'OVERRUN!', displayStyle(r.win ? 44 : 56, r.win ? CSS.brass : CSS.text))
       .setOrigin(0.5)
       .setScale(0);
     this.tweens.add({ targets: title, scale: 1, duration: 420, ease: 'Back.easeOut' });
@@ -61,8 +61,8 @@ export class ResultsScene extends Phaser.Scene {
 
     const rows: [string, number, (v: number) => string][] = [
       ['Survived', r.time, (v) => formatTime(v)],
-      ['Bots smashed', r.kills, (v) => String(Math.round(v))],
-      ['Biggest junk ball', r.peakJunk, (v) => String(Math.round(v))],
+      ['Colonists infected', r.kills, (v) => String(Math.round(v))],
+      ['Biggest swarm', r.peakJunk, (v) => String(Math.round(v))],
       ['Score', r.score, (v) => String(Math.round(v))],
     ];
     const rowH = 34;
@@ -82,7 +82,7 @@ export class ResultsScene extends Phaser.Scene {
     const challengeCoins = r.challenges.filter((c) => c.completed).reduce((sum, c) => sum + c.def.reward, 0);
     const earned = r.coins + challengeCoins;
     this.rollUp(coinText, earned, (v) => `+${Math.round(v)}`, 450, () => Audio.coin());
-    const parts = [`bots ${r.scrapKills}`, `ball ${r.scrapJunk}`];
+    const parts = [`colonists ${r.scrapKills}`, `swarm ${r.scrapJunk}`];
     if (r.scrapOverflow) parts.push(`overflow ${r.scrapOverflow}`);
     if (r.scrapWin) parts.push(`victory ${r.scrapWin}`);
     if (challengeCoins) parts.push(`challenges ${challengeCoins}`);
@@ -123,7 +123,7 @@ export class ResultsScene extends Phaser.Scene {
       width: Math.min(360, pw - 60),
       height: 76,
       label: 'PLAY AGAIN',
-      fill: PAL.red,
+      fill: PAL.hive,
       tilt: -2,
       onClick: () => this.playAgain(),
     });
@@ -136,7 +136,7 @@ export class ResultsScene extends Phaser.Scene {
       const dbl: Button = new Button(this, w / 2, row2 - 0, {
         width: Math.min(260, pw - 60),
         height: 52,
-        label: 'DOUBLE SCRAP ▶',
+        label: 'DOUBLE BIOMASS ▶',
         fill: PAL.brass,
         textColor: CSS.outline,
         fontSize: 24,
@@ -175,11 +175,11 @@ export class ResultsScene extends Phaser.Scene {
       return;
     }
     if (coins >= next.price) {
-      const t = this.add.text(x, y, `${next.name} is ready to unlock in the Garage!`, displayStyle(22, CSS.brass)).setOrigin(0.5);
+      const t = this.add.text(x, y, `${next.name} is ready to evolve in the Evolution Chamber!`, displayStyle(22, CSS.brass)).setOrigin(0.5);
       this.tweens.add({ targets: t, scale: { from: 1, to: 1.06 }, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
       return;
     }
-    this.add.text(x, y - 9, `${next.price - coins} more scrap for the ${next.name}`, bodyStyle(18, CSS.text)).setOrigin(0.5);
+    this.add.text(x, y - 9, `${next.price - coins} more biomass for the ${next.name}`, bodyStyle(18, CSS.text)).setOrigin(0.5);
     const g = this.add.graphics();
     const bw = Math.min(width, 320);
     g.fillStyle(PAL.outline);
@@ -196,7 +196,7 @@ export class ResultsScene extends Phaser.Scene {
     new Button(this, w / 2 - offset, y, {
       width: bw,
       height: 52,
-      label: 'GARAGE',
+      label: 'EVOLVE',
       fill: 0x5a5266,
       fontSize: 24,
       onClick: () => {

@@ -1,6 +1,6 @@
 /**
  * Captures store art from the real game (no fake footage): a full junk ball, robots popping
- * off the ring, the cyan field, and the title. Run `npm run dev` first, then:
+ * off the ring, the field, and the title. Run `npm run dev` first, then:
  *   node tools/store-art.cjs
  * Writes store/cover-1920x1080.png, store/cover-800x1200.png, store/cover-800x800.png.
  */
@@ -10,7 +10,7 @@ const path = require('path');
 const OUT = path.join(__dirname, '..', 'store');
 const URL = process.env.URL || 'http://localhost:5173/';
 const SIZES = [
-  { name: 'cover-1920x1080', w: 1920, h: 1080, base: 1080, zoom: 1.75, title: 190, side: true },
+  { name: 'cover-1920x1080', w: 1920, h: 1080, base: 1080, zoom: 1.75, title: 160, side: true },
   { name: 'cover-800x1200', w: 800, h: 1200, base: 800, zoom: 1.25, title: 104 },
   { name: 'cover-800x800', w: 800, h: 800, base: 800, zoom: 1.2, title: 96 },
 ];
@@ -70,12 +70,12 @@ const SIZES = [
     }, { zoom: s.zoom, side: !!s.side });
     await page.evaluate(({ title, portrait, side }) => {
       const el = document.createElement('div');
-      el.innerHTML = '<span style="color:#F4F1EA">JUNK</span><br><span style="color:#E8423F">MAGNET</span>';
+      el.innerHTML = '<span style="color:#F4F1EA">MYCELION</span><br><span style="color:#7CFF6B;font-size:0.42em">HIVE RISING</span>';
       Object.assign(el.style, {
         position: 'fixed', left: side ? '3%' : '0', right: side ? '52%' : '0', top: side ? '30%' : portrait ? '6%' : '5%', textAlign: 'center',
         font: `${title}px "Lilita One"`, lineHeight: '0.95', transform: 'rotate(-4deg)',
         WebkitTextStroke: `${Math.round(title * 0.07)}px #120F16`, paintOrder: 'stroke fill',
-        textShadow: `0 ${Math.round(title * 0.06)}px 0 #120F16, 0 0 ${Math.round(title * 0.3)}px rgba(62,230,242,0.7)`,
+        textShadow: `0 ${Math.round(title * 0.06)}px 0 #120F16, 0 0 ${Math.round(title * 0.3)}px rgba(224,79,216,0.8)`,
       });
       document.body.appendChild(el);
     }, { title: s.title, portrait: s.h > s.w, side: !!s.side });

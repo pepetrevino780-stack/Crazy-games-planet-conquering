@@ -31,7 +31,7 @@ export class GarageScene extends Phaser.Scene {
     this.cameras.main.setSize(w, h);
     this.add.rectangle(0, 0, w, h, PAL.outline, 0.72).setOrigin(0).setInteractive();
 
-    this.add.text(w / 2, 44, 'GARAGE', displayStyle(52)).setOrigin(0.5).setAngle(-2);
+    this.add.text(w / 2, 44, 'EVOLUTION CHAMBER', displayStyle(Math.min(52, this.scale.width / 12))).setOrigin(0.5).setAngle(-2);
     const coins = this.add.container(w - 20, 44);
     const ct = this.add.text(0, 0, String(Meta.data.coins), displayStyle(32, CSS.brass)).setOrigin(1, 0.5);
     coins.add([ct, this.add.image(-ct.width - 22, 0, 'coin').setScale(0.8)]);
@@ -50,7 +50,7 @@ export class GarageScene extends Phaser.Scene {
       const ad: Button = new Button(this, w - 150, 88, {
         width: 270,
         height: 46,
-        label: `Need ${need}? ▶ +${amount} SCRAP`,
+        label: `Need ${need}? ▶ +${amount} BIOMASS`,
         fill: PAL.brass,
         textColor: CSS.outline,
         fontSize: 18,
@@ -90,8 +90,8 @@ export class GarageScene extends Phaser.Scene {
     const ch = portrait ? 232 : Math.min(250, (h - 200) / 2 - 20);
     // Six magnets: one row on landscape screens, two on portrait.
     let y = 104;
-    y = this.section('MAGNETS', 'magnet', Object.keys(MAGNETS), y, cols, cw, ch);
-    this.section('MAPS', 'map', Object.keys(MAPS), y + 8, cols, cw, ch);
+    y = this.section('HIVE CORES', 'magnet', Object.keys(MAGNETS), y, cols, cw, ch);
+    this.section('WORLDS', 'map', Object.keys(MAPS), y + 8, cols, cw, ch);
   }
 
   private section(title: string, kind: Kind, ids: string[], y: number, cols: number, cw: number, ch: number): number {
@@ -136,7 +136,7 @@ export class GarageScene extends Phaser.Scene {
 
     const by = y + ch / 2 - 36;
     if (selected) {
-      this.add.text(x, by, 'EQUIPPED', displayStyle(24, CSS.cyan)).setOrigin(0.5);
+      this.add.text(x, by, 'ACTIVE', displayStyle(24, CSS.cyan)).setOrigin(0.5);
       return;
     }
     const affordable = save.coins >= def.price;

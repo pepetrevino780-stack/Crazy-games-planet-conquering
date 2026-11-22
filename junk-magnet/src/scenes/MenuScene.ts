@@ -44,9 +44,9 @@ export class MenuScene extends Phaser.Scene {
     glow.fillStyle(PAL.cyan, 0.08);
     glow.fillCircle(w / 2, titleY + 10, 150);
     const size = Math.min(110, w / 7);
-    const junk = this.add.text(w / 2, titleY - size * 0.42, 'JUNK', displayStyle(size)).setOrigin(0.5).setAngle(-4);
-    const magnet = this.add.text(w / 2, titleY + size * 0.48, 'MAGNET', displayStyle(size, CSS.red)).setOrigin(0.5).setAngle(-4);
-    magnet.setShadow(0, 0, CSS.cyan, 18, true, false);
+    const junk = this.add.text(w / 2, titleY - size * 0.42, 'MYCELION', displayStyle(size)).setOrigin(0.5).setAngle(-4);
+    const magnet = this.add.text(w / 2, titleY + size * 0.48, 'HIVE RISING', displayStyle(size * 0.42, CSS.cyan)).setOrigin(0.5).setAngle(-4);
+    junk.setShadow(0, 0, CSS.hive, 22, true, false);
     for (const [t, d] of [
       [junk, 0],
       [magnet, 180],
@@ -79,7 +79,7 @@ export class MenuScene extends Phaser.Scene {
       width: Math.min(340, w - 80),
       height: 96,
       label: 'PLAY',
-      fill: PAL.red,
+      fill: PAL.hive,
       fontSize: 56,
       tilt: -2,
       onClick: () => this.play(false),
@@ -95,7 +95,7 @@ export class MenuScene extends Phaser.Scene {
     const garageBtn = new Button(this, w / 2 - bw / 2 - 12, rowY, {
       width: bw,
       height: 58,
-      label: affordable ? 'GARAGE !' : 'GARAGE',
+      label: affordable ? 'EVOLVE !' : 'EVOLVE',
       fill: affordable ? PAL.brass : 0x5a5266,
       textColor: affordable ? CSS.outline : CSS.text,
       fontSize: 26,
@@ -141,7 +141,7 @@ export class MenuScene extends Phaser.Scene {
     const ct = this.add.text(0, 0, String(Meta.data.coins), displayStyle(30, CSS.brass)).setOrigin(1, 0.5);
     coins.add([ct, this.add.image(-ct.width - 22, 0, 'coin').setScale(0.75)]);
     // Daily chest: free once a day, plus an optional bonus chest for an ad.
-    const chestLabel = Rewards.freeChestReady() ? 'FREE CHEST' : Rewards.bonusChestReady() && CrazySDK.adsAvailable ? '▶ BONUS CHEST' : '';
+    const chestLabel = Rewards.freeChestReady() ? 'FREE POD' : Rewards.bonusChestReady() && CrazySDK.adsAvailable ? '▶ BONUS POD' : '';
     if (chestLabel) {
       const free = Rewards.freeChestReady();
       const chestBtn: Button = new Button(this, 112, 84, {
@@ -177,8 +177,8 @@ export class MenuScene extends Phaser.Scene {
     }
 
     const hint = Controls.isTouch || this.sys.game.device.input.touch && !this.sys.game.device.os.desktop
-      ? 'Drag to move  ·  Tap the Pulse button'
-      : 'Move: WASD / Arrows   ·   Pulse: Space   ·   Pause: P';
+      ? 'Drag to move  ·  Tap the Spore Burst button'
+      : 'Move: WASD / Arrows   ·   Spore Burst: Space   ·   Pause: P';
     this.add.text(w / 2, h - 28, hint, bodyStyle(18, CSS.dim)).setOrigin(0.5);
   }
 

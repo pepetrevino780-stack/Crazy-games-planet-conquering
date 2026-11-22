@@ -5,9 +5,9 @@ import { Button, drawPanel } from '../ui/widgets';
 import type { GameScene } from './GameScene';
 
 const OFFERS: { item: 'heal' | 'card' | 'scrap'; label: string; desc: string; cost: number; icon: string }[] = [
-  { item: 'heal', label: 'PATCH UP', desc: '+30 health', cost: 20, icon: 'health-pack' },
-  { item: 'card', label: 'MYSTERY CARD', desc: 'A random upgrade', cost: 35, icon: 'icon-scrapPile' },
-  { item: 'scrap', label: 'SELL SCRAP', desc: '+40 scrap coins', cost: 15, icon: 'coin' },
+  { item: 'heal', label: 'REGROW', desc: '+30 health', cost: 20, icon: 'health-pack' },
+  { item: 'card', label: 'MUTATION', desc: 'A random upgrade', cost: 35, icon: 'icon-scrapPile' },
+  { item: 'scrap', label: 'DIGEST', desc: '+40 biomass', cost: 15, icon: 'coin' },
 ];
 const SECONDS = 10;
 
@@ -27,9 +27,9 @@ export class ShopScene extends Phaser.Scene {
     const px = w / 2 - pw / 2;
     const py = h / 2 - ph / 2;
     drawPanel(this.add.graphics(), px, py, pw, ph, PAL.cyan);
-    this.add.text(w / 2, py + 44, 'JUNK SHOP', displayStyle(46, CSS.cyan)).setOrigin(0.5);
+    this.add.text(w / 2, py + 44, 'FEEDING PIT', displayStyle(46, CSS.cyan)).setOrigin(0.5);
     const junkText = this.add.text(w / 2, py + 88, '', bodyStyle(19, CSS.text)).setOrigin(0.5);
-    const refresh = () => junkText.setText(`You have ${g.junk.count} junk. Spending it lowers your armour.`);
+    const refresh = () => junkText.setText(`Your swarm: ${g.junk.count}. Feeding it here thins your armour.`);
     refresh();
     const cw = Math.min(200, (pw - 60) / 3);
     const buttons: Button[] = [];
@@ -47,7 +47,7 @@ export class ShopScene extends Phaser.Scene {
       const b: Button = new Button(this, x, y + 62, {
         width: cw - 24,
         height: 42,
-        label: `${o.cost} JUNK`,
+        label: `${o.cost} SWARM`,
         icon: 'junk-gear',
         fill: PAL.brass,
         textColor: CSS.outline,
@@ -84,7 +84,7 @@ export class ShopScene extends Phaser.Scene {
       width: 220,
       height: 46,
       label: 'CONTINUE',
-      fill: PAL.red,
+      fill: PAL.hive,
       fontSize: 22,
       onClick: () => g.closeShop(),
     });

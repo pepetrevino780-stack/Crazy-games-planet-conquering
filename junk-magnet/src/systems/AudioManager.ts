@@ -147,35 +147,40 @@ class AudioManagerImpl {
     this.lastClink = now;
     const semis = Math.min(this.clinkStep, 24);
     this.clinkStep++;
-    const f = 1250 * Math.pow(2, semis / 12);
-    this.tone(f, 0.12, 'triangle', 0.16);
-    this.tone(f * 2.76, 0.06, 'sine', 0.07);
-    if (f * 5.4 < 18000) this.tone(f * 5.4, 0.03, 'sine', 0.03);
+    // A wet "bloop" as a swarmling latches on: a water-drop pitch flick plus a tiny squelch.
+    const f = 520 * Math.pow(2, semis / 12);
+    this.tone(f * 0.75, 0.09, 'sine', 0.2, { slideTo: f * 1.5 });
+    this.tone(f * 1.5, 0.05, 'triangle', 0.05, { when: this.ctx.currentTime + 0.02, slideTo: f * 1.1 });
+    this.noiseBurst(0.04, 0.07, 'bandpass', Math.min(9000, f * 3), { q: 5 });
   }
 
   hit(): void {
     if (!this.ctx || !this.gate('hit', 0.04)) return;
-    this.tone(320 + Math.random() * 120, 0.06, 'square', 0.06, { slideTo: 160 });
-    this.noiseBurst(0.05, 0.12, 'highpass', 2500);
+    // Squelch: a soft wet thud.
+    this.tone(240 + Math.random() * 80, 0.07, 'sine', 0.1, { slideTo: 110 });
+    this.noiseBurst(0.07, 0.16, 'lowpass', 2600, { sweepTo: 500 });
   }
 
   /** A piece fusing into a heavier one once the ball is full. */
   fuse(): void {
     if (!this.ctx || !this.gate('fuse', 0.06)) return;
-    this.tone(330, 0.14, 'triangle', 0.12, { slideTo: 220 });
-    this.tone(990, 0.08, 'sine', 0.05);
+    // Gurgle as swarmlings merge into a bigger one.
+    this.tone(260, 0.16, 'sine', 0.14, { slideTo: 520 });
+    this.tone(180, 0.12, 'triangle', 0.08, { when: this.ctx.currentTime + 0.05, slideTo: 120 });
+    this.noiseBurst(0.1, 0.06, 'bandpass', 900, { q: 4 });
   }
 
   clank(): void {
     if (!this.ctx || !this.gate('clank', 0.08)) return;
-    this.tone(620, 0.12, 'square', 0.05, { slideTo: 580 });
-    this.tone(930, 0.1, 'triangle', 0.06);
+    // Chitter: three quick clicks.
+    for (let i = 0; i < 3; i++) this.noiseBurst(0.018, 0.12, 'bandpass', 3200 + i * 500, { when: this.ctx.currentTime + i * 0.035, q: 8 });
   }
 
   pop(big = false): void {
     if (!this.ctx || !this.gate('pop', 0.035)) return;
-    this.tone(big ? 300 : 520 + Math.random() * 160, big ? 0.22 : 0.12, 'square', 0.08, { slideTo: big ? 70 : 140 });
-    this.noiseBurst(big ? 0.25 : 0.1, big ? 0.28 : 0.16, 'bandpass', big ? 900 : 1800, { q: 0.8 });
+    // Splat: a colonist falls and is infected.
+    this.tone(big ? 220 : 380 + Math.random() * 120, big ? 0.24 : 0.12, 'sine', 0.12, { slideTo: big ? 60 : 120 });
+    this.noiseBurst(big ? 0.28 : 0.11, big ? 0.3 : 0.18, 'lowpass', big ? 1400 : 2400, { sweepTo: 300 });
   }
 
   boom(): void {
@@ -346,6 +351,11 @@ class AudioManagerImpl {
     const bus = this.musicBus;
     const s = step % 16;
     const bar = Math.floor(step / 16) % 4;
+    // The hive hum: a low, slowly beating drone under every track.
+    if (s === 0) {
+      this.tone(55, 2.2, 'sine', 0.07, { when: t, bus, attack: 0.5 });
+      this.tone(55 * 1.505, 2.2, 'sine', 0.025, { when: t, bus, attack: 0.6 });
+    }
     if (this.track === 'boss') {
       const roots = [-17, -17, -15, -20]; // E, E, F#, C#-ish: heavy minor riff
       const root = roots[bar];

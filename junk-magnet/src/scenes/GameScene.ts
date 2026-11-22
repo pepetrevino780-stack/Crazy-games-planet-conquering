@@ -507,7 +507,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
 
   onBossWarning(): void {
     this.bossWarningAt = this.runTime;
-    this.banner('THE COMPACTOR IS COMING');
+    this.banner('THE COLONY SHIP IS COMING');
     Audio.alarm();
   }
 
@@ -517,12 +517,12 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
   }
 
   onMinibossWarning(): void {
-    this.banner('CRUSHER INCOMING');
+    this.banner('SIEGE WALKER INCOMING');
     Audio.alarm();
   }
 
   onMidbossWarning(): void {
-    this.banner('MAGNETRON INCOMING');
+    this.banner('DROP CARRIER INCOMING');
     Audio.alarm();
   }
 
@@ -676,9 +676,9 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     while (this.killTimes.length && this.killTimes[0] < t - 5) this.killTimes.shift();
     const n = this.killTimes.length;
     const tiers: [number, string][] = [
-      [15, 'SMASHING!'],
-      [30, 'JUNK STORM!'],
-      [50, 'SCRAP FRENZY!'],
+      [15, 'INFESTING!'],
+      [30, 'SWARM STORM!'],
+      [50, 'HIVE FRENZY!'],
     ];
     let level = 0;
     for (let i = 0; i < tiers.length; i++) if (n >= tiers[i][0]) level = i + 1;
@@ -695,7 +695,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     }
   }
 
-  /** Car crushers and electric fences hurt robots and you alike. */
+  /** Lava vents and thorn walls hurt colonists and you alike. */
   private updateHazards(dt: number): void {
     const list = this.mapDef.hazards ?? [];
     const g = this.hazardGfx;
@@ -714,20 +714,24 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
         const w = hz.w ?? 160;
         const h = hz.h ?? 160;
         const warn = t > every - 1;
-        const down = t < 0.4;
-        // The plate hangs see-through above the pit, drops during the warning, then slams.
+        // Lava vent: the crater simmers, bubbles and glows during the warning, then the eruption
+        // bursts out of it and fades.
         const sprites = this.hazardSprites.get(hz);
+        const since = (t + every) % every;
         if (sprites) {
-          const lift = down ? 0 : warn ? 48 * (every - t) : 48;
           const shakeX = warn ? Math.sin(this.clock * 60) * 2 : 0;
+          sprites.base.setX(x + w / 2 + shakeX);
+          const erupt = since < 0.55;
+          const k = erupt ? since / 0.55 : warn ? (t - (every - 1)) : 0;
           sprites.plate
-            .setPosition(x + w / 2 + shakeX, y + h / 2 - lift)
-            .setAlpha(down ? 1 : warn ? 0.85 : 0.5)
-            .setScale(TS * (1 + lift / 600));
+            .setPosition(x + w / 2, y + h / 2)
+            .setVisible(erupt || warn)
+            .setAlpha(erupt ? 1 - k * 0.9 : 0.25 + k * 0.35)
+            .setScale(TS * (erupt ? 0.9 + k * 0.5 : 0.35 + k * 0.35));
         }
         if (warn) {
-          g.fillStyle(PAL.red, 0.12 + Math.abs(Math.sin(this.clock * 14)) * 0.18);
-          g.fillRect(x + 12, y + 12, w - 24, h - 24);
+          g.fillStyle(0xff6b2b, 0.1 + Math.abs(Math.sin(this.clock * 14)) * 0.2);
+          g.fillEllipse(x + w / 2, y + h / 2, w * 0.95, h * 0.95);
         }
         if (active && t < prev) {
           // SLAM.
@@ -735,7 +739,8 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
           const cy = y + h / 2;
           this.juice.shake(0.25);
           Audio.crush();
-          for (let i = 0; i < 6; i++) this.juice.emit(cx, cy, 'p-puff', 0x8a7f99, { speed: 300, life: 0.5, scale: 1.4, endScale: 2.2, alpha: 0.5 });
+          for (let i = 0; i < 6; i++) this.juice.emit(cx, cy, 'p-puff', 0x5a4050, { speed: 300, life: 0.5, scale: 1.4, endScale: 2.2, alpha: 0.5 });
+          for (let i = 0; i < 10; i++) this.juice.emit(cx, cy, 'p-spark', 0xff8a3d, { speed: 420, life: 0.45 });
           for (const e of this.enemies.pool.items) {
             if (!e.active || e.hidden || isBig(e.kind)) continue;
             if (e.x > x && e.x < x + w && e.y > y && e.y < y + h) this.enemies.damage(e, HAZARD_DMG.crusherRobot, cx, cy, 0);
@@ -752,31 +757,48 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
         const x2 = hz.x2 ?? 0;
         const y2 = hz.y2 ?? 0;
         const soon = !on && t > cycle - 0.6;
-        g.lineStyle(10, PAL.outline, 0.8);
-        g.lineBetween(x1, y1, x2, y2);
-        g.lineStyle(4, on ? PAL.cyan : soon ? PAL.brass : 0x4a4458, on ? 0.95 : 0.8);
-        if (on) {
-          // Crackling line.
-          const n = 10;
+        // Thorn wall: a twisting vine. When it is on, thorns burst out along it; just before, they bud.
+        const len = Math.hypot(x2 - x1, y2 - y1);
+        const ux = (x2 - x1) / len;
+        const uy = (y2 - y1) / len;
+        const n = Math.max(6, Math.round(len / 26));
+        const vine = (width: number, color: number, alpha: number) => {
+          g.lineStyle(width, color, alpha);
           g.beginPath();
           g.moveTo(x1, y1);
-          for (let i = 1; i < n; i++) {
+          for (let i = 1; i <= n; i++) {
             const k = i / n;
-            g.lineTo(x1 + (x2 - x1) * k + (Math.random() - 0.5) * 10, y1 + (y2 - y1) * k + (Math.random() - 0.5) * 10);
+            const wob = Math.sin(i * 1.7) * 6;
+            g.lineTo(x1 + (x2 - x1) * k - uy * wob, y1 + (y2 - y1) * k + ux * wob);
           }
-          g.lineTo(x2, y2);
           g.strokePath();
-        } else {
-          g.lineBetween(x1, y1, x2, y2);
+        };
+        vine(14, PAL.outline, 0.85);
+        vine(8, on ? 0x3ba84a : 0x2f5a3a, 1);
+        const spike = on ? 16 + Math.sin(this.clock * 20) * 2 : soon ? 8 : 4;
+        for (let i = 1; i < n; i++) {
+          const k = i / n;
+          const side = i % 2 ? 1 : -1;
+          const wob = Math.sin(i * 1.7) * 6;
+          const bx = x1 + (x2 - x1) * k - uy * wob;
+          const by = y1 + (y2 - y1) * k + ux * wob;
+          const tx = bx - uy * side * spike;
+          const ty = by + ux * side * spike;
+          g.fillStyle(PAL.outline, 0.9);
+          g.fillTriangle(bx - ux * 6, by - uy * 6, bx + ux * 6, by + uy * 6, tx - uy * side * 3, ty + ux * side * 3);
+          g.fillStyle(on ? 0xe8ffd0 : soon ? 0xffd23f : 0x6b8a5a, 1);
+          g.fillTriangle(bx - ux * 4, by - uy * 4, bx + ux * 4, by + uy * 4, tx, ty);
         }
         for (const [px, py] of [
           [x1, y1],
           [x2, y2],
         ]) {
           g.fillStyle(PAL.outline);
-          g.fillCircle(px, py, 11);
-          g.fillStyle(0x6e7681);
-          g.fillCircle(px, py, 8);
+          g.fillCircle(px, py, 13);
+          g.fillStyle(0x5b2e8c);
+          g.fillCircle(px, py, 10);
+          g.fillStyle(on ? 0x7cff6b : 0x3ba84a);
+          g.fillCircle(px, py, 4);
         }
         if (!on || !active) continue;
         const near = (ex: number, ey: number, r: number) => {
@@ -990,7 +1012,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     // Black Hole Pulse: suck the whole screen in, then explode.
     if (stats.blackHole) {
       this.vortex = { x: p.x, y: p.y, t: BLACK_HOLE.duration, dmg: dmg * BLACK_HOLE.damageMult };
-      this.juice.label(p.x, p.y - 70, 'BLACK HOLE!', CSS.cyan, 30);
+      this.juice.label(p.x, p.y - 70, 'VOID BURST!', CSS.cyan, 30);
     }
     Audio.pulse();
     this.juice.shake(overcharged ? 0.4 : 0.25);
@@ -1075,7 +1097,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
           Phaser.Math.Clamp(p.x + Math.cos(a) * 170, m, ARENA.width - m),
           Phaser.Math.Clamp(p.y + Math.sin(a) * 170, m, ARENA.height - m),
         );
-        this.juice.label(p.x, p.y - 60, 'HEALTH PACK!', CSS.lime, 24);
+        this.juice.label(p.x, p.y - 60, 'NECTAR!', CSS.lime, 24);
       }
     }
     for (const k of this.pickups) {
@@ -1180,7 +1202,7 @@ export class GameScene extends Phaser.Scene implements EnemyHost {
     const p = this.player;
     this.junk.explodeAll(p.x, p.y);
     this.enemies.freezeAll();
-    this.juice.pop(p.x, p.y, PAL.red, 2);
+    this.juice.pop(p.x, p.y, PAL.hive, 2);
     Audio.boom();
     this.tweens.add({ targets: p.sprite, angle: 540, scale: 0.15, alpha: 0.2, duration: 1200, ease: 'Cubic.easeOut' });
   }
