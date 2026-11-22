@@ -234,6 +234,8 @@ export const PLANETS = [
   {
     id: 'noctyra',
     difficulty: 5, // 1-5, shown on the world card
+    // The final world, for players who know the game: no opening calm (see core.js EARLY_CALM).
+    calm: { time: 0 },
     name: 'Noctyra',
     title: 'The Eternal Eclipse',
     lesson: 'Prove Your Mastery',

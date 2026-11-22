@@ -5,6 +5,8 @@
 // its calls throw there). The game never waits on an ad that cannot play.
 
 const AD_START_TIMEOUT = 4000;
+export const SDK_SCRIPT_WAIT = 2500; // ms to wait for the async SDK script
+export const SDK_INIT_WAIT = 3000; // ms to wait for sdk.init()
 
 let sdk = null;
 let active = false;
@@ -25,13 +27,26 @@ function call(fn) {
  * Initialise the SDK if present. `win` is injectable for tests.
  * Resolves to the environment name: 'crazygames', 'local' or 'none'.
  */
-export async function initPlatform(win = globalThis.window) {
-  sdk = win?.CrazyGames?.SDK || null;
+export async function initPlatform(win = globalThis.window, { scriptWait = SDK_SCRIPT_WAIT, initWait = SDK_INIT_WAIT } = {}) {
   active = false;
   gameplayOn = false;
+  // The SDK script loads async: give it a moment to arrive, never forever.
+  const tag = win?.document?.getElementById?.('cg-sdk');
+  if (!win?.CrazyGames?.SDK && tag) {
+    await new Promise(resolve => {
+      const done = () => { clearTimeout(timer); resolve(); };
+      const timer = setTimeout(done, scriptWait);
+      tag.addEventListener('load', done, { once: true });
+      tag.addEventListener('error', done, { once: true });
+    });
+  }
+  sdk = win?.CrazyGames?.SDK || null;
   if (!sdk) return 'none';
   try {
-    await sdk.init();
+    // Off the portal the SDK can take a long time to give up: cap the wait.
+    let timer;
+    const late = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('SDK init timed out')), initWait); });
+    await Promise.race([sdk.init(), late]).finally(() => clearTimeout(timer));
     const env = sdk.environment;
     active = env === 'crazygames' || env === 'local';
     return active ? env : 'none';

@@ -243,14 +243,26 @@ test('phones: the map canvas never collapses, the map always covers the window, 
   assert.equal(r.snapZoom(3.2), 4);
 });
 
-test('readable text: no font size under 12px in the stylesheet', async () => {
+test('readable text: no font size under 14px in the stylesheet', async () => {
   const { readFile } = await import('node:fs/promises');
   const css = await readFile(new URL('../css/style.css', import.meta.url), 'utf8');
-  const small = [...css.matchAll(/font-size:\s*(\d+(?:\.\d+)?)px/g)].filter(m => Number(m[1]) < 12).map(m => m[0]);
+  const small = [...css.matchAll(/font-size:\s*(\d+(?:\.\d+)?)px/g)].filter(m => Number(m[1]) < 14).map(m => m[0]);
   assert.deepEqual(small, []);
 });
 
 test('floating numbers are at least 14px', async () => {
   const { POP_PX } = await import('../js/render.js');
   assert.ok(POP_PX >= 14);
+});
+
+test('a slow or hanging SDK never holds up the game', async () => {
+  const hang = { CrazyGames: { SDK: { init: () => new Promise(() => {}), environment: 'crazygames' } } };
+  const t = Date.now();
+  assert.equal(await initPlatform(hang, { initWait: 50 }), 'none');
+  assert.ok(Date.now() - t < 1000);
+  // The async script tag never loads: wait a little, then carry on without it.
+  const tag = { addEventListener() {} };
+  const t2 = Date.now();
+  assert.equal(await initPlatform({ document: { getElementById: () => tag } }, { scriptWait: 50 }), 'none');
+  assert.ok(Date.now() - t2 < 1000);
 });

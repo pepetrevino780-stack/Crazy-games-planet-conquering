@@ -105,6 +105,24 @@ export function buildingLevels(state, owner, type) {
 export const mapScale = state => config(state).scale || 1;
 export const areaScale = state => mapScale(state) ** 2;
 
+// The first EARLY_CALM seconds are calm for computer civilizations: they
+// regrow troops more slowly and leave the wilderness around the player's
+// landing alone (within RESERVE_RADIUS base tiles), so a new player is never
+// boxed into a corner in the first minutes.
+export const EARLY_CALM = 120;
+export const EARLY_REGEN = 0.6;
+export const RESERVE_RADIUS = 35;
+// A world can shorten or soften the calm with `calm: { time, regen }`.
+const calmTime = state => config(state).calm?.time ?? EARLY_CALM;
+const calmRegen = state => config(state).calm?.regen ?? EARLY_REGEN;
+export function inLandingReserve(state, attacker, i) {
+  if (attacker === PLAYER || state.time >= calmTime(state)) return false;
+  const cap = state.sites.find(s => s.id === 'player-capital');
+  if (!cap) return false;
+  const x = i % state.w, y = (i - x) / state.w;
+  return Math.hypot(x - cap.x, y - cap.y) <= RESERVE_RADIUS * mapScale(state);
+}
+
 // Seconds left in the no-attack grace period after landing.
 export const graceLeft = state => Math.max(0, (config(state).grace ?? 75) - state.time);
 
@@ -175,7 +193,8 @@ export function regen(state, f) {
   const k = areaScale(state);
   // The refill term grows with the cap: an army far below a big cap (right
   // after a large conquest) climbs back quickly instead of looking stranded.
-  return (k * (6 + Math.pow(Math.max(0, f.troops) / k, 0.7) * 0.5) + max * REFILL) * (1 - f.troops / max) * growthMult(state, f);
+  const calm = f.id !== PLAYER && state.time < calmTime(state) ? calmRegen(state) : 1;
+  return (k * (6 + Math.pow(Math.max(0, f.troops) / k, 0.7) * 0.5) + max * REFILL) * (1 - f.troops / max) * growthMult(state, f) * calm;
 }
 
 export function income(state, f) {

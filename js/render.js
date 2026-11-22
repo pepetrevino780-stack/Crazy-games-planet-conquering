@@ -7,7 +7,7 @@ import { SITE_TYPES } from './campaign.js';
 import { spriteCanvas, spriteCanvasHi, glyphCanvas, spriteAccent, CAPITAL_SPRITE, mixHex, shadeHex } from './art/sprites.js';
 import { backdropCanvas } from './art/backdrop.js';
 import { spawnBattleFx, pushCapped } from './battlefx.js';
-import { rt, world, config, siteOwner, isShielded, isPowered, empActive, eventPhase, mapScale, PLAYER } from './sim/core.js';
+import { rt, world, config, borders, siteOwner, isShielded, isPowered, empActive, eventPhase, mapScale, PLAYER } from './sim/core.js';
 
 // Floating numbers stay readable (spec G4: at least 14 px), and freshly
 // captured tiles flash for FLASH seconds.
@@ -237,7 +237,8 @@ export class MapRenderer {
     if (!this.colors.has(o)) {
       const f = this.state.factions[o];
       const c = f ? f.color : NEUTRAL;
-      this.colors.set(o, { rgb: hexRgb(c), edge: hexRgb(mixHex(c, '#ffffff', 0.45)), kind: f?.kind });
+      // Your own border is brighter than anyone else's.
+      this.colors.set(o, { rgb: hexRgb(c), edge: hexRgb(mixHex(c, '#ffffff', o === PLAYER ? 0.7 : 0.45)), glow: hexRgb(mixHex(c, '#ffffff', 0.3)), kind: f?.kind });
     }
     return this.colors.get(o);
   }
@@ -247,20 +248,31 @@ export class MapRenderer {
     const st = this.state, c = rt(st), W = this.W, H = this.H;
     const img = this.overImg.data;
     const owner = st.owner, terrain = world(st).terrain;
-    // Each tile is 2x2 texels: a solid 45% tint inside, and a bright border
+    // Each tile is 2x2 texels: a solid tint inside, and a bright border
     // one texel wide (2 px at the default zoom) along the outer edge.
     const W2 = W * 2;
     const put = (q, rgb, a) => { img[q] = rgb[0]; img[q + 1] = rgb[1]; img[q + 2] = rgb[2]; img[q + 3] = a; };
-    const fillA = this.simple ? 215 : 115;
+    // Fairly solid fills (no see-through look); your own empire is the
+    // most solid, with a bright edge and a soft glow on the land around it.
+    const fillA0 = this.simple ? 215 : 140, mineA = this.simple ? 230 : 175;
+    const me = this.colorOf(PLAYER);
     const paint = i => {
       const o = owner[i];
       const x = i % W, y = (i - x) / W;
       const q0 = ((y * 2) * W2 + x * 2) * 4, q1 = q0 + W2 * 4;
       if (!o || !isLand(terrain[i]) || (o === this.holdOwner && !this.revealed(i))) {
         img[q0 + 3] = 0; img[q0 + 7] = 0; img[q1 + 3] = 0; img[q1 + 7] = 0;
+        // Glow: unclaimed land right next to your border.
+        if (!o && isLand(terrain[i]) && PLAYER !== this.holdOwner) {
+          const mine = j => owner[j] === PLAYER;
+          if ((x > 0 && mine(i - 1)) || (x < W - 1 && mine(i + 1)) || (y > 0 && mine(i - W)) || (y < H - 1 && mine(i + W))) {
+            put(q0, me.glow, 60); put(q0 + 4, me.glow, 60); put(q1, me.glow, 60); put(q1 + 4, me.glow, 60);
+          }
+        }
         return;
       }
       const col = this.colorOf(o);
+      const fillA = o === PLAYER ? mineA : fillA0;
       const diff = j => owner[j] !== o && isLand(terrain[j]);
       const L = x > 0 && diff(i - 1), Rt = x < W - 1 && diff(i + 1), U = y > 0 && diff(i - W), D = y < H - 1 && diff(i + W);
       put(q0, L || U ? col.edge : col.rgb, L || U ? 255 : fillA);
@@ -731,11 +743,14 @@ export class MapRenderer {
     const ev = eventPhase(st);
 
     // Defense ranges.
+    const hx = ui.hoverTile >= 0 ? ui.hoverTile % st.w : -1, hy = ui.hoverTile >= 0 ? Math.floor(ui.hoverTile / st.w) : -1;
     for (const s of st.sites) {
       const so = siteOwner(st, s);
       const lin = mapScale(st);
-      if (s.type === 'turret' && isPowered(st, s)) this.dotCircle(T(s.x + 0.5, s.y + 0.5), SITE_TYPES.turret.radius * lin * z, ev.type === 'surge' && ev.active ? '#ff6a4a' : '#ff3b3b', z);
-      if (s.type === 'hub' && so && !empActive(st, s)) this.dotCircle(T(s.x + 0.5, s.y + 0.5), SITE_TYPES.hub.radius * lin * z, '#b8ff5a', z * 3);
+      // Ranges show only while you point inside them, so the map stays clean.
+      const near = r => hx >= 0 && Math.hypot(hx - s.x, hy - s.y) <= r;
+      if (s.type === 'turret' && isPowered(st, s) && near(SITE_TYPES.turret.radius * lin)) this.dotCircle(T(s.x + 0.5, s.y + 0.5), SITE_TYPES.turret.radius * lin * z, ev.type === 'surge' && ev.active ? '#ff6a4a' : '#ff3b3b', z);
+      if (s.type === 'hub' && so && !empActive(st, s) && near(SITE_TYPES.hub.radius * lin)) this.dotCircle(T(s.x + 0.5, s.y + 0.5), SITE_TYPES.hub.radius * lin * z, '#b8ff5a', z * 3);
       if ((s.type === 'capital' || s.type === 'citadel') && isShielded(st, s)) {
         const r = (4.5 + (motion ? Math.sin(now * 3) * 0.4 : 0)) * z;
         this.dotCircle(T(s.x + 0.5, s.y + 0.5), r, '#c4ff6a', Math.max(1, z / 2), true);
@@ -1087,7 +1102,10 @@ export class MapRenderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     // Biggest empires first; skip labels that would overlap one already drawn.
-    const order = [...this.labels.keys()].filter(id => st.factions[id]?.alive && id !== this.landing)
+    // Only your own name, the main enemy and the nations you border: the rest
+    // stay unlabelled (hover a nation to see its card).
+    const shown = id => id === PLAYER || st.factions[id].kind === 'enemy' || borders(st, PLAYER, id);
+    const order = [...this.labels.keys()].filter(id => st.factions[id]?.alive && id !== this.landing && shown(id))
       .sort((a, b) => (a === PLAYER ? -1 : b === PLAYER ? 1 : st.factions[b].tiles - st.factions[a].tiles));
     const placed = [];
     // Never on top of your own capital or buildings, and never under the HUD.
@@ -1099,7 +1117,7 @@ export class MapRenderer {
       const pos = this.labels.get(id);
       const f = st.factions[id];
       const base = Math.sqrt(f.tiles) * z * 0.2;
-      const size = Math.max(10 * d, Math.min(24 * d, base));
+      const size = Math.max(10 * d, Math.min((id === PLAYER ? 20 : 16) * d, base));
       if (id !== PLAYER && base < 6 * d) continue;
       const p = { x: o.x + (pos.x + 0.5) * z, y: o.y + (pos.y + 0.5) * z };
       const name = f.name;

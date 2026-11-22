@@ -600,23 +600,66 @@ function tip(key, text) {
   toast(esc(text), 'tip', 6000);
 }
 
+// Tools come in three groups. With more than a handful available, only one
+// group shows at a time behind tabs (fewer buttons in view); hotkeys and the
+// tutorial switch tabs by themselves.
+const TOOL_GROUPS = [['build', 'Build'], ['fleet', 'Fleet'], ['powers', 'Powers']];
+const FLAT_TOOLS = 5;
+let toolTab = 'build';
+
+function toolGroups() {
+  const f = battle.factions[PLAYER];
+  const groups = {
+    build: Object.entries(BUILDINGS).map(([id, b]) => ({ kind: 'build', id, key: b.key, label: id === 'spire' ? 'Spire' : b.name, icon: spriteIcon(id) })),
+    fleet: [
+      { kind: 'dropship', id: 'dropship', key: '6', label: 'Expedition', icon: iconURL('fleet', 3) },
+      { kind: 'ship', id: 'ship', key: '0', label: 'Battleship', icon: iconURL('ship', 3) },
+    ],
+    powers: [
+      { kind: 'research', id: 'research', key: 'R', label: 'Research', icon: iconURL('research', 3) },
+      ...Object.entries(ABILITIES).map(([id, a]) => ({ kind: 'ability', id, key: a.key, label: a.name.split(' ')[1], icon: iconURL(id, 3), locked: !f.abilities.includes(id) })),
+    ],
+  };
+  // Only this world's tools (spec U4).
+  for (const k of Object.keys(groups)) groups[k] = groups[k].filter(t => worldHasTool(t.id));
+  return groups;
+}
+
+// Show the tab holding a tool (for hotkeys and tutorial pointers).
+function showToolTab(id) {
+  if (!battle) return;
+  const groups = toolGroups();
+  const g = Object.keys(groups).find(k => groups[k].some(t => t.id === id));
+  if (g && g !== toolTab && $('#toolbar').classList.contains('tabbed')) { toolTab = g; buildToolbar(); }
+}
+
 function buildToolbar() {
   const bar = $('#toolbar');
-  const f = battle.factions[PLAYER];
-  const tools = [
-    ...Object.entries(BUILDINGS).map(([id, b]) => ({ kind: 'build', id, key: b.key, label: id === 'spire' ? 'Spire' : b.name, icon: spriteIcon(id) })),
-    'sep',
-    { kind: 'dropship', id: 'dropship', key: '6', label: 'Expedition', icon: iconURL('fleet', 3) },
-    { kind: 'ship', id: 'ship', key: '0', label: 'Battleship', icon: iconURL('ship', 3) },
-    { kind: 'research', id: 'research', key: 'R', label: 'Research', icon: iconURL('research', 3) },
-    'sep',
-    ...Object.entries(ABILITIES).map(([id, a]) => ({ kind: 'ability', id, key: a.key, label: a.name.split(' ')[1], icon: iconURL(id, 3), locked: !f.abilities.includes(id) })),
-  ];
+  const groups = toolGroups();
+  const total = Object.values(groups).reduce((n, g) => n + g.length, 0);
+  const tabbed = total > FLAT_TOOLS;
   bar.innerHTML = '';
-  // Only this world's tools (spec U4); separators only between shown groups.
-  const shown = tools.filter((t, k) => t === 'sep' ? k > 0 && tools[k - 1] !== 'sep' : worldHasTool(t.id));
-  while (shown.length && shown[shown.length - 1] === 'sep') shown.pop();
-  for (let k = shown.length - 1; k > 0; k--) if (shown[k] === 'sep' && shown[k - 1] === 'sep') shown.splice(k, 1);
+  bar.classList.toggle('tabbed', tabbed);
+  let shown;
+  if (tabbed) {
+    if (!groups[toolTab]?.length) toolTab = TOOL_GROUPS.find(([k]) => groups[k].length)[0];
+    const tabs = document.createElement('div');
+    tabs.className = 'tool-tabs';
+    for (const [k, name] of TOOL_GROUPS) {
+      if (!groups[k].length) continue;
+      const t = document.createElement('button');
+      t.className = 'btn tool-tab' + (k === toolTab ? ' on' : '');
+      t.textContent = name;
+      t.dataset.tip = `${name}: ${groups[k].map(x => x.label).join(', ')}`;
+      t.onclick = () => { sfx.click(); toolTab = k; buildToolbar(); updateHud(true); };
+      tabs.appendChild(t);
+    }
+    bar.appendChild(tabs);
+    shown = groups[toolTab];
+  } else {
+    shown = [];
+    for (const [k] of TOOL_GROUPS) if (groups[k].length) { if (shown.length) shown.push('sep'); shown.push(...groups[k]); }
+  }
   for (const t of shown) {
     if (t === 'sep') { const s = document.createElement('span'); s.className = 'tool-sep'; bar.appendChild(s); continue; }
     const b = document.createElement('button');
@@ -729,6 +772,7 @@ function toolUnlocked(kind, id) {
 
 function activateTool(kind, id) {
   if (!battle) return;
+  showToolTab(id);
   if (!toolUnlocked(kind, id)) { sfx.error(); toast('That unlocks later in the tutorial.', 'bad', 2000); return; }
   sfx.click();
   if (kind === 'research') { openResearch(); return; }
@@ -1444,7 +1488,7 @@ function updateTutorial() {
   if (now - tutPointerAt > 1000) { tutPointerAt = now; tutPointer = findPointer(step); }
   const p = step.point || '';
   if (p.startsWith('el:')) document.querySelector(p.slice(3))?.classList.add('glow');
-  if (p.startsWith('tool:')) document.querySelector(`.tool[data-id="${p.slice(5)}"]`)?.classList.add('glow');
+  if (p.startsWith('tool:')) { showToolTab(p.slice(5)); document.querySelector(`.tool[data-id="${p.slice(5)}"]`)?.classList.add('glow'); }
   if (p === 'ratio') {
     $('#empire .ratio').classList.add('glow');
   }
@@ -1993,6 +2037,7 @@ function frame(ts) {
   renderer.render({
     now: ts, dt, reducedMotion: s.motion, labels: s.labels, spawnHover,
     hoverOwner: hoverTile >= 0 ? battle.owner[hoverTile] : 0,
+    hoverTile,
     inspectOwner: inspectTile >= 0 ? battle.owner[inspectTile] : 0,
     highlights: new Set(cur?.highlight ? [cur.highlight] : []),
     intents,
@@ -2161,6 +2206,9 @@ async function init() {
   Promise.race([document.fonts?.ready, new Promise(r => setTimeout(r, 1500))]).then(() => $('#screen-title').classList.add('ready'));
   requestAnimationFrame(frame);
   loadingStop();
+  const boot = $('#boot');
+  boot.classList.add('done');
+  setTimeout(() => boot.remove(), 400);
 }
 
 // Hook for automated browser tests.

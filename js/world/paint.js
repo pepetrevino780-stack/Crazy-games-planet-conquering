@@ -23,11 +23,11 @@ const scale = (c, k) => [Math.min(255, c[0] * k), Math.min(255, c[1] * k), Math.
 const desaturate = (c, k) => { const l = luma(c) * 255; return mix(c, [l, l, l], k); };
 
 // Minimum brightness of ordinary ground, and how much darker the sea is.
-export const LAND_MIN_LUMA = 0.24;
+export const LAND_MIN_LUMA = 0.32;
 export const SEA_MAX_RATIO = 0.55; // sea luminance <= 55% of ground (>= 40% darker)
 
 // Per-world muting of the ground: share of colour removed, brightness kept.
-const MUTE = { mycelion: { desat: 0.55, dark: 0.8 } };
+const MUTE = { mycelion: { desat: 0.5, dark: 1.25 } };
 
 const palCache = new Map();
 export function palettes(theme) {

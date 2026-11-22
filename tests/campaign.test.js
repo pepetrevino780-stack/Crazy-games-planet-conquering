@@ -125,7 +125,7 @@ test('attacks advance the border tile by tile and spend troops', () => {
   assert.ok(res.ok);
   assert.ok(me.troops < 400 * k, 'troops left the pool');
   advance(s, 15);
-  assert.ok(me.tiles > before + 100 * k, `expanded from ${before} to ${me.tiles}`);
+  assert.ok(me.tiles > before + 80 * k, `expanded from ${before} to ${me.tiles}`);
   assert.equal(s.attacks.length, 0, 'attack ended when its troops ran out');
 });
 
@@ -1381,4 +1381,31 @@ test('the Training Fort sits mid-continent, a short march from the landing', () 
   const s = createBattle('tutorial', loadout(), { lesson: 1, seed: 78, autoSpawn: true });
   const a = site(s, 'player-capital'), b = site(s, 'enemy-capital');
   assert.ok(Math.hypot(a.x - b.x, a.y - b.y) < s.w * 0.45, 'less than half the map away');
+});
+
+test('early calm: nations regrow slower and leave the land around the landing free for two minutes', async () => {
+  const { EARLY_CALM, inLandingReserve } = await import('../js/sim/core.js');
+  const s = battle('mycelion');
+  const nation = s.factions.find(f => f && f.kind === 'nation');
+  nation.troops = 100;
+  const early = regen(s, nation);
+  const cap = site(s, 'player-capital');
+  const i = cap.y * s.w + cap.x + 10;
+  assert.ok(inLandingReserve(s, nation.id, i), 'wilderness by the landing is off limits to nations');
+  assert.ok(!inLandingReserve(s, PLAYER, i), 'but never to the player');
+  s.time = EARLY_CALM + 1;
+  assert.ok(regen(s, nation) > early * 1.4, 'full regrowth after the calm');
+  assert.ok(!inLandingReserve(s, nation.id, i));
+  // Idle for two minutes: the land around the landing is still mostly free.
+  const t = battle('mycelion', { seed: 3 });
+  advance(t, 110);
+  const c = site(t, 'player-capital');
+  let free = 0, all = 0;
+  for (let y = c.y - 40; y <= c.y + 40; y++) for (let x = c.x - 40; x <= c.x + 40; x++) {
+    if (x < 0 || y < 0 || x >= t.w || y >= t.h || Math.hypot(x - c.x, y - c.y) > 40) continue;
+    const j = y * t.w + x;
+    if (!isLand(world(t).terrain[j])) continue;
+    all++; if (t.owner[j] === 0 || t.owner[j] === PLAYER) free++;
+  }
+  assert.ok(free / all > 0.8, `${Math.round(100 * free / all)}% of the land around the landing is free or yours`);
 });

@@ -7,10 +7,14 @@
   <title>Planetfall Conquest</title>
   <link rel="preload" href="assets/fonts/PixelifySans.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/style.css">
-  <!-- CrazyGames SDK v3; the game runs normally if it is missing or blocked. -->
-  <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+  <!-- CrazyGames SDK v3, loaded without blocking the first paint; the game
+       runs normally if it is missing, blocked or slow. -->
+  <script id="cg-sdk" async src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
 </head>
 <body>
+  <!-- Boot screen: painted at once (no script needed) and removed when the
+       game is ready, so the first frame is never black. -->
+  <div id="boot" aria-live="polite"><div class="boot-logo">PLANETFALL<span>CONQUEST</span></div><div class="boot-bar"><i></i></div><p>Preparing your landing…</p></div>
   <div id="app">
     <!-- Title -->
     <section id="screen-title" class="screen active">

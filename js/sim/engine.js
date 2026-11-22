@@ -8,7 +8,7 @@ import {
   TICK, PLAYER, world, config, setOwner, launchAttack, notice, siteOwner, isShielded, isPowered,
   maxTroops, regen, income, tileCost, tileLocked, neighbors4, TileHeap, eventPhase, sitesOf, countSites, buildCost,
   alive, borders, upgradeCost, mapScale, areaScale, attackFronts, rt, isConnected, connectedLand,
-  EXILE, capitalOf, isCapitalSite,
+  EXILE, capitalOf, isCapitalSite, inLandingReserve,
 } from './core.js';
 import { isAllied, relation, onPlayerAttack, driftTrust } from './diplomacy.js';
 import { planRoute } from './path.js';
@@ -37,6 +37,9 @@ function makeFaction(id, props) {
 // Counting tiles (not a fixed radius) keeps starts fair on narrow coasts.
 function claimBlob(state, x0, y0, radius, owner) {
   const terrain = world(state).terrain;
+  // An organic outline, not a stamped circle: the reach wobbles with the angle.
+  const ph = ((state.seed | 0) * 0.37 + owner * 2.17 + x0 * 0.013) % (Math.PI * 2);
+  const wobble = a => 1 / (1 + 0.22 * Math.sin(3 * a + ph) + 0.12 * Math.sin(5 * a + ph * 1.7));
   const target = Math.round(Math.PI * radius * radius * 0.92);
   const start = y0 * state.w + x0;
   const seen = new Set([start]);
@@ -50,7 +53,12 @@ function claimBlob(state, x0, y0, radius, owner) {
     if (!isLand(terrain[i]) || (state.owner[i] && state.owner[i] !== owner)) continue;
     if (state.owner[i] !== owner) setOwner(state, i, owner);
     n++;
-    for (const j of neighbors4(state, i)) if (!seen.has(j)) { seen.add(j); const jx = j % state.w; heap.push(Math.hypot(jx - x0, (j - jx) / state.w - y0), j); }
+    for (const j of neighbors4(state, i)) {
+      if (seen.has(j)) continue;
+      seen.add(j);
+      const jx = j % state.w, jy = (j - jx) / state.w;
+      heap.push(Math.hypot(jx - x0, jy - y0) * wobble(Math.atan2(jy - y0, jx - x0)), j);
+    }
   }
 }
 
@@ -740,6 +748,7 @@ function stepRoute(state, a, att) {
   // becomes a normal front against them, so a thin corridor can never slip
   // through a nation to its capital.
   if (o && o !== a.attacker) { a.target = o; return 'arrived'; }
+  if (!o && inLandingReserve(state, a.attacker, i)) return 'stop';
   if (!captureTile(state, a, att, i)) return 'stop';
   a.pathPos++;
   // Widen the corridor a little: the neighbours of the tile just taken.
@@ -784,6 +793,7 @@ function advanceAttacks(state, dt) {
       if (!a.frontier.size) { ended = true; break; }
       const i = a.frontier.pop();
       if (state.owner[i] !== a.target || !adjacentTo(state, i, a.attacker)) continue;
+      if (a.target === 0 && inLandingReserve(state, a.attacker, i)) continue;
       if (tileLocked(state, i)) { if (a.attacker === PLAYER) state.stats.shieldBlocked++; continue; }
       const cost = tileCost(state, att, i);
       if (a.troops < cost) { ended = true; break; }
