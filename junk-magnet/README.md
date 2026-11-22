@@ -18,7 +18,7 @@ so the whole build is about **0.4 MB gzipped**.
 npm install
 npm run dev          # play locally at http://localhost:5173
 npm run build        # type-check + static build in dist/ (relative paths)
-npm run zip          # build + junk-magnet.zip ready to upload to CrazyGames (upload it as "Mycelion")
+npm run zip          # build + mycelion.zip ready to upload to CrazyGames
 npm run build:play   # copy the build to play/ (for GitHub Pages)
 ```
 

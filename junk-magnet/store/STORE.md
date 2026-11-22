@@ -36,5 +36,4 @@ with `npm run dev` running, then `./tools/make-previews.sh`.
 **Rating:** PEGI 7/12-safe cartoon violence. Colonists pop with a green splat and turn into
 swarmlings; no blood, no gore.
 
-**Upload note:** the zip is still built as `junk-magnet.zip` (the folder name stays for the old
-links); upload it on CrazyGames under the title **Mycelion**.
+**Upload:** `npm run zip` builds `mycelion.zip`; upload it on CrazyGames under the title **Mycelion**.

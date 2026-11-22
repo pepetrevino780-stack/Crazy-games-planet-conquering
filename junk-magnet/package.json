@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "zip": "npm run build && cd dist && rm -f ../junk-magnet.zip && zip -qr ../junk-magnet.zip .",
+    "zip": "npm run build && cd dist && rm -f ../mycelion.zip ../junk-magnet.zip && zip -qr ../mycelion.zip .",
     "build:play": "npm run build && rm -rf play && cp -r dist play",
     "playtest": "node tools/playtest.cjs",
     "store-art": "node tools/store-art.cjs",
